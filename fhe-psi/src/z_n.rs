@@ -6,12 +6,29 @@ use std::fmt;
 
 #[derive(Clone, Copy)]
 pub struct Z_N<const N: u64> {
-    pub a: u64,
+    a: u64,
+}
+
+impl<const N: u64> Z_N<N> {
+    pub fn new_u(a: u64) -> Self {
+        Z_N {
+            a: a % N
+        }
+    }
+    pub fn new_i(a: i64) -> Self {
+        Z_N {
+            a: (a % (N as i64) + (N as i64)) as u64 % N
+        }
+    }
 }
 
 impl<const N: u64> fmt::Debug for Z_N<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.a)
+        if self.a < N/2 {
+            write!(f, "{}", self.a)
+        } else {
+            write!(f, "-{}", N-self.a)
+        }
     }
 }
 
@@ -26,7 +43,7 @@ impl<const N: u64> RingElement for Z_N<N> {
         // TODO: not actually uniform :clown:
         let mut iter = rng.sample_iter(&Standard);
         let val: u64 = iter.next().unwrap();
-        Z_N { a: val % N }
+        Z_N::new_u(val)
     }
 }
 
