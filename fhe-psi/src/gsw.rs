@@ -1,45 +1,45 @@
-use crate::{z_n::*, ring_elem::*, matrix::*, discrete_gaussian::*, params::*};
+use crate::{z_n::*, ring_elem::*, matrix::*, discrete_gaussian::*, params::*, gadget::gen_G};
 use rand::{SeedableRng, Rng};
 use rand_chacha::ChaCha20Rng;
 
-// TODO: fill out these types
-pub struct PublicKey {
-    
+#[derive(Debug)]
+pub struct PublicKey<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64> {
+    A : Matrix<N,M,Z_N<Q>>
 }
 
-pub struct PrivateKey {
-    
+#[derive(Debug)]
+pub struct PrivateKey<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64> {
+    s_T : Matrix<1,N,Z_N<Q>>
 }
 
-pub struct Ciphertext {
-    
+#[derive(Debug)]
+pub struct Ciphertext<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64> {
+    ct : Matrix<N,M,Z_N<Q>>
 }
 
-// TODO: The clunk is real :(
-pub fn keygen<const N_MINUS_1: usize, const N: usize, const M: usize, const Q: u64>(width: f64) -> (Matrix<N,M,Z_N<Q>>, Matrix<1,N,Z_N<Q>>) {
+pub fn keygen<const N_MINUS_1: usize, const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64>(params : IntParams<N,M,P,Q,G_BASE, N_MINUS_1>) -> ( PublicKey<N,M,P,Q,G_BASE>, PrivateKey<N,M,P,Q,G_BASE> ) {
     assert!(N_MINUS_1 + 1 == N);
 
-    let dg = DiscreteGaussian::init(width);
+    let dg = DiscreteGaussian::init(params.noise_width);
     let mut rng = ChaCha20Rng::from_entropy();
 
     let a_bar : Matrix<N_MINUS_1, M, Z_N<Q>> = Matrix::random_rng(&mut rng);
     let s_bar_T : Matrix<1, N_MINUS_1, Z_N<Q>>= Matrix::random_rng(&mut rng);
     let e : Matrix<1, M, Z_N<Q>> = dg.sample_int_matrix(&mut rng);
 
-    let a : Matrix<N, M, Z_N<Q>> = stack(&a_bar, &(&(&s_bar_T * &a_bar) + &e));
+    let A : Matrix<N, M, Z_N<Q>> = stack(&a_bar, &(&(&s_bar_T * &a_bar) + &e));
     let mut s_T : Matrix<1, N, Z_N<Q>> = Matrix::new_uninitialized();
     s_T.copy_into(&(-&s_bar_T), 0, 0);
     s_T[(0,N-1)] = Z_N::one();
-    (a, s_T)
+    (PublicKey {A}, PrivateKey {s_T})
 }
 
-pub fn test_keygen() -> (Matrix<{DumbParams.N},{DumbParams.M},Z_N<{DumbParams.Q}>>, Matrix<1,{DumbParams.N},Z_N<{DumbParams.Q}>>) {
+pub fn encrypt<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64>(pk : &PublicKey<N,M,P,Q,G_BASE>, mu: u64) -> Ciphertext<N,M,P,Q,G_BASE> {
+    assert!(mu < P);
+    let A = &pk.A;
 
-    keygen::<{DumbParams.N-1}, {DumbParams.N}, {DumbParams.M}, {DumbParams.Q}>(DumbParams.noise_width)
-}
-
-pub fn encrypt<const N: usize, const M: usize, const Q: u64>(pk : &Matrix<N, M, Z_N<Q>>, mu: u64) -> Matrix<N, M, Z_N<Q>> {
     let mut rng = ChaCha20Rng::from_entropy();
+
     let mut R : Matrix<M, M, Z_N<Q>> = Matrix::zero();
     for i in 0..M {
         for j in 0..M {
@@ -49,28 +49,28 @@ pub fn encrypt<const N: usize, const M: usize, const Q: u64>(pk : &Matrix<N, M, 
         }
     }
 
-    // TODO: real gadget matrix
-    let mut G : Matrix<N, M, Z_N<Q>> = Matrix::zero();
-    for i in 0..N {
-        G[(i,i)] = Z_N::one();
-    }
+    let G = gen_G::<N,M,Q,G_BASE>();
 
-    // TODO: pt size != 2
-    let mu = Z_N::new_u(mu * Q / 2);
-    let ct = &(pk * &R) + &(&G * mu);
-    ct
+    let mu = Z_N::new_u(mu * Q / P);
+    let ct = &(A * &R) + &(&G * mu);
+    Ciphertext {ct}
 }
 
-pub fn decrypt<const N: usize, const M: usize, const Q: u64>(sk: &Matrix<1, N, Z_N<Q>>, ct: &Matrix<N, M, Z_N<Q>>) -> u64 {
+pub fn decrypt<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64>(sk: &PrivateKey<N,M,P,Q,G_BASE>, ct: &Ciphertext<N,M,P,Q,G_BASE>) -> u64 {
+    let s_T = &sk.s_T;
+    let ct = &ct.ct;
 
-    // TODO: fix after using real gadget
-    let pt = (sk * ct)[(0, N-1)];
-
-    // TODO: pt size != 2
-    let floored = pt.to_u() / (Q / 4);
-    if floored >= 3 {
-        return 0
+    // TODO: encode this as a constant in Params, probably
+    let mut x = 1;
+    let mut g_len = 0;
+    while x < Q {
+        x *= G_BASE;
+        g_len += 1;
     }
+    let pt = (s_T * ct)[(0, (N-1)*g_len)];
 
-    return (floored+1) / 2
+
+    let floored = pt.to_u() * P * 2 / Q;
+
+    ((floored+1) / 2) % P
 }

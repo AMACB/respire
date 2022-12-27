@@ -1,14 +1,24 @@
-pub struct Params {
-    pub N: usize,
-    pub M: usize,
-    pub Q: u64,
+
+/*
+    The goal is *eventually* once Rust implements everything
+    we can pass around Param consts as type parameters, so that
+    keys / ciphertexts / etc. are bound by type to their parameters,
+    and matrix dims, moduli, etc. can all be inferred from type.
+
+    For now, we have massive jank.
+*/
+
+pub struct IntParams<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const N_MINUS_1: usize> {
     pub noise_width: f64,
 }
 
-pub const DumbParams : Params = Params {
-    N: 5,
-    M: 10,
-    Q: 268369921,
+pub fn verify_int_params<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const N_MINUS_1: usize>(params: IntParams<N,M,P,Q,G_BASE,N_MINUS_1>) {
+    assert!(N_MINUS_1+1 == N);
+
+    // TODO: check G_BASE
+}
+
+pub const DumbParams : IntParams<5, 140, 10, 268369921, 2, 4> = IntParams {
     noise_width: 6.4,
 };
 

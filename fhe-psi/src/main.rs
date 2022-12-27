@@ -22,32 +22,17 @@ fn matrix_demo() {
     println!("I*R = {:?}", prod);
 }
 fn gsw_demo() {
-    let (a, s_T) = test_keygen();
-    let e_hopefully = &s_T * &a;
+    let (a, s_T) = keygen(DumbParams);
+    // let e_hopefully = &s_T * &a;
 
     println!("{a:?}");
     println!("{s_T:?}");
-    println!("{e_hopefully:?}");
+    // println!("{e_hopefully:?}");
 
-    let mu = 0;
-    let ct = encrypt(&a, mu);
-    println!("{mu:?}");
-    println!("{ct:?}");
-    let pt = decrypt(&s_T, &ct);
-    println!("{pt:?}");
-
-    let mu = 1;
-    let ct = encrypt(&a, mu);
-    println!("{mu:?}");
-    println!("{ct:?}");
-    let pt = decrypt(&s_T, &ct);
-    println!("{pt:?}");
-
-    for i in 0..100 {
-        let mu = i % 2;
+    for i in 0..1000 {
+        let mu = i % 10;
         let ct = encrypt(&a, mu);
         let pt = decrypt(&s_T, &ct);
-        assert!(pt == mu);
         assert!(pt == mu);
     }
 }
