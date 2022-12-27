@@ -4,7 +4,7 @@ use rand::Rng;
 
 #[derive(Debug)]
 pub struct Matrix<const N: usize, const M: usize, R: RingElement> {
-    pub data: [[R ; M] ; N],
+    data: [[R ; M] ; N],
 }
 
 impl<const N: usize, const M: usize, R: RingElement> Matrix<N,M,R> {
@@ -80,6 +80,20 @@ impl<const N: usize, const M: usize, R: RingElement> Index<(usize, usize)> for M
 impl<const N: usize, const M: usize, R: RingElement> IndexMut<(usize, usize)> for Matrix<N, M, R> {
     fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
         &mut self.data[index.0][index.1]
+    }
+}
+
+impl<const N: usize, const M: usize, R: RingElement> Mul<R> for &Matrix<N, M, R> {
+    type Output = Matrix<N,M,R>;
+
+    fn mul(self, other: R) -> Self::Output {
+        let mut out = Matrix::new_uninitialized();
+        for r in 0..N {
+            for c in 0..M {
+                out.data[r][c] = self.data[r][c] * other;
+            }
+        }
+        out
     }
 }
 

@@ -20,11 +20,14 @@ impl<const N: u64> Z_N<N> {
             a: (a % (N as i64) + (N as i64)) as u64 % N
         }
     }
+    pub fn to_u(self) -> u64 {
+        self.a
+    }
 }
 
 impl<const N: u64> fmt::Debug for Z_N<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.a < N/2 {
+        if self.a <= N/2 {
             write!(f, "{}", self.a)
         } else {
             write!(f, "-{}", N-self.a)
