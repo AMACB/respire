@@ -1,26 +1,47 @@
+/*
+ *  The goal is *eventually* once Rust implements everything
+ *  we can pass around Param consts as type parameters, so that
+ *  keys / ciphertexts / etc. are bound by type to their parameters,
+ *  and matrix dims, moduli, etc. can all be inferred from type.
+ *
+ *  For now, we have massive jank.
+ */
 
 /*
-    The goal is *eventually* once Rust implements everything
-    we can pass around Param consts as type parameters, so that
-    keys / ciphertexts / etc. are bound by type to their parameters,
-    and matrix dims, moduli, etc. can all be inferred from type.
+ * Parameters:
+ *   - N,M: matrix dimensions.
+ *   - P: plaintext modulus.
+ *   - Q: ciphertext modulus.
+ *   - G_BASE: base used for the gadget matrix.
+ *   - G_LEN: length of the "g" gadget vector, or alternatively log q.
+ *   - N_MINUS_1: N-1, since generics cannot be used in const expressions yet. Used only in key generation.
+ *   - NG_LEN: N * G_LEN, since generics cannot be used in const expressions yet. Used only in ciphertext multiplication.
+ */
 
-    For now, we have massive jank.
-*/
-
-pub struct IntParams<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const N_MINUS_1: usize> {
+pub struct IntParams<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize, const N_MINUS_1: usize> {
     pub noise_width: f64,
 }
 
-pub fn verify_int_params<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const N_MINUS_1: usize>(params: IntParams<N,M,P,Q,G_BASE,N_MINUS_1>) {
+pub fn verify_int_params<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize, const N_MINUS_1: usize>(params: IntParams<N,M,P,Q,G_BASE,G_LEN,N_MINUS_1>) {
     assert!(N_MINUS_1+1 == N);
+    assert!(P <= Q);
 
-    // TODO: check G_BASE
+    // G_LEN >= log Q
+    let mut x = Q;
+    for _ in 0..G_LEN {
+        x /= G_BASE;
+    }
+    assert!(x == 0);
+
+    // M >= N * G_LEN >= N log Q
+    assert!(G_LEN * N <= M);
+
 }
 
-pub const DumbParams : IntParams<5, 140, 10, 268369921, 2, 4> = IntParams {
+pub const DumbParams : IntParams<5, 140, 10, 268369921, 2, 28, 4> = IntParams {
     noise_width: 6.4,
 };
+
 
 // pub struct Params {
 //     pub poly_len: usize,

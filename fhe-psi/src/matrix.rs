@@ -50,6 +50,14 @@ impl<const N: usize, const M: usize, R: RingElement> Matrix<N,M,R> {
     }
 }
 
+pub fn identity<const N: usize, R: RingElement>() -> Matrix<N,N,R>{
+    let mut out = Matrix::zero();
+    for i in 0..N {
+        out.data[i][i] = R::one();
+    }
+    out
+}
+
 // TODO: lol oops cannot smartly do M1+M2 or N1+N2
 pub fn append<const N: usize, const M1: usize, const M2: usize, const M3: usize, R: RingElement>(a: &Matrix<N, M1, R>, b : &Matrix<N, M2, R>) -> Matrix<N, M3, R> {
     assert!(M1+M2 == M3);

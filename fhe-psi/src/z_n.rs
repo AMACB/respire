@@ -4,7 +4,7 @@ use rand::Rng;
 use rand::distributions::Standard;
 use std::fmt;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Z_N<const N: u64> {
     a: u64,
 }
