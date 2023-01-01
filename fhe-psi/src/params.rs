@@ -7,7 +7,42 @@
  *  For now, we have massive jank.
  */
 
+pub struct RawParams {
+    pub N: usize,
+    pub M: usize,
+    pub P: u64,
+    pub Q: u64,
+    pub gadget_base: u64,
+    pub noise_width: f64,
+}
+
+pub const fn ceil_log(base: u64, x: u64) -> usize {
+    let mut e = 0;
+    let mut y = 1;
+
+    while y < x {
+        y *= base;
+        e += 1;
+    }
+
+    e
+}
+
+pub const TEST_PARAMS_RAW : RawParams = RawParams {
+    N: 5,
+    M: 140,
+    P: 10,
+    Q: 268369921,
+    gadget_base: 2,
+    noise_width: 6.4,
+};
+
 /*
+ * Convert RawParams to IntParams, by copy pasting. Mostly intended to prevent
+ * typos via misordering of type parameters and such.
+ *
+ * TODO: certainly there's a better way than copy pasting...
+ *
  * Parameters:
  *   - N,M: matrix dimensions.
  *   - P: plaintext modulus.
@@ -22,26 +57,41 @@ pub struct IntParams<const N: usize, const M: usize, const P: u64, const Q: u64,
     pub noise_width: f64,
 }
 
-pub fn verify_int_params<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize, const N_MINUS_1: usize>(params: IntParams<N,M,P,Q,G_BASE,G_LEN,N_MINUS_1>) {
-    assert!(N_MINUS_1+1 == N);
-    assert!(P <= Q);
 
-    // G_LEN >= log Q
-    let mut x = Q;
-    for _ in 0..G_LEN {
-        x /= G_BASE;
-    }
-    assert!(x == 0);
-
-    // M >= N * G_LEN >= N log Q
-    assert!(G_LEN * N <= M);
-
-}
-
-pub const DumbParams : IntParams<5, 140, 10, 268369921, 2, 28, 4> = IntParams {
-    noise_width: 6.4,
+pub const TEST_PARAMS : IntParams<
+        {TEST_PARAMS_RAW.N},
+        {TEST_PARAMS_RAW.M},
+        {TEST_PARAMS_RAW.P},
+        {TEST_PARAMS_RAW.Q},
+        {TEST_PARAMS_RAW.gadget_base},
+        {ceil_log(TEST_PARAMS_RAW.gadget_base, TEST_PARAMS_RAW.Q)},
+        {TEST_PARAMS_RAW.N-1},
+    > = IntParams {
+    noise_width: TEST_PARAMS_RAW.noise_width,
 };
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    fn verify_int_params<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize, const N_MINUS_1: usize>(params: IntParams<N,M,P,Q,G_BASE,G_LEN,N_MINUS_1>) {
+        assert!(N_MINUS_1+1 == N, "N_MINUS_1 not correct");
+        assert!(P <= Q, "plaintext modulus bigger than ciphertext modulus");
+        let mut x = Q;
+        for _ in 0..G_LEN {
+            x /= G_BASE;
+        }
+        assert_eq!(x, 0, "gadget matrix not long enough (expected: G_LEN >= log Q)");
+        assert!(G_LEN * N <= M, "M >= N log Q not satisfied");
+    }
+
+    #[test]
+    fn test_params_is_correct() {
+        verify_int_params(TEST_PARAMS);
+    }
+}
 
 // pub struct Params {
 //     pub poly_len: usize,

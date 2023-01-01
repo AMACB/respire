@@ -27,7 +27,7 @@ impl<const N: u64> Z_N<N> {
 
 impl<const N: u64> fmt::Debug for Z_N<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.a <= N/2 {
+        if self.a <= 3*N/4 {
             write!(f, "{}", self.a)
         } else {
             write!(f, "-{}", N-self.a)
@@ -98,4 +98,3 @@ impl<const N: u64> MulAssign for Z_N<N> {
         self.a = (self.a * rhs.a) % N;
     }
 }
-
