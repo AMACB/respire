@@ -18,8 +18,6 @@ pub fn intersect_polynomial(client_set: &Vec<u32>, server_set: &Vec<u32>) -> Vec
         p = p.mul(&PolyU32::<P>::new(vec![P - *i, 1]));
     }
 
-    dbg!(&server_set, &client_set, &p);
-
     for i in client_set {
         if p.eval(*i) == 0 {
             result_set.push(*i);
@@ -56,9 +54,9 @@ mod test {
     #[test]
     fn test_intersect_large() {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(1984);
-        let NUM_CLIENT = 20;
-        let NUM_SERVER = 20;
-        let NUM_BOTH = 0;
+        let NUM_CLIENT = 2000;
+        let NUM_SERVER = 2000;
+        let NUM_BOTH = 1000;
 
         let mut client_set = vec![];
         let mut server_set = vec![];
