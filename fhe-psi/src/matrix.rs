@@ -3,38 +3,20 @@ use std::ops::{Mul, Add, Neg, Index, IndexMut};
 use rand::Rng;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Matrix<const N: usize, const M: usize, R: RingElement> {
+pub struct Matrix<const N: usize, const M: usize, R: RingElement> where for <'a> &'a R: RingElementRef<R> {
     data: [[R ; M] ; N],
 }
 
-impl<const N: usize, const M: usize, R: RingElement> Matrix<N,M,R> {
-
-    pub fn new_uninitialized() -> Self {
-        // TODO: do something unsafe to not call R::zero()
-        Matrix {
-            data: [[R::zero() ; M] ; N],
-        }
-    }
-
+impl<const N: usize, const M: usize, R: RingElement> Matrix<N,M,R> where for <'a> &'a R: RingElementRef<R> {
 
     pub fn zero() -> Self {
-        let mut out = Matrix::new_uninitialized();
-        for r in 0..N {
-            for c in 0..M {
-                out.data[r][c] = R::zero();
-            }
-        }
-        out
+        let mat = [[(); M]; N].map(|row| row.map(|_| R::zero()));
+        Matrix { data: mat }
     }
 
     pub fn random_rng<T: Rng>(rng: &mut T) -> Self {
-        let mut out = Matrix::new_uninitialized();
-        for r in 0..N {
-            for c in 0..M {
-                out.data[r][c] = R::random(rng);
-            }
-        }
-        out
+        let mat = [[(); M]; N].map(|row| row.map(|_| R::random(rng)));
+        Matrix { data: mat }
     }
 
     pub fn copy_into<const N2: usize, const M2: usize>(&mut self, m: &Matrix<N2,M2,R>, target_row: usize, target_col: usize) {
@@ -44,13 +26,13 @@ impl<const N: usize, const M: usize, R: RingElement> Matrix<N,M,R> {
         assert!(target_col + M2 <= M, "copy out of bounds");
         for r in 0..N2 {
             for c in 0..M2 {
-                self.data[target_row+r][target_col+c] = m.data[r][c];
+                self.data[target_row+r][target_col+c] = m.data[r][c].clone();
             }
         }
     }
 }
 
-pub fn identity<const N: usize, R: RingElement>() -> Matrix<N,N,R>{
+pub fn identity<const N: usize, R: RingElement>() -> Matrix<N,N,R> where for <'a> &'a R: RingElementRef<R> {
     let mut out = Matrix::zero();
     for i in 0..N {
         out.data[i][i] = R::one();
@@ -59,16 +41,16 @@ pub fn identity<const N: usize, R: RingElement>() -> Matrix<N,N,R>{
 }
 
 // TODO: lol oops cannot smartly do M1+M2 or N1+N2
-pub fn append<const N: usize, const M1: usize, const M2: usize, const M3: usize, R: RingElement>(a: &Matrix<N, M1, R>, b : &Matrix<N, M2, R>) -> Matrix<N, M3, R> {
+pub fn append<const N: usize, const M1: usize, const M2: usize, const M3: usize, R: RingElement>(a: &Matrix<N, M1, R>, b : &Matrix<N, M2, R>) -> Matrix<N, M3, R> where for <'a> &'a R: RingElementRef<R> {
     assert_eq!(M1+M2, M3, "dimensions do not add correctly");
-    let mut c = Matrix::new_uninitialized();
+    let mut c = Matrix::zero();
     c.copy_into(a, 0, 0);
     c.copy_into(b, 0, M1);
     c
 }
-pub fn stack<const N1: usize, const N2: usize, const N3: usize, const M: usize, R: RingElement>(a: &Matrix<N1, M, R>, b : &Matrix<N2, M, R>) -> Matrix<N3, M, R> {
+pub fn stack<const N1: usize, const N2: usize, const N3: usize, const M: usize, R: RingElement>(a: &Matrix<N1, M, R>, b : &Matrix<N2, M, R>) -> Matrix<N3, M, R> where for <'a> &'a R: RingElementRef<R> {
     assert_eq!(N1+N2, N3, "dimensions do not add correctly");
-    let mut c = Matrix::new_uninitialized();
+    let mut c = Matrix::zero();
     c.copy_into(a, 0, 0);
     c.copy_into(b, N1, 0);
     c
@@ -76,7 +58,7 @@ pub fn stack<const N1: usize, const N2: usize, const N3: usize, const M: usize, 
 
 // TODO: is it possible to make this good at compile time bounds checks?
 
-impl<const N: usize, const M: usize, R: RingElement> Index<(usize, usize)> for Matrix<N, M, R> {
+impl<const N: usize, const M: usize, R: RingElement> Index<(usize, usize)> for Matrix<N, M, R> where for <'a> &'a R: RingElementRef<R> {
     type Output = R;
 
     fn index(&self, index: (usize, usize)) -> &Self::Output {
@@ -85,27 +67,27 @@ impl<const N: usize, const M: usize, R: RingElement> Index<(usize, usize)> for M
         &self.data[index.0][index.1]
     }
 }
-impl<const N: usize, const M: usize, R: RingElement> IndexMut<(usize, usize)> for Matrix<N, M, R> {
+impl<const N: usize, const M: usize, R: RingElement> IndexMut<(usize, usize)> for Matrix<N, M, R> where for <'a> &'a R: RingElementRef<R> {
     fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
         &mut self.data[index.0][index.1]
     }
 }
 
-impl<const N: usize, const M: usize, R: RingElement> Mul<R> for &Matrix<N, M, R> {
+impl<const N: usize, const M: usize, R: RingElement> Mul<&R> for &Matrix<N, M, R> where for <'a> &'a R: RingElementRef<R> {
     type Output = Matrix<N,M,R>;
 
-    fn mul(self, other: R) -> Self::Output {
-        let mut out = Matrix::new_uninitialized();
+    fn mul(self, other: &R) -> Self::Output {
+        let mut out = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                out.data[r][c] = self.data[r][c] * other;
+                out.data[r][c] = &self.data[r][c] * &other;
             }
         }
         out
     }
 }
 
-impl<const N: usize, const M: usize, const K: usize, R: RingElement> Mul<&Matrix<M, K, R>> for &Matrix<N, M, R> {
+impl<const N: usize, const M: usize, const K: usize, R: RingElement> Mul<&Matrix<M, K, R>> for &Matrix<N, M, R> where for <'a> &'a R: RingElementRef<R> {
     type Output = Matrix<N,K,R>;
 
     fn mul(self, other: &Matrix<M, K, R>) -> Self::Output {
@@ -113,7 +95,7 @@ impl<const N: usize, const M: usize, const K: usize, R: RingElement> Mul<&Matrix
         for r in 0..N {
             for c in 0..K {
                 for i in 0..M {
-                    out.data[r][c] += self.data[r][i] * other.data[i][c];
+                    out.data[r][c] += &(&self.data[r][i] * &other.data[i][c]);
                 }
             }
         }
@@ -121,26 +103,26 @@ impl<const N: usize, const M: usize, const K: usize, R: RingElement> Mul<&Matrix
     }
 }
 
-impl<const N: usize, const M: usize, R: RingElement> Add<&Matrix<N, M, R>> for &Matrix<N, M, R> {
+impl<const N: usize, const M: usize, R: RingElement> Add<&Matrix<N, M, R>> for &Matrix<N, M, R> where for <'a> &'a R: RingElementRef<R> {
     type Output = Matrix<N,M,R>;
     fn add(self, other: &Matrix<N,M,R>) -> Self::Output {
-        let mut out = Matrix::new_uninitialized();
+        let mut out = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                out.data[r][c] = self.data[r][c] + other.data[r][c]
+                out.data[r][c] = &self.data[r][c] + &other.data[r][c]
             }
         }
         out
     }
 }
 
-impl<const N: usize, const M: usize, R: RingElement> Neg for &Matrix<N, M, R> {
+impl<const N: usize, const M: usize, R: RingElement> Neg for &Matrix<N, M, R> where for <'a> &'a R: RingElementRef<R> {
     type Output = Matrix<N,M,R>;
     fn neg(self) -> Self::Output {
-        let mut out = Matrix::new_uninitialized();
+        let mut out = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                out.data[r][c] = -self.data[r][c];
+                out.data[r][c] = -&self.data[r][c];
             }
         }
         out
@@ -187,7 +169,7 @@ mod tests {
                 mat[(i,j)] = Z_N::new_u((i*M + j) as u64);
             }
         }
-        let mut zero : Matrix<N,M,Z_N<Q>> = Matrix::zero();
+        let zero : Matrix<N,M,Z_N<Q>> = Matrix::zero();
         assert_eq!(&mat + &zero, mat, "multiplication by identity failed");
     }
 
@@ -293,8 +275,8 @@ mod tests {
 
         let zero : Matrix<N,M,Z_N<Q>> = Matrix::zero();
 
-        assert_eq!(&mat1 * Z_N::zero(), zero, "multiplication by scalar zero doesn't yield zero");
-        assert_eq!(&mat1 * Z_N::one(), mat1, "multiplication by scalar one doesn't yield itself");
-        assert_eq!(&mat1 * Z_N::new_u(5), mat2);
+        assert_eq!(&mat1 * &Z_N::zero(), zero, "multiplication by scalar zero doesn't yield zero");
+        assert_eq!(&mat1 * &Z_N::one(), mat1, "multiplication by scalar one doesn't yield itself");
+        assert_eq!(&mat1 * &Z_N::new_u(5), mat2);
     }
 }

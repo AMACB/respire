@@ -33,7 +33,7 @@ impl DiscreteGaussian {
     }
 
     pub fn sample_int_matrix<const N: usize, const M: usize, const Q: u64>(&self, rng: &mut ChaCha20Rng) -> Matrix<N, M, Z_N<Q>> {
-        let mut mat = Matrix::new_uninitialized();
+        let mut mat = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
                 mat[(r,c)] = self.sample(rng);

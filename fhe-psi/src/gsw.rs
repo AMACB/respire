@@ -16,17 +16,17 @@ pub struct Ciphertext<const N: usize, const M: usize, const P: u64, const Q: u64
     ct : Matrix<N,M,Z_N<Q>>
 }
 
-impl<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize> Add<Z_N<P>> for &Ciphertext<N,M,P,Q,G_BASE,G_LEN> {
+impl<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize> Add<&Z_N<P>> for &Ciphertext<N,M,P,Q,G_BASE,G_LEN> {
     type Output = Ciphertext<N,M,P,Q,G_BASE,G_LEN>;
-    fn add(self, rhs: Z_N<P>) -> Self::Output {
-        Ciphertext { ct: &self.ct + &(&build_gadget::<N,M,Q,G_BASE,G_LEN>() * Z_N::new_u(rhs.to_u())) }
+    fn add(self, rhs: &Z_N<P>) -> Self::Output {
+        Ciphertext { ct: &self.ct + &(&build_gadget::<N,M,Q,G_BASE,G_LEN>() * &Z_N::new_u(rhs.to_u())) }
     }
 }
 
-impl<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize> Mul<Z_N<P>> for &Ciphertext<N,M,P,Q,G_BASE,G_LEN> {
+impl<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize> Mul<&Z_N<P>> for &Ciphertext<N,M,P,Q,G_BASE,G_LEN> {
     type Output = Ciphertext<N,M,P,Q,G_BASE,G_LEN>;
-    fn mul(self, rhs: Z_N<P>) -> Self::Output {
-        Ciphertext { ct: &self.ct * &gadget_inverse::<N,M,M,Q,G_BASE,G_LEN>(&(&build_gadget::<N,M,Q,G_BASE,G_LEN>() * Z_N::new_u(rhs.to_u()))) }
+    fn mul(self, rhs: &Z_N<P>) -> Self::Output {
+        Ciphertext { ct: &self.ct * &gadget_inverse::<N,M,M,Q,G_BASE,G_LEN>(&(&build_gadget::<N,M,Q,G_BASE,G_LEN>() * &Z_N::new_u(rhs.to_u()))) }
     }
 }
 
@@ -60,13 +60,13 @@ pub mod gsw {
         let e : Matrix<1, M, Z_N<Q>> = dg.sample_int_matrix(&mut rng);
 
         let A : Matrix<N, M, Z_N<Q>> = stack(&a_bar, &(&(&s_bar_T * &a_bar) + &e));
-        let mut s_T : Matrix<1, N, Z_N<Q>> = Matrix::new_uninitialized();
+        let mut s_T : Matrix<1, N, Z_N<Q>> = Matrix::zero();
         s_T.copy_into(&(-&s_bar_T), 0, 0);
         s_T[(0,N-1)] = Z_N::one();
         (PublicKey {A}, PrivateKey {s_T})
     }
 
-    pub fn encrypt<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize>(pk : &PublicKey<N,M,P,Q,G_BASE,G_LEN>, mu: Z_N<P>) -> Ciphertext<N,M,P,Q,G_BASE,G_LEN> {
+    pub fn encrypt<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize>(pk : &PublicKey<N,M,P,Q,G_BASE,G_LEN>, mu: &Z_N<P>) -> Ciphertext<N,M,P,Q,G_BASE,G_LEN> {
         let A = &pk.A;
 
         let mut rng = ChaCha20Rng::from_entropy();
@@ -83,16 +83,16 @@ pub mod gsw {
         let G = build_gadget::<N,M,Q,G_BASE,G_LEN>();
 
         let mu = Z_N::new_u(mu.to_u());
-        let ct = &(A * &R) + &(&G * mu);
+        let ct = &(A * &R) + &(&G * &mu);
         Ciphertext {ct}
     }
 
     pub fn decrypt<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize>(sk: &PrivateKey<N,M,P,Q,G_BASE,G_LEN>, ct: &Ciphertext<N,M,P,Q,G_BASE,G_LEN>) -> Z_N<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
-        let g_inv = &gadget_inverse::<N,M,N,Q,G_BASE,G_LEN>(&(&identity::<N, Z_N<Q>>() * Z_N::new_u(Q / P)));
+        let g_inv = &gadget_inverse::<N,M,N,Q,G_BASE,G_LEN>(&(&identity::<N, Z_N<Q>>() * &Z_N::new_u(Q / P)));
 
-        let pt = (&(s_T * ct) * g_inv)[(0, N-1)];
+        let pt = &(&(s_T * ct) * g_inv)[(0, N-1)];
 
         let floored = pt.to_u() * P * 2 / Q;
 
@@ -113,7 +113,7 @@ mod tests {
 
         for i in 0..TEST_PARAMS_RAW.M {
             // abs(e[i]) < threshold
-            assert!((e[(0,i)].to_u() as f64) < threshold || ((-e[(0,i)]).to_u() as f64) < threshold, "e^T = s_T * A was too big");
+            assert!((e[(0,i)].to_u() as f64) < threshold || ((-&e[(0,i)]).to_u() as f64) < threshold, "e^T = s_T * A was too big");
         }
     }
 
@@ -122,7 +122,7 @@ mod tests {
         let (A, s_T) = gsw::keygen(TEST_PARAMS);
         for i in 0..10 {
             let mu = Z_N::new_u(i);
-            let ct = gsw::encrypt(&A, mu);
+            let ct = gsw::encrypt(&A, &mu);
             let pt = gsw::decrypt(&s_T, &ct);
             assert_eq!(pt, mu, "decryption failed");
         }
@@ -135,17 +135,17 @@ mod tests {
             for j in 0..10 {
                 let mu1 = Z_N::new_u(i);
                 let mu2 = Z_N::new_u(j);
-                let ct1 = gsw::encrypt(&A, mu1);
-                let ct2 = gsw::encrypt(&A, mu2);
-                let pt_add = gsw::decrypt(&s_T, &(&ct1 + mu2));
-                let pt_mul = gsw::decrypt(&s_T, &(&ct1 * mu2));
+                let ct1 = gsw::encrypt(&A, &mu1);
+                let ct2 = gsw::encrypt(&A, &mu2);
+                let pt_add = gsw::decrypt(&s_T, &(&ct1 + &mu2));
+                let pt_mul = gsw::decrypt(&s_T, &(&ct1 * &mu2));
                 let pt_add_ct = gsw::decrypt(&s_T, &(&ct1 + &ct2));
                 let pt_mul_ct = gsw::decrypt(&s_T, &(&ct1 * &ct2));
-                assert_eq!(pt_add, mu1 + mu2, "addition by scalar failed");
-                assert_eq!(pt_add_ct, mu1 + mu2, "ciphertext addition failed");
+                assert_eq!(pt_add, &mu1 + &mu2, "addition by scalar failed");
+                assert_eq!(pt_add_ct, &mu1 + &mu2, "ciphertext addition failed");
 
-                assert_eq!(pt_mul, mu1 * mu2, "multiplication by scalar failed");
-                assert_eq!(pt_mul_ct, mu1 * mu2, "ciphertext multiplication failed");
+                assert_eq!(pt_mul, &mu1 * &mu2, "multiplication by scalar failed");
+                assert_eq!(pt_mul_ct, &mu1 * &mu2, "ciphertext multiplication failed");
             }
         }
     }
