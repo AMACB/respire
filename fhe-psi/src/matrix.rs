@@ -4,19 +4,25 @@ use rand::Rng;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Matrix<const N: usize, const M: usize, R: RingElement> where for <'a> &'a R: RingElementRef<R> {
-    data: [[R ; M] ; N],
+    data: Vec<R>
 }
 
 impl<const N: usize, const M: usize, R: RingElement> Matrix<N,M,R> where for <'a> &'a R: RingElementRef<R> {
 
     pub fn zero() -> Self {
-        let mat = [[(); M]; N].map(|row| row.map(|_| R::zero()));
-        Matrix { data: mat }
+        let mut vec = Vec::with_capacity(N*M);
+        for _ in 0..N*M {
+            vec.push(R::zero());
+        }
+        Matrix { data: vec }
     }
 
     pub fn random_rng<T: Rng>(rng: &mut T) -> Self {
-        let mat = [[(); M]; N].map(|row| row.map(|_| R::random(rng)));
-        Matrix { data: mat }
+        let mut vec = Vec::with_capacity(N*M);
+        for _ in 0..N*M {
+            vec.push(R::random(rng));
+        }
+        Matrix { data: vec }
     }
 
     pub fn copy_into<const N2: usize, const M2: usize>(&mut self, m: &Matrix<N2,M2,R>, target_row: usize, target_col: usize) {
@@ -26,7 +32,7 @@ impl<const N: usize, const M: usize, R: RingElement> Matrix<N,M,R> where for <'a
         assert!(target_col + M2 <= M, "copy out of bounds");
         for r in 0..N2 {
             for c in 0..M2 {
-                self.data[target_row+r][target_col+c] = m.data[r][c].clone();
+                self[(target_row+r,target_col+c)] = m[(r,c)].clone();
             }
         }
     }
@@ -35,7 +41,7 @@ impl<const N: usize, const M: usize, R: RingElement> Matrix<N,M,R> where for <'a
 pub fn identity<const N: usize, R: RingElement>() -> Matrix<N,N,R> where for <'a> &'a R: RingElementRef<R> {
     let mut out = Matrix::zero();
     for i in 0..N {
-        out.data[i][i] = R::one();
+        out[(i,i)] = R::one();
     }
     out
 }
@@ -64,12 +70,12 @@ impl<const N: usize, const M: usize, R: RingElement> Index<(usize, usize)> for M
     fn index(&self, index: (usize, usize)) -> &Self::Output {
         assert!(index.0 < N, "index out of bounds");
         assert!(index.1 < M, "index out of bounds");
-        &self.data[index.0][index.1]
+        &self.data[index.0 * M + index.1]
     }
 }
 impl<const N: usize, const M: usize, R: RingElement> IndexMut<(usize, usize)> for Matrix<N, M, R> where for <'a> &'a R: RingElementRef<R> {
     fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
-        &mut self.data[index.0][index.1]
+        &mut self.data[index.0 * M + index.1]
     }
 }
 
@@ -80,7 +86,7 @@ impl<const N: usize, const M: usize, R: RingElement> Mul<&R> for &Matrix<N, M, R
         let mut out = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                out.data[r][c] = &self.data[r][c] * &other;
+                out[(r,c)] = &self[(r,c)] * &other;
             }
         }
         out
@@ -95,7 +101,7 @@ impl<const N: usize, const M: usize, const K: usize, R: RingElement> Mul<&Matrix
         for r in 0..N {
             for c in 0..K {
                 for i in 0..M {
-                    out.data[r][c] += &(&self.data[r][i] * &other.data[i][c]);
+                    out[(r,c)] += &(&self[(r,i)] * &other[(i,c)]);
                 }
             }
         }
@@ -109,7 +115,7 @@ impl<const N: usize, const M: usize, R: RingElement> Add<&Matrix<N, M, R>> for &
         let mut out = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                out.data[r][c] = &self.data[r][c] + &other.data[r][c]
+                out[(r,c)] = &self[(r,c)] + &other[(r,c)]
             }
         }
         out
@@ -122,7 +128,7 @@ impl<const N: usize, const M: usize, R: RingElement> Neg for &Matrix<N, M, R> wh
         let mut out = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                out.data[r][c] = -&self.data[r][c];
+                out[(r,c)] = -&self[(r,c)];
             }
         }
         out
