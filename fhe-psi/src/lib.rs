@@ -4,7 +4,6 @@ pub mod intersect;
 pub mod polynomial;
 
 pub mod z_n;
-pub mod poly;
 pub mod ring_elem;
 pub mod matrix;
 
