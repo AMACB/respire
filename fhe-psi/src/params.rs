@@ -31,7 +31,7 @@ pub const fn ceil_log(base: u64, x: u64) -> usize {
 pub const TEST_PARAMS_RAW : RawParams = RawParams {
     N: 5,
     M: 140,
-    P: 10,
+    P: 41,
     Q: 268369921,
     gadget_base: 2,
     noise_width: 6.4,
@@ -76,7 +76,7 @@ mod tests {
     use super::*;
 
 
-    fn verify_int_params<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize, const N_MINUS_1: usize>(params: IntParams<N,M,P,Q,G_BASE,G_LEN,N_MINUS_1>) {
+    fn verify_int_params<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize, const N_MINUS_1: usize>(_params: IntParams<N,M,P,Q,G_BASE,G_LEN,N_MINUS_1>) {
         assert!(N_MINUS_1+1 == N, "N_MINUS_1 not correct");
         assert!(P <= Q, "plaintext modulus bigger than ciphertext modulus");
         let mut x = Q;

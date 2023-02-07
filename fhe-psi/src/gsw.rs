@@ -149,4 +149,34 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn homomorphism_mul_multiple_correct() {
+        let (A, s_T) = gsw::keygen(TEST_PARAMS);
+        let mu1 = Z_N::new_u(5);
+        let mu2 = Z_N::new_u(12);
+        let mu3 = Z_N::new_u(6);
+        let mu4 = Z_N::new_u(18);
+
+        let ct1 = gsw::encrypt(&A,&mu1);
+        let ct2 = gsw::encrypt(&A,&mu2);
+        let ct3 = gsw::encrypt(&A,&mu3);
+        let ct4 = gsw::encrypt(&A,&mu4);
+
+        let ct12 = &ct1 * &ct2;
+        let ct34 = &ct3 * &ct4;
+        let ct1234 = &ct12 * &ct34;
+        let ct31234 = &ct3 * &ct1234;
+
+        let pt12 = gsw::decrypt(&s_T, &ct12);
+        let pt34 = gsw::decrypt(&s_T, &ct34);
+        let pt1234 = gsw::decrypt(&s_T, &ct1234);
+        let pt31234 = gsw::decrypt(&s_T, &ct31234);
+
+        assert_eq!(pt12, &mu1 * &mu2);
+        assert_eq!(pt34, &mu3 * &mu4);
+        assert_eq!(pt1234, &(&(&mu1 * &mu2) * &mu3) * &mu4);
+        assert_eq!(pt31234, &(&(&(&mu1 * &mu2) * &mu3) * &mu4) * &mu3);
+    }
+
 }

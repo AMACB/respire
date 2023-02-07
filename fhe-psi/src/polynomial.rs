@@ -1,3 +1,7 @@
+use crate::gsw;
+use crate::gsw::{Ciphertext, PublicKey};
+use crate::z_n::Z_N;
+
 #[derive(PartialEq, Debug)]
 pub struct PolyU32<const N: u32> {
     coeff: Vec<u32>,
@@ -58,6 +62,17 @@ impl<const N: u32> PolyU32<N> {
             current_pow %= N as u64;
         }
         result as u32
+    }
+
+    pub fn eval_gsw<const NN: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize>(&self, pk: &PublicKey<NN,M,P,Q,G_BASE,G_LEN>, ct: &Ciphertext<NN,M,P,Q,G_BASE,G_LEN>) -> Ciphertext<NN,M,P,Q,G_BASE,G_LEN> {
+        let mut result = gsw::gsw::encrypt(&pk, &Z_N::new_u(0));
+        let mut current_pow = gsw::gsw::encrypt(&pk, &Z_N::new_u(1));
+        for a in &self.coeff {
+            let term = &current_pow * &gsw::gsw::encrypt(&pk, &Z_N::new_u(*a as u64));
+            result = &result + &term;
+            current_pow = &current_pow * ct;
+        }
+        result
     }
 
     pub fn mul(&self, other: &PolyU32<N>) -> PolyU32<N> {
