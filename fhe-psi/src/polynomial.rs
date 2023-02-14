@@ -1,6 +1,6 @@
-use crate::gsw;
-use crate::gsw::{Ciphertext, PublicKey};
-use crate::z_n::Z_N;
+// use crate::gsw;
+// use crate::gsw::{Ciphertext, PublicKey};
+// use crate::z_n::Z_N;
 
 #[derive(PartialEq, Debug)]
 pub struct PolyU32<const N: u32> {
@@ -64,16 +64,16 @@ impl<const N: u32> PolyU32<N> {
         result as u32
     }
 
-    pub fn eval_gsw<const NN: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize>(&self, pk: &PublicKey<NN,M,P,Q,G_BASE,G_LEN>, ct: &Ciphertext<NN,M,P,Q,G_BASE,G_LEN>) -> Ciphertext<NN,M,P,Q,G_BASE,G_LEN> {
-        let mut result = gsw::gsw::encrypt(&pk, &Z_N::new_u(0));
-        let mut current_pow = gsw::gsw::encrypt(&pk, &Z_N::new_u(1));
-        for a in &self.coeff {
-            let term = &current_pow * &gsw::gsw::encrypt(&pk, &Z_N::new_u(*a as u64));
-            result = &result + &term;
-            current_pow = &current_pow * ct;
-        }
-        result
-    }
+    // pub fn eval_gsw<const NN: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize>(&self, pk: &PublicKey<NN, M, P, Q, G_BASE, G_LEN>, ct: &Ciphertext<NN, M, P, Q, G_BASE, G_LEN>) -> Ciphertext<NN, M, P, Q, G_BASE, G_LEN> {
+    //     let mut result = gsw::gsw::encrypt(&pk, &Z_N::new_u(0));
+    //     let mut current_pow = gsw::gsw::encrypt(&pk, &Z_N::new_u(1));
+    //     for a in &self.coeff {
+    //         let term = &current_pow * &gsw::gsw::encrypt(&pk, &Z_N::new_u(*a as u64));
+    //         result = &result + &term;
+    //         current_pow = &current_pow * ct;
+    //     }
+    //     result
+    // }
 
     pub fn mul(&self, other: &PolyU32<N>) -> PolyU32<N> {
         let mut result_coeff = vec![];
@@ -81,7 +81,7 @@ impl<const N: u32> PolyU32<N> {
         for (i, a) in self.coeff.iter().enumerate() {
             for (j, b) in other.coeff.iter().enumerate() {
                 result_coeff[i + j] =
-                    (((result_coeff[i+j] as u64) + (*a as u64) * (*b as u64))
+                    (((result_coeff[i + j] as u64) + (*a as u64) * (*b as u64))
                         % (N as u64)) as u32;
             }
         }
@@ -111,9 +111,9 @@ mod test {
     fn test_eval() {
         let p = PolyU32::<P>::new(vec![5, 3, 1]);
 
-        assert_eq!(p.eval(P-3), 5);
-        assert_eq!(p.eval(P-2), 3);
-        assert_eq!(p.eval(P-1), 3);
+        assert_eq!(p.eval(P - 3), 5);
+        assert_eq!(p.eval(P - 2), 3);
+        assert_eq!(p.eval(P - 1), 3);
         assert_eq!(p.eval(0), 5);
         assert_eq!(p.eval(1), 9);
         assert_eq!(p.eval(2), 15);
@@ -123,8 +123,8 @@ mod test {
     #[test]
     fn test_mul() {
         let p = PolyU32::<P>::new(vec![5, 3, 1]);
-        let q = PolyU32::<P>::new(vec![P-4, 2, 1]);
-        let r = PolyU32::<P>::new(vec![P-20, P-2, 7, 5, 1]);
+        let q = PolyU32::<P>::new(vec![P - 4, 2, 1]);
+        let r = PolyU32::<P>::new(vec![P - 20, P - 2, 7, 5, 1]);
 
         assert_eq!(p.mul(&q), r);
     }
