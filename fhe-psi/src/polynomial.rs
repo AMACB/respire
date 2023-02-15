@@ -32,9 +32,7 @@ impl<const N: u64> From<Vec<Z_N<N>>> for PolynomialZ_N<N> {
             idx -= 1;
         }
         coeff.resize(idx, 0_u64.into());
-        PolynomialZ_N {
-            coeff,
-        }
+        PolynomialZ_N { coeff }
     }
 }
 

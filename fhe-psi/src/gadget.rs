@@ -1,7 +1,13 @@
 use crate::matrix::*;
 use crate::z_n::*;
 
-pub fn build_gadget<const N: usize, const M: usize, const Q: u64, const G_BASE: u64, const G_LEN: usize>() -> Matrix<N, M, Z_N<Q>> {
+pub fn build_gadget<
+    const N: usize,
+    const M: usize,
+    const Q: u64,
+    const G_BASE: u64,
+    const G_LEN: usize,
+>() -> Matrix<N, M, Z_N<Q>> {
     let mut gadget = Matrix::zero();
 
     let mut x = 1;
@@ -19,7 +25,16 @@ pub fn build_gadget<const N: usize, const M: usize, const Q: u64, const G_BASE: 
     gadget
 }
 
-pub fn gadget_inverse<const N: usize, const M: usize, const K: usize, const Q: u64, const G_BASE: u64, const G_LEN: usize>(m: &Matrix<N, K, Z_N<Q>>) -> Matrix<M, K, Z_N<Q>> {
+pub fn gadget_inverse<
+    const N: usize,
+    const M: usize,
+    const K: usize,
+    const Q: u64,
+    const G_BASE: u64,
+    const G_LEN: usize,
+>(
+    m: &Matrix<N, K, Z_N<Q>>,
+) -> Matrix<M, K, Z_N<Q>> {
     let mut m_expanded: Matrix<M, K, Z_N<Q>> = Matrix::zero();
 
     for i in 0..N {
@@ -33,7 +48,6 @@ pub fn gadget_inverse<const N: usize, const M: usize, const K: usize, const Q: u
     }
     m_expanded
 }
-
 
 #[cfg(test)]
 mod tests {

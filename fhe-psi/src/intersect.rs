@@ -14,7 +14,10 @@ pub fn intersect_naive(client_set: &Vec<u32>, server_set: &Vec<u32>) -> Vec<u32>
     result_set
 }
 
-pub fn intersect_poly_no_encrypt<const P: u32>(client_set: &Vec<u32>, server_set: &Vec<u32>) -> Vec<u32> {
+pub fn intersect_poly_no_encrypt<const P: u32>(
+    client_set: &Vec<u32>,
+    server_set: &Vec<u32>,
+) -> Vec<u32> {
     let mut result_set = vec![];
     let mut p = PolyU32::<P>::new(vec![1]);
     for i in server_set {
@@ -135,7 +138,10 @@ mod test {
             expected
         );
         assert_eq!(
-            HashSet::<u32>::from_iter(intersect_poly_no_encrypt::<{ PolyU32::<0>::P }>(&client_set, &server_set)),
+            HashSet::<u32>::from_iter(intersect_poly_no_encrypt::<{ PolyU32::<0>::P }>(
+                &client_set,
+                &server_set
+            )),
             expected
         );
     }

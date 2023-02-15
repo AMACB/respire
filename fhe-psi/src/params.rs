@@ -53,10 +53,17 @@ pub const TEST_PARAMS_RAW: RawParams = RawParams {
  *   - NG_LEN: N * G_LEN, since generics cannot be used in const expressions yet. Used only in ciphertext multiplication.
  */
 
-pub struct IntParams<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize, const N_MINUS_1: usize> {
+pub struct IntParams<
+    const N: usize,
+    const M: usize,
+    const P: u64,
+    const Q: u64,
+    const G_BASE: u64,
+    const G_LEN: usize,
+    const N_MINUS_1: usize,
+> {
     pub noise_width: f64,
 }
-
 
 pub const TEST_PARAMS: IntParams<
     { TEST_PARAMS_RAW.N },
@@ -70,19 +77,31 @@ pub const TEST_PARAMS: IntParams<
     noise_width: TEST_PARAMS_RAW.noise_width,
 };
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn verify_int_params<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize, const N_MINUS_1: usize>(_params: IntParams<N, M, P, Q, G_BASE, G_LEN, N_MINUS_1>) {
+    fn verify_int_params<
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const N_MINUS_1: usize,
+    >(
+        _params: IntParams<N, M, P, Q, G_BASE, G_LEN, N_MINUS_1>,
+    ) {
         assert_eq!(N_MINUS_1 + 1, N, "N_MINUS_1 not correct");
         assert!(P <= Q, "plaintext modulus bigger than ciphertext modulus");
         let mut x = Q;
         for _ in 0..G_LEN {
             x /= G_BASE;
         }
-        assert_eq!(x, 0, "gadget matrix not long enough (expected: G_LEN >= log Q)");
+        assert_eq!(
+            x, 0,
+            "gadget matrix not long enough (expected: G_LEN >= log Q)"
+        );
         assert!(G_LEN * N <= M, "M >= N log Q not satisfied");
     }
 
@@ -124,4 +143,3 @@ mod tests {
 //     pub instances: usize,
 //     pub db_item_size: usize,
 // }
-

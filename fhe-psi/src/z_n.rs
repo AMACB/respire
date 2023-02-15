@@ -22,16 +22,14 @@ impl<const N: u64> From<Z_N<N>> for u64 {
 
 impl<const N: u64> From<u64> for Z_N<N> {
     fn from(a: u64) -> Self {
-        Z_N {
-            a: a % N
-        }
+        Z_N { a: a % N }
     }
 }
 
 impl<const N: u64> From<i64> for Z_N<N> {
     fn from(a: i64) -> Self {
         Z_N {
-            a: (a % (N as i64) + (N as i64)) as u64 % N
+            a: (a % (N as i64) + (N as i64)) as u64 % N,
         }
     }
 }
@@ -224,7 +222,6 @@ mod test {
         assert_eq!(17_u64, (a * b).into());
         a *= Z_31::from(3_u64);
         assert_eq!(17_u64, a.into());
-
 
         let a: Z_BIG = 10_u64.into();
         let b: Z_BIG = -a;
