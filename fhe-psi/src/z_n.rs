@@ -1,7 +1,6 @@
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use rand::distributions::Standard;
 use rand::Rng;
 
 use crate::ring_elem::*;
@@ -95,8 +94,7 @@ impl<const N: u64> RingElement for Z_N<N> {
         1_u64.into()
     }
     fn random<T: Rng>(rng: &mut T) -> Self {
-        // TODO: not actually uniform :clown:
-        rng.sample_iter::<u64, _>(&Standard).next().unwrap().into()
+        rng.gen_range(0..N).into()
     }
 }
 
