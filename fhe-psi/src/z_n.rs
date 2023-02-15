@@ -6,7 +6,7 @@ use rand::Rng;
 
 use crate::ring_elem::*;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Z_N<const N: u64> {
     a: u64,
 }
@@ -38,7 +38,7 @@ impl<const N: u64> From<i64> for Z_N<N> {
 }
 
 /*
- * Math Operations (for owned copies)
+ * Math Operations (owned)
  */
 
 impl<const N: u64> Add for Z_N<N> {
@@ -115,7 +115,7 @@ impl<const N: u64> fmt::Debug for Z_N<N> {
 }
 
 /*
- * Math Operations (for borrows)
+ * Math Operations (borrows)
  */
 
 impl<const N: u64> RingElementRef<Z_N<N>> for &Z_N<N> {}
@@ -211,19 +211,19 @@ mod test {
 
         let mut a: Z_31 = 23_u64.into();
         let b: Z_31 = 24_u64.into();
-        assert_eq!(16_u64, (a.clone() + b).into());
+        assert_eq!(16_u64, (a + b).into());
         a += Z_31::from(24_u64);
         assert_eq!(16_u64, a.into());
 
         let mut a: Z_31 = 23_u64.into();
         let b: Z_31 = 24_u64.into();
-        assert_eq!(30_u64, (a.clone() - b).into());
+        assert_eq!(30_u64, (a - b).into());
         a -= Z_31::from(24_u64);
         assert_eq!(30_u64, a.into());
 
         let mut a: Z_31 = 16_u64.into();
         let b: Z_31 = 3_u64.into();
-        assert_eq!(17_u64, (a.clone() * b).into());
+        assert_eq!(17_u64, (a * b).into());
         a *= Z_31::from(3_u64);
         assert_eq!(17_u64, a.into());
 
@@ -234,25 +234,25 @@ mod test {
 
         let mut a: Z_BIG = (u64::MAX - 50005).into();
         let b: Z_BIG = 60006_u64.into();
-        assert_eq!(10002_u64, (a.clone() + b).into());
+        assert_eq!(10002_u64, (a + b).into());
         a += Z_BIG::from(60006_u64);
         assert_eq!(10002_u64, a.into());
 
         let mut a: Z_BIG = 50005_u64.into();
         let b: Z_BIG = 70007_u64.into();
-        assert_eq!(u64::MAX - 20003, (a.clone() - b).into());
+        assert_eq!(u64::MAX - 20003, (a - b).into());
         a -= Z_BIG::from(70007_u64);
         assert_eq!(u64::MAX - 20003, a.into());
 
         let mut a: Z_BIG = (u64::MAX - 1 - 1984).into();
         let b: Z_BIG = (u64::MAX - 1 - 3968).into();
-        assert_eq!(7872512_u64, (a.clone() * b).into());
+        assert_eq!(7872512_u64, (a * b).into());
         a *= Z_BIG::from(u64::MAX - 1 - 3968);
         assert_eq!(7872512_u64, a.into());
 
         let mut a: Z_BIG = (u64::MAX - 1 - 1984).into();
         let b: Z_BIG = 3968_u64.into();
-        assert_eq!(u64::MAX - 1 - 7872512, (a.clone() * b).into());
+        assert_eq!(u64::MAX - 1 - 7872512, (a * b).into());
         a *= Z_BIG::from(3968_u64);
         assert_eq!(u64::MAX - 1 - 7872512, a.into());
     }

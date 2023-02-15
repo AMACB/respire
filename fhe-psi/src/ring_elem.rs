@@ -3,7 +3,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use rand::Rng;
 
 pub trait RingElement:
-Sized + Clone
+Sized + Clone + PartialEq + Eq
 + for<'a> AddAssign<&'a Self>
 + for<'a> SubAssign<&'a Self>
 + for<'a> MulAssign<&'a Self>
