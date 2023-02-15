@@ -28,7 +28,7 @@ pub const fn ceil_log(base: u64, x: u64) -> usize {
     e
 }
 
-pub const TEST_PARAMS_RAW : RawParams = RawParams {
+pub const TEST_PARAMS_RAW: RawParams = RawParams {
     N: 5,
     M: 140,
     P: 41,
@@ -58,15 +58,15 @@ pub struct IntParams<const N: usize, const M: usize, const P: u64, const Q: u64,
 }
 
 
-pub const TEST_PARAMS : IntParams<
-        {TEST_PARAMS_RAW.N},
-        {TEST_PARAMS_RAW.M},
-        {TEST_PARAMS_RAW.P},
-        {TEST_PARAMS_RAW.Q},
-        {TEST_PARAMS_RAW.gadget_base},
-        {ceil_log(TEST_PARAMS_RAW.gadget_base, TEST_PARAMS_RAW.Q)},
-        {TEST_PARAMS_RAW.N-1},
-    > = IntParams {
+pub const TEST_PARAMS: IntParams<
+    { TEST_PARAMS_RAW.N },
+    { TEST_PARAMS_RAW.M },
+    { TEST_PARAMS_RAW.P },
+    { TEST_PARAMS_RAW.Q },
+    { TEST_PARAMS_RAW.gadget_base },
+    { ceil_log(TEST_PARAMS_RAW.gadget_base, TEST_PARAMS_RAW.Q) },
+    { TEST_PARAMS_RAW.N - 1 },
+> = IntParams {
     noise_width: TEST_PARAMS_RAW.noise_width,
 };
 
@@ -75,9 +75,8 @@ pub const TEST_PARAMS : IntParams<
 mod tests {
     use super::*;
 
-
-    fn verify_int_params<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize, const N_MINUS_1: usize>(_params: IntParams<N,M,P,Q,G_BASE,G_LEN,N_MINUS_1>) {
-        assert!(N_MINUS_1+1 == N, "N_MINUS_1 not correct");
+    fn verify_int_params<const N: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize, const N_MINUS_1: usize>(_params: IntParams<N, M, P, Q, G_BASE, G_LEN, N_MINUS_1>) {
+        assert_eq!(N_MINUS_1 + 1, N, "N_MINUS_1 not correct");
         assert!(P <= Q, "plaintext modulus bigger than ciphertext modulus");
         let mut x = Q;
         for _ in 0..G_LEN {

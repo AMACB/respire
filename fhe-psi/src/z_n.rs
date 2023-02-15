@@ -14,9 +14,9 @@ pub struct Z_N<const N: u64> {
  * Conversions
  */
 
-impl<const N: u64> Into<u64> for Z_N<N> {
-    fn into(self) -> u64 {
-        self.a
+impl<const N: u64> From<Z_N<N>> for u64 {
+    fn from(a: Z_N<N>) -> Self {
+        a.a
     }
 }
 

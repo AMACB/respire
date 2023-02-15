@@ -216,7 +216,7 @@ mod test {
         assert_eq!(&q1 + &p1, vec![10, 6, 1].into());
 
         let p2 = PolynomialZ_N::<P>::from(vec![5, 3, 1]);
-        let q2 = PolynomialZ_N::<P>::from(vec![5, 3, P-1]);
+        let q2 = PolynomialZ_N::<P>::from(vec![5, 3, P - 1]);
         assert_eq!(&p2 + &q2, vec![10, 6].into());
         assert_eq!(&q2 + &p2, vec![10, 6].into());
     }

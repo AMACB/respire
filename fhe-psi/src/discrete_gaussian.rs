@@ -1,9 +1,11 @@
+use std::f64::consts::PI;
+
 use rand::distributions::WeightedIndex;
 use rand::prelude::Distribution;
 use rand_chacha::ChaCha20Rng;
-use crate::z_n::*;
+
 use crate::matrix::*;
-use std::f64::consts::PI;
+use crate::z_n::*;
 
 pub const NUM_WIDTHS: usize = 8;
 
@@ -29,14 +31,14 @@ impl DiscreteGaussian {
 
     // FIXME: not constant-time
     pub fn sample<const Q: u64>(&self, rng: &mut ChaCha20Rng) -> Z_N<Q> {
-        Z_N::new_i(self.choices[self.dist.sample(rng)])
+        self.choices[self.dist.sample(rng)].into()
     }
 
     pub fn sample_int_matrix<const N: usize, const M: usize, const Q: u64>(&self, rng: &mut ChaCha20Rng) -> Matrix<N, M, Z_N<Q>> {
         let mut mat = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                mat[(r,c)] = self.sample(rng);
+                mat[(r, c)] = self.sample(rng);
             }
         }
         mat
