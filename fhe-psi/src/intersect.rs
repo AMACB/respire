@@ -77,10 +77,11 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::fhe::FHEInsecure;
     use std::collections::HashSet;
 
-    // use rand::{Rng, SeedableRng};
     use crate::params::TEST_PARAMS_RAW;
+    const TEST_P: u64 = TEST_PARAMS_RAW.P;
 
     use super::*;
 
@@ -100,66 +101,68 @@ mod test {
         );
     }
 
+    #[test]
+    fn test_intersect_additive_insecure() {
+        do_intersect_additive::<TEST_P, FHEInsecure>();
+    }
+
     // #[test]
-    // fn test_intersect_poly_no_encrypt() {
-    //     let client_set = vec![4, 6, 7, 15];
-    //     let server_set = vec![1, 3, 4, 5, 7, 10, 12, 20];
-    //     let expected = HashSet::<u32>::from_iter(vec![4, 7]);
-    //
-    //     assert_eq!(
-    //         HashSet::<u32>::from_iter(intersect_naive(&client_set, &server_set)),
-    //         expected
-    //     );
-    //     assert_eq!(
-    //         HashSet::<u32>::from_iter(intersect_poly_no_encrypt::<41>(&client_set, &server_set)),
-    //         expected
-    //     );
+    // fn test_intersect_additive_gsw() {
+    //     do_intersect_additive::<TEST_P, GSW>();
     // }
-    //
-    // #[test]
-    // fn test_intersect_poly_gsw() {
-    //     let client_set = vec![4, 6, 7, 15];
-    //     let server_set = vec![1, 3, 4, 5, 7, 10, 12, 20];
-    //     let expected = HashSet::<u32>::from_iter(vec![4, 7]);
-    //
-    //     assert_eq!(
-    //         HashSet::<u32>::from_iter(intersect_naive(&client_set, &server_set)),
-    //         expected
-    //     );
-    //     assert_eq!(
-    //         HashSet::<u32>::from_iter(intersect_poly_gsw(&client_set, &server_set)),
-    //         expected
-    //     );
-    // }
-    //
-    // #[test]
-    // fn test_intersect_poly_no_encrypt_large() {
+
+    // TODO: make these generic over intersection functions
+    // TODO: make general test function that takes client_set, server_set, expected_set & generic intersection function
+
+    fn do_intersect_additive<const P: u64, FHE: FHEScheme<P>>()
+    where
+        for<'a> &'a <FHE as FHEScheme<P>>::Ciphertext:
+            CiphertextRef<P, <FHE as FHEScheme<P>>::Ciphertext>,
+    {
+        let client_set: Vec<Z_N<P>> = vec![4_u64, 6, 7, 15].into_iter().map(Z_N::from).collect();
+        let server_set: Vec<Z_N<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
+            .into_iter()
+            .map(Z_N::from)
+            .collect();
+        let expected: Vec<Z_N<P>> = vec![4_u64, 7].into_iter().map(Z_N::from).collect();
+
+        assert_eq!(
+            HashSet::<Z_N<P>>::from_iter(intersect_additive::<P, FHE>(&client_set, &server_set)),
+            HashSet::<Z_N<P>>::from_iter(expected)
+        );
+    }
+
+    // fn do_intersect_additive_large<const P: u64, FHE: FHEScheme<P>>()
+    // where
+    //     for<'a> &'a <FHE as FHEScheme<P>>::Ciphertext:
+    //         CiphertextRef<P, <FHE as FHEScheme<P>>::Ciphertext>,
+    // {
     //     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(1984);
     //     let NUM_CLIENT = 2000;
     //     let NUM_SERVER = 2000;
     //     let NUM_BOTH = 1000;
     //
-    //     let mut client_set = vec![];
-    //     let mut server_set = vec![];
-    //     let mut expected = vec![];
-    //     let mut seen = HashSet::new();
+    //     let mut client_set: Vec<Z_N<P>> = vec![];
+    //     let mut server_set: Vec<Z_N<P>> = vec![];
+    //     let mut expected: Vec<Z_N<P>> = vec![];
+    //     let mut seen: HashSet<Z_N<P>> = HashSet::new();
     //
     //     for _ in 0..NUM_CLIENT {
-    //         let n = rng.gen::<u32>();
+    //         let n = Z_N::<P>::random();
     //         assert!(!seen.contains(&n));
     //         seen.insert(n);
     //         client_set.push(n);
     //     }
     //
     //     for _ in 0..NUM_SERVER {
-    //         let n = rng.gen::<u32>();
+    //         let n = Z_N::<P>::random();
     //         assert!(!seen.contains(&n));
     //         seen.insert(n);
     //         server_set.push(n);
     //     }
     //
     //     for _ in 0..NUM_BOTH {
-    //         let n = rng.gen::<u32>();
+    //         let n = Z_N::<P>::random();;
     //         assert!(!seen.contains(&n));
     //         seen.insert(n);
     //         client_set.push(n);
@@ -167,14 +170,14 @@ mod test {
     //         expected.push(n);
     //     }
     //
-    //     let expected = HashSet::<u32>::from_iter(expected);
+    //     let expected = HashSet::<Z_N<P>>::from_iter(expected);
     //
     //     assert_eq!(
-    //         HashSet::<u32>::from_iter(intersect_naive(&client_set, &server_set)),
+    //         HashSet::<Z_N<P>>::from_iter(intersect_naive(&client_set, &server_set)),
     //         expected
     //     );
     //     assert_eq!(
-    //         HashSet::<u32>::from_iter(intersect_poly_no_encrypt::<{ PolyU32::<0>::P }>(
+    //         HashSet::<Z_N<P>>::from_iter(intersect_poly_no_encrypt::<{ PolyU32::<0>::P }>(
     //             &client_set,
     //             &server_set,
     //         )),

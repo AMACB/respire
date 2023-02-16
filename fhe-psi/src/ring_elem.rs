@@ -21,7 +21,6 @@ where
 pub trait RingElementRef<Owned: RingElement>:
     Sized
     + Clone
-    + Copy
     + Add<Self, Output = Owned>
     + Sub<Self, Output = Owned>
     + Mul<Self, Output = Owned>

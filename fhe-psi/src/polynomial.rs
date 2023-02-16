@@ -109,6 +109,8 @@ impl<const N: u64> RingElement for PolynomialZ_N<N> {
     }
 }
 
+// TODO: make these not stupid
+
 impl<'a, const N: u64> AddAssign<&'a Self> for PolynomialZ_N<N> {
     fn add_assign(&mut self, _: &'a Self) {
         todo!()
@@ -122,8 +124,9 @@ impl<'a, const N: u64> SubAssign<&'a Self> for PolynomialZ_N<N> {
 }
 
 impl<'a, const N: u64> MulAssign<&'a Self> for PolynomialZ_N<N> {
-    fn mul_assign(&mut self, _: &'a Self) {
-        todo!()
+    fn mul_assign(&mut self, rhs: &'a Self) {
+        let result = &(*self) * rhs;
+        self.coeff = result.coeff;
     }
 }
 

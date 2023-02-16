@@ -7,8 +7,8 @@ pub mod ring_elem;
 pub mod z_n;
 
 // FHE related constructs
-pub mod fhe;
 pub mod discrete_gaussian;
+pub mod fhe;
 pub mod gadget;
 pub mod gsw;
 pub mod params;
