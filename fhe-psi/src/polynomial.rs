@@ -112,14 +112,16 @@ impl<const N: u64> RingElement for PolynomialZ_N<N> {
 // TODO: make these not stupid
 
 impl<'a, const N: u64> AddAssign<&'a Self> for PolynomialZ_N<N> {
-    fn add_assign(&mut self, _: &'a Self) {
-        todo!()
+    fn add_assign(&mut self, rhs: &'a Self) {
+        let result = &(*self) + rhs;
+        self.coeff = result.coeff
     }
 }
 
 impl<'a, const N: u64> SubAssign<&'a Self> for PolynomialZ_N<N> {
-    fn sub_assign(&mut self, _: &'a Self) {
-        todo!()
+    fn sub_assign(&mut self, rhs: &'a Self) {
+        let result = &(*self) - rhs;
+        self.coeff = result.coeff
     }
 }
 
@@ -157,17 +159,6 @@ impl<const N: u64> PolynomialZ_N<N> {
     pub fn coeff_iter(&self) -> Iter<'_, Z_N<{ N }>> {
         self.coeff.iter()
     }
-
-    // pub fn eval_gsw<const NN: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize>(&self, pk: &PublicKey<NN, M, P, Q, G_BASE, G_LEN>, ct: &Ciphertext<NN, M, P, Q, G_BASE, G_LEN>) -> Ciphertext<NN, M, P, Q, G_BASE, G_LEN> {
-    //     let mut result = gsw::gsw::encrypt(&pk, &Z_N::new_u(0));
-    //     let mut current_pow = gsw::gsw::encrypt(&pk, &Z_N::new_u(1));
-    //     for a in &self.coeff {
-    //         let term = &current_pow * &gsw::gsw::encrypt(&pk, &Z_N::new_u(*a as u64));
-    //         result = &result + &term;
-    //         current_pow = &current_pow * ct;
-    //     }
-    //     result
-    // }
 }
 
 #[cfg(test)]
