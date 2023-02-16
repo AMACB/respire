@@ -1,5 +1,6 @@
 use std::iter;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::slice::Iter;
 
 use rand::Rng;
 
@@ -145,6 +146,15 @@ impl<const N: u64> PolynomialZ_N<N> {
         result
     }
 
+    /* Degree of polynomial. By convention 0 has degree -1. */
+    pub fn deg(&self) -> isize {
+        (self.coeff.len() as isize) - 1
+    }
+
+    pub fn coeff_iter(&self) -> Iter<'_, Z_N<{ N }>> {
+        self.coeff.iter()
+    }
+
     // pub fn eval_gsw<const NN: usize, const M: usize, const P: u64, const Q: u64, const G_BASE: u64, const G_LEN: usize>(&self, pk: &PublicKey<NN, M, P, Q, G_BASE, G_LEN>, ct: &Ciphertext<NN, M, P, Q, G_BASE, G_LEN>) -> Ciphertext<NN, M, P, Q, G_BASE, G_LEN> {
     //     let mut result = gsw::gsw::encrypt(&pk, &Z_N::new_u(0));
     //     let mut current_pow = gsw::gsw::encrypt(&pk, &Z_N::new_u(1));
@@ -164,13 +174,16 @@ mod test {
     const P: u64 = (1_u64 << 32) - 5;
 
     #[test]
-    fn test_from() {
+    fn test_from_deg() {
         let p = PolynomialZ_N::<P>::from(vec![42, 6, 1, 0, 0, 0]);
         let q = PolynomialZ_N::<P>::from(vec![42, 6, 1, 0]);
         let r = PolynomialZ_N::<P>::from(vec![42, 6, 1]);
         assert_eq!(p, q);
         assert_eq!(p, r);
         assert_eq!(q, r);
+        assert_eq!(p.deg(), 2);
+        assert_eq!(q.deg(), 2);
+        assert_eq!(r.deg(), 2);
 
         let t = PolynomialZ_N::<P>::from(vec![0, 0]);
         let u = PolynomialZ_N::<P>::from(vec![0]);
@@ -178,6 +191,9 @@ mod test {
         assert_eq!(t, u);
         assert_eq!(t, v);
         assert_eq!(u, v);
+        assert_eq!(t.deg(), -1);
+        assert_eq!(u.deg(), -1);
+        assert_eq!(v.deg(), -1);
     }
 
     #[test]

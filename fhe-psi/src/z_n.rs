@@ -5,7 +5,7 @@ use rand::Rng;
 
 use crate::ring_elem::*;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Z_N<const N: u64> {
     a: u64,
 }
@@ -37,6 +37,18 @@ impl<const N: u64> From<i64> for Z_N<N> {
 /*
  * Math Operations (owned)
  */
+
+impl<const N: u64> RingElement for Z_N<N> {
+    fn zero() -> Self {
+        0_u64.into()
+    }
+    fn one() -> Self {
+        1_u64.into()
+    }
+    fn random<T: Rng>(rng: &mut T) -> Self {
+        rng.gen_range(0..N).into()
+    }
+}
 
 impl<const N: u64> Add for Z_N<N> {
     type Output = Z_N<N>;
@@ -81,18 +93,6 @@ impl<const N: u64> Neg for Z_N<N> {
     type Output = Z_N<N>;
     fn neg(self) -> Self::Output {
         ((N - self.a) % N).into()
-    }
-}
-
-impl<const N: u64> RingElement for Z_N<N> {
-    fn zero() -> Self {
-        0_u64.into()
-    }
-    fn one() -> Self {
-        1_u64.into()
-    }
-    fn random<T: Rng>(rng: &mut T) -> Self {
-        rng.gen_range(0..N).into()
     }
 }
 
