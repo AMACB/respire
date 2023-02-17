@@ -7,6 +7,20 @@ use crate::fhe::{CiphertextRef, FHEScheme};
 use crate::ring_elem::RingElement;
 use crate::{gadget::*, matrix::*, z_n::*};
 
+/*
+ * A naive GSW implementation
+ *
+ * Parameters:
+ *   - N_MINUS_1: N-1, since generics cannot be used in const expressions yet. Used only in key generation.
+ *   - N,M: matrix dimensions.
+ *   - P: plaintext modulus.
+ *   - Q: ciphertext modulus.
+ *   - G_BASE: base used for the gadget matrix.
+ *   - G_LEN: length of the "g" gadget vector, or alternatively log q.
+ *   - NOISE_WIDTH_MILLIONTHS: noise width, expressed in millionths to allow for precision past the decimal point (since f64 is not a valid generic parameter).
+ *   - NG_LEN: N * G_LEN, since generics cannot be used in const expressions yet. Used only in ciphertext multiplication.
+ */
+
 pub struct GSW<
     const N_MINUS_1: usize,
     const N: usize,
@@ -15,7 +29,7 @@ pub struct GSW<
     const Q: u64,
     const G_BASE: u64,
     const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONS: u64,
+    const NOISE_WIDTH_MILLIONTHS: u64,
 > {}
 
 #[derive(Debug)]
@@ -54,18 +68,7 @@ pub struct SecretKey<
     s_T: Matrix<1, N, Z_N<Q>>,
 }
 
-impl<
-        const N_MINUS_1: usize,
-        const N: usize,
-        const M: usize,
-        const P: u64,
-        const Q: u64,
-        const G_BASE: u64,
-        const G_LEN: usize,
-        const NOISE_WIDTH_MILLIONS: u64,
-    > GSW<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN, NOISE_WIDTH_MILLIONS>
-{
-}
+// TODO: Find a way to validate these params at compile time (static_assert / const_guards crate?)
 
 impl<
         const N_MINUS_1: usize,
@@ -75,15 +78,15 @@ impl<
         const Q: u64,
         const G_BASE: u64,
         const G_LEN: usize,
-        const NOISE_WIDTH_MILLIONS: u64,
-    > FHEScheme<P> for GSW<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN, NOISE_WIDTH_MILLIONS>
+        const NOISE_WIDTH_MILLIONTHS: u64,
+    > FHEScheme<P> for GSW<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     type Ciphertext = Ciphertext<N, M, P, Q, G_BASE, G_LEN>;
     type PublicKey = PublicKey<N, M, P, Q, G_BASE, G_LEN>;
     type SecretKey = SecretKey<N, M, P, Q, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        let dg = DiscreteGaussian::init(NOISE_WIDTH_MILLIONS as f64 / 1_000_000_f64);
+        let dg = DiscreteGaussian::init(NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
         let mut rng = ChaCha20Rng::from_entropy();
 
         let a_bar: Matrix<N_MINUS_1, M, Z_N<Q>> = Matrix::random_rng(&mut rng);
@@ -225,7 +228,7 @@ impl<
 }
 
 /*
- * GSW Params & compile-time verification
+ * GSW params
  */
 
 pub const fn ceil_log(base: u64, x: u64) -> usize {
@@ -246,7 +249,7 @@ pub struct Params {
     pub P: u64,
     pub Q: u64,
     pub G_BASE: u64,
-    pub NOISE_WIDTH_MILLIONS: u64,
+    pub NOISE_WIDTH_MILLIONTHS: u64,
 }
 
 macro_rules! gsw_from_params {
@@ -259,18 +262,22 @@ macro_rules! gsw_from_params {
             { $params.Q },
             { $params.G_BASE },
             { ceil_log($params.G_BASE, $params.Q) },
-            { $params.NOISE_WIDTH_MILLIONS },
+            { $params.NOISE_WIDTH_MILLIONTHS },
         >
     }
 }
 
+/*
+ * Pre-defined sets of parameters
+ */
+
 pub const GSW_TEST_PARAMS: Params = Params {
     N: 5,
     M: 140,
-    P: 41,
+    P: 31,
     Q: 268369921,
     G_BASE: 2,
-    NOISE_WIDTH_MILLIONS: 6_400_000,
+    NOISE_WIDTH_MILLIONTHS: 6_400_000,
 };
 
 pub type GSWTest = gsw_from_params!(GSW_TEST_PARAMS);
@@ -281,7 +288,7 @@ mod test {
 
     #[test]
     fn keygen_is_correct() {
-        let threshold = 4f64 * (GSW_TEST_PARAMS.NOISE_WIDTH_MILLIONS as f64 / 1_000_000_f64);
+        let threshold = 4f64 * (GSW_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
         let (A, s_T) = GSWTest::keygen();
         let e = &s_T.s_T * &A.A;
 
@@ -358,3 +365,72 @@ mod test {
         // assert_eq!(pt31234, &(&(&(&mu1 * &mu2) * &mu3) * &mu4) * &mu3);
     }
 }
+
+// Old testing for valid parameters -- for future reference if we want to reimplement these as compile time checks
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//
+//     fn verify_int_params<
+//         const N: usize,
+//         const M: usize,
+//         const P: u64,
+//         const Q: u64,
+//         const G_BASE: u64,
+//         const G_LEN: usize,
+//         const N_MINUS_1: usize,
+//     >(
+//         _params: IntParams<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN>,
+//     ) {
+//         assert_eq!(N_MINUS_1 + 1, N, "N_MINUS_1 not correct");
+//         assert!(P <= Q, "plaintext modulus bigger than ciphertext modulus");
+//         let mut x = Q;
+//         for _ in 0..G_LEN {
+//             x /= G_BASE;
+//         }
+//         assert_eq!(
+//             x, 0,
+//             "gadget matrix not long enough (expected: G_LEN >= log Q)"
+//         );
+//         assert!(G_LEN * N <= M, "M >= N log Q not satisfied");
+//     }
+//
+//     #[test]
+//     fn test_params_is_correct() {
+//         verify_int_params(TEST_PARAMS);
+//     }
+// }
+
+// pub struct Params {
+//     pub poly_len: usize,
+//     pub poly_len_log2: usize,
+//     pub ntt_tables: Vec<Vec<Vec<u64>>>,
+//     pub scratch: Vec<u64>,
+
+//     pub crt_count: usize,
+//     pub barrett_cr_0: [u64; MAX_MODULI],
+//     pub barrett_cr_1: [u64; MAX_MODULI],
+//     pub barrett_cr_0_modulus: u64,
+//     pub barrett_cr_1_modulus: u64,
+//     pub mod0_inv_mod1: u64,
+//     pub mod1_inv_mod0: u64,
+//     pub moduli: [u64; MAX_MODULI],
+//     pub modulus: u64,
+//     pub modulus_log2: u64,
+//     pub noise_width: f64,
+
+//     pub n: usize,
+//     pub pt_modulus: u64,
+//     pub q2_bits: u64,
+//     pub t_conv: usize,
+//     pub t_exp_left: usize,
+//     pub t_exp_right: usize,
+//     pub t_gsw: usize,
+
+//     pub expand_queries: bool,
+//     pub db_dim_1: usize,
+//     pub db_dim_2: usize,
+//     pub instances: usize,
+//     pub db_item_size: usize,
+// }
