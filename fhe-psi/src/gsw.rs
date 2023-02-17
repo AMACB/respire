@@ -15,7 +15,7 @@ pub struct GSW<
     const Q: u64,
     const G_BASE: u64,
     const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
+    const NOISE_WIDTH_MILLIONS: u64,
 > {}
 
 #[derive(Debug)]
@@ -62,17 +62,28 @@ impl<
         const Q: u64,
         const G_BASE: u64,
         const G_LEN: usize,
-        const NOISE_WIDTH_MILLIONTHS: u64,
-    > FHEScheme<P> for GSW<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+        const NOISE_WIDTH_MILLIONS: u64,
+    > GSW<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN, NOISE_WIDTH_MILLIONS>
+{
+}
+
+impl<
+        const N_MINUS_1: usize,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONS: u64,
+    > FHEScheme<P> for GSW<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN, NOISE_WIDTH_MILLIONS>
 {
     type Ciphertext = Ciphertext<N, M, P, Q, G_BASE, G_LEN>;
     type PublicKey = PublicKey<N, M, P, Q, G_BASE, G_LEN>;
     type SecretKey = SecretKey<N, M, P, Q, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        assert_eq!(N_MINUS_1 + 1, N);
-
-        let dg = DiscreteGaussian::init(NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
+        let dg = DiscreteGaussian::init(NOISE_WIDTH_MILLIONS as f64 / 1_000_000_f64);
         let mut rng = ChaCha20Rng::from_entropy();
 
         let a_bar: Matrix<N_MINUS_1, M, Z_N<Q>> = Matrix::random_rng(&mut rng);
@@ -119,6 +130,10 @@ impl<
         Z_N::from((floored + 1) / 2)
     }
 }
+
+/*
+ * GSW homomorphic addition / multiplication
+ */
 
 impl<
         'a,
@@ -209,6 +224,10 @@ impl<
     }
 }
 
+/*
+ * GSW Params & compile-time verification
+ */
+
 pub const fn ceil_log(base: u64, x: u64) -> usize {
     let mut e = 0;
     let mut y = 1;
@@ -227,7 +246,22 @@ pub struct Params {
     pub P: u64,
     pub Q: u64,
     pub G_BASE: u64,
-    pub NOISE_WIDTH_MILLIONTHS: u64,
+    pub NOISE_WIDTH_MILLIONS: u64,
+}
+
+macro_rules! gsw_from_params {
+    ($params:expr) => {
+        GSW<
+            { $params.N - 1 },
+            { $params.N },
+            { $params.M },
+            { $params.P },
+            { $params.Q },
+            { $params.G_BASE },
+            { ceil_log($params.G_BASE, $params.Q) },
+            { $params.NOISE_WIDTH_MILLIONS },
+        >
+    }
 }
 
 pub const GSW_TEST_PARAMS: Params = Params {
@@ -236,19 +270,10 @@ pub const GSW_TEST_PARAMS: Params = Params {
     P: 41,
     Q: 268369921,
     G_BASE: 2,
-    NOISE_WIDTH_MILLIONTHS: 6_400_000,
+    NOISE_WIDTH_MILLIONS: 6_400_000,
 };
 
-pub type GSWTest = GSW<
-    { GSW_TEST_PARAMS.N - 1 },
-    { GSW_TEST_PARAMS.N },
-    { GSW_TEST_PARAMS.M },
-    { GSW_TEST_PARAMS.P },
-    { GSW_TEST_PARAMS.Q },
-    { GSW_TEST_PARAMS.G_BASE },
-    { ceil_log(GSW_TEST_PARAMS.G_BASE, GSW_TEST_PARAMS.Q) },
-    { GSW_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS },
->;
+pub type GSWTest = gsw_from_params!(GSW_TEST_PARAMS);
 
 #[cfg(test)]
 mod test {
@@ -256,7 +281,7 @@ mod test {
 
     #[test]
     fn keygen_is_correct() {
-        let threshold = 4f64 * (GSW_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
+        let threshold = 4f64 * (GSW_TEST_PARAMS.NOISE_WIDTH_MILLIONS as f64 / 1_000_000_f64);
         let (A, s_T) = GSWTest::keygen();
         let e = &s_T.s_T * &A.A;
 
