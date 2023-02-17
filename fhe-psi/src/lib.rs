@@ -10,8 +10,8 @@ pub mod z_n;
 pub mod discrete_gaussian;
 pub mod fhe;
 pub mod gadget;
-// pub mod gsw;
-pub mod params;
+pub mod gsw;
+// pub mod params;
 
 // PSI
 pub mod intersect;

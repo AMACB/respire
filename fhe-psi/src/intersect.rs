@@ -78,16 +78,16 @@ where
 #[cfg(test)]
 mod test {
     use crate::fhe::FHEInsecure;
+    use crate::gsw::GSW_TEST_PARAMS;
     use std::collections::HashSet;
 
-    use crate::params::TEST_PARAMS_RAW;
-    const TEST_P: u64 = TEST_PARAMS_RAW.P;
+    const TEST_P: u64 = GSW_TEST_PARAMS.P;
 
     use super::*;
 
     #[test]
     fn test_intersect_naive() {
-        const P: u64 = TEST_PARAMS_RAW.P;
+        const P: u64 = TEST_P;
         let client_set: Vec<Z_N<P>> = vec![4_u64, 6, 7, 15].into_iter().map(Z_N::from).collect();
         let server_set: Vec<Z_N<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
             .into_iter()

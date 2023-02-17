@@ -50,10 +50,9 @@ pub fn gadget_inverse<
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::params::*;
-
+mod test {
     use super::*;
+    use crate::gsw::ceil_log;
 
     const N: usize = 2;
     const M: usize = 8;

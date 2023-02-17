@@ -184,7 +184,7 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use crate::z_n::*;
 
     use super::*;

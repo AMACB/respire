@@ -54,25 +54,25 @@ pub const TEST_PARAMS_RAW: RawParams = RawParams {
  */
 
 pub struct IntParams<
+    const N_MINUS_1: usize,
     const N: usize,
     const M: usize,
     const P: u64,
     const Q: u64,
     const G_BASE: u64,
     const G_LEN: usize,
-    const N_MINUS_1: usize,
 > {
     pub noise_width: f64,
 }
 
 pub const TEST_PARAMS: IntParams<
+    { TEST_PARAMS_RAW.N - 1 },
     { TEST_PARAMS_RAW.N },
     { TEST_PARAMS_RAW.M },
     { TEST_PARAMS_RAW.P },
     { TEST_PARAMS_RAW.Q },
     { TEST_PARAMS_RAW.gadget_base },
     { ceil_log(TEST_PARAMS_RAW.gadget_base, TEST_PARAMS_RAW.Q) },
-    { TEST_PARAMS_RAW.N - 1 },
 > = IntParams {
     noise_width: TEST_PARAMS_RAW.noise_width,
 };
@@ -90,7 +90,7 @@ mod tests {
         const G_LEN: usize,
         const N_MINUS_1: usize,
     >(
-        _params: IntParams<N, M, P, Q, G_BASE, G_LEN, N_MINUS_1>,
+        _params: IntParams<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN>,
     ) {
         assert_eq!(N_MINUS_1 + 1, N, "N_MINUS_1 not correct");
         assert!(P <= Q, "plaintext modulus bigger than ciphertext modulus");
