@@ -78,7 +78,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::fhe::FHEInsecure;
-    use crate::gsw::GSW_TEST_PARAMS;
+    use crate::gsw::{GSW_TEST_PARAMS, GSWTest};
     use std::collections::HashSet;
 
     const TEST_P: u64 = GSW_TEST_PARAMS.P;
@@ -106,10 +106,10 @@ mod test {
         do_intersect_additive::<TEST_P, FHEInsecure>();
     }
 
-    // #[test]
-    // fn test_intersect_additive_gsw() {
-    //     do_intersect_additive::<TEST_P, GSW>();
-    // }
+    #[test]
+    fn test_intersect_additive_gsw() {
+        do_intersect_additive::<TEST_P, GSWTest>();
+    }
 
     // TODO: make these generic over intersection functions
     // TODO: make general test function that takes client_set, server_set, expected_set & generic intersection function
