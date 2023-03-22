@@ -3,9 +3,9 @@
 // Basic constructs
 pub mod matrix;
 pub mod polynomial;
-pub mod cyclotomic;
 pub mod ring_elem;
 pub mod z_n;
+pub mod z_n_cyclo;
 
 // FHE related constructs
 pub mod discrete_gaussian;

@@ -1,4 +1,4 @@
-use fhe_psi::{z_n::*, fhe::*, gsw::*, intersect::*};
+use fhe_psi::{fhe::*, gsw::*, intersect::*, z_n::*};
 use std::collections::HashSet;
 
 const TEST_P: u64 = GSW_TEST_PARAMS.P;
@@ -13,7 +13,7 @@ fn test_intersect_additive_gsw() {
 fn do_intersect_additive<const P: u64, FHE: FHEScheme<P>>()
 where
     for<'a> &'a <FHE as FHEScheme<P>>::Ciphertext:
-CiphertextRef<P, <FHE as FHEScheme<P>>::Ciphertext>,
+        CiphertextRef<P, <FHE as FHEScheme<P>>::Ciphertext>,
 {
     let client_set: Vec<Z_N<P>> = vec![4_u64, 6, 7, 15].into_iter().map(Z_N::from).collect();
     let server_set: Vec<Z_N<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
