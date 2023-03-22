@@ -89,8 +89,11 @@ impl<const D: usize, const N: u64> Sub for &Z_N_CycloRaw<D, N> {
 
 impl<const D: usize, const N: u64> Mul for &Z_N_CycloRaw<D, N> {
     type Output = Z_N_CycloRaw<D, N>;
-    fn mul(self, _: Self) -> Self::Output {
-        todo!()
+    fn mul(self, rhs: Self) -> Self::Output {
+        let mut self_poly: PolynomialZ_N<N> = self.coeff.to_vec().into();
+        let rhs_poly: PolynomialZ_N<N> = rhs.coeff.to_vec().into();
+        self_poly *= &rhs_poly;
+        self_poly.into()
     }
 }
 
@@ -123,8 +126,6 @@ impl<const D: usize, const N: u64> RingElement for Z_N_CycloRaw<D, N> {
     }
 }
 
-// TODO: make these not stupid
-
 impl<'a, const D: usize, const N: u64> AddAssign<&'a Self> for Z_N_CycloRaw<D, N> {
     fn add_assign(&mut self, rhs: &'a Self) {
         for i in 0..D {
@@ -156,12 +157,32 @@ mod test {
 
     // TODO: add more tests.
     #[test]
-    fn test_from_deg() {
+    fn test_from_into() {
         let p = Z_N_CycloRaw::<D, P>::from(vec![42, 6, 1, 0, 5]);
         let q = Z_N_CycloRaw::<D, P>::from(vec![37, 6, 1, 0]);
         let r = Z_N_CycloRaw::<D, P>::from(vec![41, 6, 1, 0, 5, 0, 0, 0, 1]);
         assert_eq!(p, q);
         assert_eq!(p, r);
         assert_eq!(q, r);
+
+        let s = Z_N_CycloRaw::<D, P>::from(vec![9483, 1, 1, 1, 323, P - 12139, 10491, 1, 1]);
+        let t = Z_N_CycloRaw::<D, P>::from(vec![9161, 12140, P - 10490, 0, 0]);
+        assert_eq!(s, t);
+    }
+
+    #[test]
+    fn test_ops() {
+        let p = Z_N_CycloRaw::<D, P>::from(vec![0, 0, 0, 1]);
+        let q = Z_N_CycloRaw::<D, P>::from(vec![0, 0, 2, 0]);
+        let sum = Z_N_CycloRaw::<D, P>::from(vec![0, 0, 2, 1]);
+        let diff = Z_N_CycloRaw::<D, P>::from(vec![0, 0, P-2, 1]);
+        let prod = Z_N_CycloRaw::<D, P>::from(vec![0, P-2, 0, 0]);
+        let square = Z_N_CycloRaw::<D, P>::from(vec![0, 0, P-1, 0]);
+        let neg = Z_N_CycloRaw::<D, P>::from(vec![0, 0, 0, P-1]);
+        assert_eq!(&p + &q, sum);
+        assert_eq!(&p - &q, diff);
+        assert_eq!(&p * &q, prod);
+        assert_eq!(&p * &p, square);
+        assert_eq!(-&p, neg);
     }
 }
