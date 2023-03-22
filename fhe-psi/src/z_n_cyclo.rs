@@ -150,6 +150,7 @@ impl<'a, const D: usize, const N: u64> MulAssign<&'a Self> for Z_N_CycloRaw<D, N
 
 #[cfg(test)]
 mod test {
+    use crate::matrix::Matrix;
     use super::*;
 
     const D: usize = 4; // Z_q[X] / (X^4 + 1)
@@ -184,5 +185,34 @@ mod test {
         assert_eq!(&p * &q, prod);
         assert_eq!(&p * &p, square);
         assert_eq!(-&p, neg);
+    }
+
+    #[test]
+    fn test_matrix() {
+        let mut M: Matrix<2, 2, Z_N_CycloRaw<D, P>> = Matrix::zero();
+        M[(0, 0)] = Z_N_CycloRaw::<D, P>::from(vec![0, 0, 0, 1]);
+        M[(0, 1)] = Z_N_CycloRaw::<D, P>::from(vec![0, 0, 1, 0]);
+        M[(1, 0)] = Z_N_CycloRaw::<D, P>::from(vec![0, 1, 0, 0]);
+        M[(1, 1)] = Z_N_CycloRaw::<D, P>::from(vec![1, 0, 0, 0]);
+        // M =
+        // [ x^3 x^2 ]
+        // [ x   1   ]
+        let M_square = &M * &M;
+        assert_eq!(M_square[(0, 0)], Z_N_CycloRaw::<D, P>::from(vec![0, 0, P-1, 1])); // x^3 + x^6
+        assert_eq!(M_square[(0, 1)], Z_N_CycloRaw::<D, P>::from(vec![0, P-1, 1, 0])); // x^2 + x^5
+        assert_eq!(M_square[(1, 0)], Z_N_CycloRaw::<D, P>::from(vec![P-1, 1, 0, 0])); // x + x^4
+        assert_eq!(M_square[(1, 1)], Z_N_CycloRaw::<D, P>::from(vec![1, 0, 0, 1])); // 1 + x^3
+
+        let M_double = &M + &M;
+        assert_eq!(M_double[(0, 0)], Z_N_CycloRaw::<D, P>::from(vec![0, 0, 0, 2]));
+        assert_eq!(M_double[(0, 1)], Z_N_CycloRaw::<D, P>::from(vec![0, 0, 2, 0]));
+        assert_eq!(M_double[(1, 0)], Z_N_CycloRaw::<D, P>::from(vec![0, 2, 0, 0]));
+        assert_eq!(M_double[(1, 1)], Z_N_CycloRaw::<D, P>::from(vec![2, 0, 0, 0]));
+
+        let M_neg = -&M;
+        assert_eq!(M_neg[(0, 0)], Z_N_CycloRaw::<D, P>::from(vec![0, 0, 0, P-1]));
+        assert_eq!(M_neg[(0, 1)], Z_N_CycloRaw::<D, P>::from(vec![0, 0, P-1, 0]));
+        assert_eq!(M_neg[(1, 0)], Z_N_CycloRaw::<D, P>::from(vec![0, P-1, 0, 0]));
+        assert_eq!(M_neg[(1, 1)], Z_N_CycloRaw::<D, P>::from(vec![P-1, 0, 0, 0]));
     }
 }
