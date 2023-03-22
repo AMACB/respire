@@ -1,22 +1,33 @@
-// use fhe_psi::{z_n::*, gsw::*, params::*};
+use fhe_psi::{z_n::*, fhe::*, gsw::*, intersect::*};
+use std::collections::HashSet;
+
+const TEST_P: u64 = GSW_TEST_PARAMS.P;
+
+fn test_intersect_additive_gsw() {
+    do_intersect_additive::<TEST_P, GSWTest>();
+}
+
+// TODO: make these generic over intersection functions
+// TODO: make general test function that takes client_set, server_set, expected_set & generic intersection function
+
+fn do_intersect_additive<const P: u64, FHE: FHEScheme<P>>()
+where
+    for<'a> &'a <FHE as FHEScheme<P>>::Ciphertext:
+CiphertextRef<P, <FHE as FHEScheme<P>>::Ciphertext>,
+{
+    let client_set: Vec<Z_N<P>> = vec![4_u64, 6, 7, 15].into_iter().map(Z_N::from).collect();
+    let server_set: Vec<Z_N<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
+        .into_iter()
+        .map(Z_N::from)
+        .collect();
+    let expected: Vec<Z_N<P>> = vec![4_u64, 7].into_iter().map(Z_N::from).collect();
+
+    assert_eq!(
+        HashSet::<Z_N<P>>::from_iter(intersect_additive::<P, FHE>(&client_set, &server_set)),
+        HashSet::<Z_N<P>>::from_iter(expected)
+    );
+}
 
 fn main() {
-    // let (A, s_T) = gsw::keygen(TEST_PARAMS);
-    // for i in 0..10 {
-    //     for j in 0..10 {
-    //         let mu1 = Z_N::new_u(i);
-    //         let mu2 = Z_N::new_u(j);
-    //         let ct1 = gsw::encrypt(&A, &mu1);
-    //         let ct2 = gsw::encrypt(&A, &mu2);
-    //         let pt_add = gsw::decrypt(&s_T, &(&ct1 + &mu2));
-    //         let pt_mul = gsw::decrypt(&s_T, &(&ct1 * &mu2));
-    //         let pt_add_ct = gsw::decrypt(&s_T, &(&ct1 + &ct2));
-    //         let pt_mul_ct = gsw::decrypt(&s_T, &(&ct1 * &ct2));
-    //         assert_eq!(pt_add, &mu1 + &mu2, "addition by scalar failed");
-    //         assert_eq!(pt_add_ct, &mu1 + &mu2, "ciphertext addition failed");
-    //
-    //         assert_eq!(pt_mul, &mu1 * &mu2, "multiplication by scalar failed");
-    //         assert_eq!(pt_mul_ct, &mu1 * &mu2, "ciphertext multiplication failed");
-    //     }
-    // }
+    test_intersect_additive_gsw();
 }

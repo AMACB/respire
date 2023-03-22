@@ -5,6 +5,10 @@ use rand::Rng;
 
 use crate::ring_elem::*;
 
+/*
+ * TODO (for this whole file): mod can be optimized, but later
+ */
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Z_N<const N: u64> {
     a: u64,
