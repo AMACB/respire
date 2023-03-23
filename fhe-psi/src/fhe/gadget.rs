@@ -1,5 +1,5 @@
-use crate::matrix::*;
-use crate::z_n::*;
+use crate::math::matrix::*;
+use crate::math::z_n::*;
 
 pub fn build_gadget<
     const N: usize,
@@ -52,7 +52,7 @@ pub fn gadget_inverse<
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::gsw::ceil_log;
+    use crate::fhe::gsw::ceil_log;
 
     const N: usize = 2;
     const M: usize = 8;

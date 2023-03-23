@@ -2,7 +2,7 @@ use std::ops::{Add, Index, IndexMut, Mul, Neg};
 
 use rand::Rng;
 
-use crate::ring_elem::*;
+use crate::math::ring_elem::*;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Matrix<const N: usize, const M: usize, R: RingElement>
@@ -185,7 +185,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::z_n::*;
+    use crate::math::z_n::*;
 
     use super::*;
 

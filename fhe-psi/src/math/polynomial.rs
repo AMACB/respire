@@ -4,8 +4,8 @@ use std::slice::Iter;
 
 use rand::Rng;
 
-use crate::ring_elem::{RingElement, RingElementRef};
-use crate::z_n::Z_N;
+use crate::math::ring_elem::{RingElement, RingElementRef};
+use crate::math::z_n::Z_N;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolynomialZ_N<const N: u64> {

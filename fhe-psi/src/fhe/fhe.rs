@@ -1,4 +1,4 @@
-use crate::z_n::Z_N;
+use crate::math::z_n::Z_N;
 use std::ops::{Add, Mul};
 
 pub trait CiphertextRef<const P: u64, Owned>:

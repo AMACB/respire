@@ -1,8 +1,8 @@
-use crate::fhe::{CiphertextRef, FHEScheme};
+use crate::fhe::fhe::{CiphertextRef, FHEScheme};
 
-use crate::polynomial::PolynomialZ_N;
-use crate::ring_elem::RingElement;
-use crate::z_n::Z_N;
+use crate::math::polynomial::PolynomialZ_N;
+use crate::math::ring_elem::RingElement;
+use crate::math::z_n::Z_N;
 
 // pub trait IntersectionStrategy {}
 
@@ -77,8 +77,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::fhe::FHEInsecure;
-    use crate::gsw::{GSWTest, GSW_TEST_PARAMS};
+    use crate::fhe::fhe::FHEInsecure;
+    use crate::fhe::gsw::{GSWTest, GSW_TEST_PARAMS};
     use std::collections::HashSet;
 
     const TEST_P: u64 = GSW_TEST_PARAMS.P;

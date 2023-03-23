@@ -3,7 +3,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use rand::Rng;
 
-use crate::ring_elem::*;
+use crate::math::ring_elem::*;
 
 /*
  * TODO (for this whole file): mod can be optimized, but later

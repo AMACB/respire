@@ -4,8 +4,8 @@ use rand::distributions::WeightedIndex;
 use rand::prelude::Distribution;
 use rand_chacha::ChaCha20Rng;
 
-use crate::matrix::*;
-use crate::z_n::*;
+use crate::math::matrix::*;
+use crate::math::z_n::*;
 
 pub const NUM_WIDTHS: usize = 8;
 

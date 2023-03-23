@@ -2,10 +2,10 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use std::ops::{Add, Mul};
 
-use crate::discrete_gaussian::DiscreteGaussian;
-use crate::fhe::{CiphertextRef, FHEScheme};
-use crate::ring_elem::RingElement;
-use crate::{gadget::*, matrix::*, z_n::*};
+use crate::fhe::discrete_gaussian::DiscreteGaussian;
+use crate::fhe::fhe::{CiphertextRef, FHEScheme};
+use crate::math::ring_elem::RingElement;
+use crate::{fhe::gadget::*, math::matrix::*, math::z_n::*};
 
 /*
  * A naive GSW implementation
