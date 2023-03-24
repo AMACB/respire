@@ -2,6 +2,9 @@ use rand::Rng;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use crate::math::polynomial::PolynomialZ_N;
+use crate::math::rand_sampled::{
+    RandDiscreteGaussianSampled, RandUniformSampled, RandZeroOneSampled,
+};
 use crate::math::ring_elem::{RingElement, RingElementRef};
 use crate::math::z_n::Z_N;
 
@@ -116,13 +119,8 @@ impl<const D: usize, const N: u64> RingElement for Z_N_CycloRaw<D, N> {
     fn zero() -> Z_N_CycloRaw<D, N> {
         [0_u64.into(); D].into()
     }
-
     fn one() -> Z_N_CycloRaw<D, N> {
         [1_u64.into(); D].into()
-    }
-
-    fn random<T: Rng>(_: &mut T) -> Self {
-        unimplemented!()
     }
 }
 
@@ -145,6 +143,39 @@ impl<'a, const D: usize, const N: u64> SubAssign<&'a Self> for Z_N_CycloRaw<D, N
 impl<'a, const D: usize, const N: u64> MulAssign<&'a Self> for Z_N_CycloRaw<D, N> {
     fn mul_assign(&mut self, _: &'a Self) {
         todo!()
+    }
+}
+
+/*
+ * Random sampling
+ */
+impl<const D: usize, const N: u64> RandUniformSampled for Z_N_CycloRaw<D, N> {
+    fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
+        let mut result = Self::zero();
+        for i in 0..D {
+            result.coeff[i] = Z_N::<N>::rand_uniform(rng);
+        }
+        result
+    }
+}
+
+impl<const D: usize, const N: u64> RandZeroOneSampled for Z_N_CycloRaw<D, N> {
+    fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
+        let mut result = Self::zero();
+        for i in 0..D {
+            result.coeff[i] = Z_N::<N>::rand_zero_one(rng);
+        }
+        result
+    }
+}
+
+impl<const D: usize, const N: u64> RandDiscreteGaussianSampled for Z_N_CycloRaw<D, N> {
+    fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
+        let mut result = Self::zero();
+        for i in 0..D {
+            result.coeff[i] = Z_N::<N>::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(rng);
+        }
+        result
     }
 }
 

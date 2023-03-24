@@ -1,11 +1,13 @@
-use rand::{Rng, SeedableRng};
+use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::ops::{Add, Mul};
 
-use crate::fhe::discrete_gaussian::DiscreteGaussian;
 use crate::fhe::fhe::{CiphertextRef, FHEScheme};
 use crate::fhe::gadget::{build_gadget, gadget_inverse};
 use crate::math::matrix::{identity, stack, Matrix};
+use crate::math::rand_sampled::{
+    RandDiscreteGaussianSampled, RandUniformSampled, RandZeroOneSampled,
+};
 use crate::math::ring_elem::RingElement;
 use crate::math::utils::ceil_log;
 use crate::math::z_n::Z_N;
@@ -89,12 +91,13 @@ impl<
     type SecretKey = SecretKey<N, M, P, Q, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        let dg = DiscreteGaussian::init(NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
+        // let dg = DiscreteGaussian::init(NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
         let mut rng = ChaCha20Rng::from_entropy();
 
-        let a_bar: Matrix<N_MINUS_1, M, Z_N<Q>> = Matrix::random_rng(&mut rng);
-        let s_bar_T: Matrix<1, N_MINUS_1, Z_N<Q>> = Matrix::random_rng(&mut rng);
-        let e: Matrix<1, M, Z_N<Q>> = dg.sample_int_matrix(&mut rng);
+        let a_bar: Matrix<N_MINUS_1, M, Z_N<Q>> = Matrix::rand_uniform(&mut rng);
+        let s_bar_T: Matrix<1, N_MINUS_1, Z_N<Q>> = Matrix::rand_uniform(&mut rng);
+        let e: Matrix<1, M, Z_N<Q>> =
+            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
 
         let A: Matrix<N, M, Z_N<Q>> = stack(&a_bar, &(&(&s_bar_T * &a_bar) + &e));
         let mut s_T: Matrix<1, N, Z_N<Q>> = Matrix::zero();
@@ -107,15 +110,7 @@ impl<
         let A = &pk.A;
 
         let mut rng = ChaCha20Rng::from_entropy();
-
-        let mut R: Matrix<M, M, Z_N<Q>> = Matrix::zero();
-        for i in 0..M {
-            for j in 0..M {
-                if rng.gen_bool(0.5) {
-                    R[(i, j)] = Z_N::one();
-                }
-            }
-        }
+        let R: Matrix<M, M, Z_N<Q>> = Matrix::rand_zero_one(&mut rng);
 
         let G = build_gadget::<N, M, Q, G_BASE, G_LEN>();
 

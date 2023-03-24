@@ -1,7 +1,5 @@
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use rand::Rng;
-
 pub trait RingElement:
     Sized
     + Clone
@@ -15,7 +13,6 @@ where
 {
     fn zero() -> Self;
     fn one() -> Self;
-    fn random<T: Rng>(rng: &mut T) -> Self;
 }
 
 pub trait RingElementRef<Owned: RingElement>:

@@ -1,21 +1,24 @@
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::f64::consts::PI;
+use std::sync::RwLock;
 
 use rand::distributions::WeightedIndex;
 use rand::prelude::Distribution;
-use rand_chacha::ChaCha20Rng;
-
-use crate::math::matrix::*;
-use crate::math::z_n::*;
+use rand::Rng;
 
 pub const NUM_WIDTHS: usize = 8;
 
-pub struct DiscreteGaussian {
+struct DiscreteGaussianTable {
     choices: Vec<i64>,
     dist: WeightedIndex<f64>,
 }
 
-impl DiscreteGaussian {
-    pub fn init(noise_width: f64) -> Self {
+static DISCRETE_GAUSSIAN_TABLES: Lazy<RwLock<HashMap<u64, DiscreteGaussianTable>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+impl DiscreteGaussianTable {
+    fn init(noise_width: f64) -> Self {
         let max_val = (noise_width * (NUM_WIDTHS as f64)).ceil() as i64;
         let mut choices = Vec::new();
         let mut table = vec![0f64; 0];
@@ -30,20 +33,29 @@ impl DiscreteGaussian {
     }
 
     // FIXME: not constant-time
-    pub fn sample<const Q: u64>(&self, rng: &mut ChaCha20Rng) -> Z_N<Q> {
-        self.choices[self.dist.sample(rng)].into()
+    fn sample<T: Rng>(&self, rng: &mut T) -> i64 {
+        self.choices[self.dist.sample(rng)]
     }
+}
 
-    pub fn sample_int_matrix<const N: usize, const M: usize, const Q: u64>(
-        &self,
-        rng: &mut ChaCha20Rng,
-    ) -> Matrix<N, M, Z_N<Q>> {
-        let mut mat = Matrix::zero();
-        for r in 0..N {
-            for c in 0..M {
-                mat[(r, c)] = self.sample(rng);
-            }
+pub struct DiscreteGaussian {}
+
+impl DiscreteGaussian {
+    pub fn sample<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> i64 {
+        if let Some(table) = DISCRETE_GAUSSIAN_TABLES
+            .read()
+            .unwrap()
+            .get(&NOISE_WIDTH_MILLIONTHS)
+        {
+            return table.sample(rng)
         }
-        mat
+
+        let table = DiscreteGaussianTable::init(NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
+        let ret = table.sample(rng);
+        DISCRETE_GAUSSIAN_TABLES
+            .write()
+            .unwrap()
+            .insert(NOISE_WIDTH_MILLIONTHS, table);
+        ret
     }
 }

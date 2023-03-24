@@ -1,5 +1,8 @@
 use std::ops::{Add, Index, IndexMut, Mul, Neg};
 
+use crate::math::rand_sampled::{
+    RandDiscreteGaussianSampled, RandUniformSampled, RandZeroOneSampled,
+};
 use rand::Rng;
 
 use crate::math::ring_elem::*;
@@ -20,14 +23,6 @@ where
         let mut vec = Vec::with_capacity(N * M);
         for _ in 0..N * M {
             vec.push(R::zero());
-        }
-        Matrix { data: vec }
-    }
-
-    pub fn random_rng<T: Rng>(rng: &mut T) -> Self {
-        let mut vec = Vec::with_capacity(N * M);
-        for _ in 0..N * M {
-            vec.push(R::random(rng));
         }
         Matrix { data: vec }
     }
@@ -180,6 +175,54 @@ where
             }
         }
         out
+    }
+}
+
+impl<const N: usize, const M: usize, R: RingElement> RandUniformSampled for Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+    R: RandUniformSampled,
+{
+    fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
+        let mut result = Self::zero();
+        for i in 0..N {
+            for j in 0..M {
+                result[(i, j)] = R::rand_uniform(rng);
+            }
+        }
+        result
+    }
+}
+
+impl<const N: usize, const M: usize, R: RingElement> RandZeroOneSampled for Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+    R: RandZeroOneSampled,
+{
+    fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
+        let mut result = Self::zero();
+        for i in 0..N {
+            for j in 0..M {
+                result[(i, j)] = R::rand_zero_one(rng);
+            }
+        }
+        result
+    }
+}
+
+impl<const N: usize, const M: usize, R: RingElement> RandDiscreteGaussianSampled for Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+    R: RandDiscreteGaussianSampled,
+{
+    fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
+        let mut result = Self::zero();
+        for i in 0..N {
+            for j in 0..M {
+                result[(i, j)] = R::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(rng);
+            }
+        }
+        result
     }
 }
 

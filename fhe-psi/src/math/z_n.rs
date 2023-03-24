@@ -1,6 +1,10 @@
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
+use crate::fhe::discrete_gaussian::DiscreteGaussian;
+use crate::math::rand_sampled::{
+    RandDiscreteGaussianSampled, RandUniformSampled, RandZeroOneSampled,
+};
 use rand::Rng;
 
 use crate::math::ring_elem::*;
@@ -48,9 +52,6 @@ impl<const N: u64> RingElement for Z_N<N> {
     }
     fn one() -> Self {
         1_u64.into()
-    }
-    fn random<T: Rng>(rng: &mut T) -> Self {
-        rng.gen_range(0..N).into()
     }
 }
 
@@ -163,6 +164,28 @@ impl<const N: u64> Mul for &Z_N<N> {
 impl<const N: u64> MulAssign<&Z_N<N>> for Z_N<N> {
     fn mul_assign(&mut self, rhs: &Self) {
         self.a = (self.clone() * rhs.clone()).a
+    }
+}
+
+/*
+ * Random sampling
+ */
+
+impl<const N: u64> RandUniformSampled for Z_N<N> {
+    fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
+        rng.gen_range(0..N).into()
+    }
+}
+
+impl<const N: u64> RandZeroOneSampled for Z_N<N> {
+    fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
+        rng.gen_range(0..2_u64).into()
+    }
+}
+
+impl<const N: u64> RandDiscreteGaussianSampled for Z_N<N> {
+    fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
+        DiscreteGaussian::sample::<_, NOISE_WIDTH_MILLIONTHS>(rng).into()
     }
 }
 

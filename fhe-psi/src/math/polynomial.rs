@@ -2,8 +2,6 @@ use std::iter;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::slice::Iter;
 
-use rand::Rng;
-
 use crate::math::ring_elem::{RingElement, RingElementRef};
 use crate::math::z_n::Z_N;
 
@@ -102,10 +100,6 @@ impl<const N: u64> RingElement for PolynomialZ_N<N> {
 
     fn one() -> PolynomialZ_N<N> {
         vec![1_u64].into()
-    }
-
-    fn random<T: Rng>(_: &mut T) -> Self {
-        unimplemented!()
     }
 }
 
