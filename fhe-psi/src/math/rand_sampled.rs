@@ -1,5 +1,7 @@
 use rand::Rng;
 
+// TODO: test randomness (especially discrete gaussian)
+
 pub trait RandUniformSampled {
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self;
 }

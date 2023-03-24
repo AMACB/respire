@@ -91,7 +91,6 @@ impl<
     type SecretKey = SecretKey<N, M, P, Q, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        // let dg = DiscreteGaussian::init(NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
         let mut rng = ChaCha20Rng::from_entropy();
 
         let a_bar: Matrix<N_MINUS_1, M, Z_N<Q>> = Matrix::rand_uniform(&mut rng);

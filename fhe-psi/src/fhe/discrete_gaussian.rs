@@ -47,7 +47,7 @@ impl DiscreteGaussian {
             .unwrap()
             .get(&NOISE_WIDTH_MILLIONTHS)
         {
-            return table.sample(rng)
+            return table.sample(rng);
         }
 
         let table = DiscreteGaussianTable::init(NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);

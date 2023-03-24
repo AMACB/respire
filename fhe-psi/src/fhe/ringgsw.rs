@@ -1,8 +1,12 @@
 use crate::fhe::fhe::{CiphertextRef, FHEScheme};
-use crate::math::matrix::Matrix;
+use crate::math::matrix::{Matrix, stack};
+use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::z_n::Z_N;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 use std::ops::{Add, Mul};
+use crate::math::ring_elem::RingElement;
 
 pub struct RingGSW<
     const N_MINUS_1: usize,
@@ -72,7 +76,18 @@ impl<
     type SecretKey = SecretKey<N, M, P, Q, D, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        todo!()
+        let mut rng = ChaCha20Rng::from_entropy();
+
+        let a_bar: Matrix<N_MINUS_1, M, Z_N_CycloRaw<D, Q>> = Matrix::rand_uniform(&mut rng);
+        let s_bar_T: Matrix<1, N_MINUS_1, Z_N_CycloRaw<D, Q>> = Matrix::rand_uniform(&mut rng);
+        let e: Matrix<1, M, Z_N_CycloRaw<D, Q>> =
+            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+
+        let A: Matrix<N, M, Z_N_CycloRaw<D, Q>> = stack(&a_bar, &(&(&s_bar_T * &a_bar) + &e));
+        let mut s_T: Matrix<1, N, Z_N_CycloRaw<D, Q>> = Matrix::zero();
+        s_T.copy_into(&(-&s_bar_T), 0, 0);
+        s_T[(0, N - 1)] = Z_N_CycloRaw::one();
+        (PublicKey { A }, SecretKey { s_T })
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext {
