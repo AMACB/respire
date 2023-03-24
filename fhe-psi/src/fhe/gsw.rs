@@ -4,8 +4,11 @@ use std::ops::{Add, Mul};
 
 use crate::fhe::discrete_gaussian::DiscreteGaussian;
 use crate::fhe::fhe::{CiphertextRef, FHEScheme};
+use crate::fhe::gadget::{build_gadget, gadget_inverse};
+use crate::math::matrix::{identity, stack, Matrix};
 use crate::math::ring_elem::RingElement;
-use crate::{fhe::gadget::*, math::matrix::*, math::z_n::*};
+use crate::math::utils::ceil_log;
+use crate::math::z_n::Z_N;
 
 /*
  * A naive GSW implementation
@@ -230,18 +233,6 @@ impl<
 /*
  * GSW params
  */
-
-pub const fn ceil_log(base: u64, x: u64) -> usize {
-    let mut e = 0;
-    let mut y = 1;
-
-    while y < x {
-        y *= base;
-        e += 1;
-    }
-
-    e
-}
 
 pub struct Params {
     pub N: usize,

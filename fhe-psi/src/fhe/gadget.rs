@@ -52,7 +52,7 @@ pub fn gadget_inverse<
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::fhe::gsw::ceil_log;
+    use crate::math::utils::ceil_log;
 
     const N: usize = 2;
     const M: usize = 8;
