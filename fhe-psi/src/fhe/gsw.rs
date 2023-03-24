@@ -111,7 +111,7 @@ impl<
         let mut rng = ChaCha20Rng::from_entropy();
         let R: Matrix<M, M, Z_N<Q>> = Matrix::rand_zero_one(&mut rng);
 
-        let G = build_gadget::<N, M, Q, G_BASE, G_LEN>();
+        let G = build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>();
 
         let mu = Z_N::<Q>::from(u64::from(mu));
         let ct = &(A * &R) + &(&G * &mu);
@@ -123,7 +123,7 @@ impl<
         let ct = &ct.ct;
         let q_over_p = Z_N::from(Q / P);
         let g_inv =
-            &gadget_inverse::<N, M, N, Q, G_BASE, G_LEN>(&(&identity::<N, Z_N<Q>>() * &q_over_p));
+            &gadget_inverse::<Z_N<Q>, N, M, N, G_BASE, G_LEN>(&(&identity::<N, Z_N<Q>>() * &q_over_p));
 
         let pt = &(&(s_T * ct) * g_inv)[(0, N - 1)];
         let floored = u64::from(*pt) * P * 2 / Q;
@@ -181,8 +181,8 @@ impl<
         let rhs_q = &Z_N::<Q>::from(u64::from(rhs));
         Ciphertext {
             ct: &self.ct
-                * &gadget_inverse::<N, M, M, Q, G_BASE, G_LEN>(
-                    &(&build_gadget::<N, M, Q, G_BASE, G_LEN>() * rhs_q),
+                * &gadget_inverse::<Z_N<Q>, N, M, M, G_BASE, G_LEN>(
+                    &(&build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>() * rhs_q),
                 ),
         }
     }
@@ -219,7 +219,7 @@ impl<
     type Output = Ciphertext<N, M, P, Q, G_BASE, G_LEN>;
     fn mul(self, rhs: Self) -> Self::Output {
         Ciphertext {
-            ct: &self.ct * &gadget_inverse::<N, M, M, Q, G_BASE, G_LEN>(&rhs.ct),
+            ct: &self.ct * &gadget_inverse::<Z_N<Q>, N, M, M, G_BASE, G_LEN>(&rhs.ct),
         }
     }
 }

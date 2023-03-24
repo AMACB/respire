@@ -14,6 +14,12 @@ pub struct PolynomialZ_N<const N: u64> {
  * Conversions
  */
 
+impl<const N: u64> From<u64> for PolynomialZ_N<N> {
+    fn from(a: u64) -> Self {
+        vec![a].into()
+    }
+}
+
 impl<const N: u64> From<Vec<u64>> for PolynomialZ_N<N> {
     fn from(coeff: Vec<u64>) -> Self {
         let v: Vec<Z_N<N>> = coeff.iter().map(|x| (*x).into()).collect();

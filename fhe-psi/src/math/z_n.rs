@@ -101,6 +101,12 @@ impl<const N: u64> Neg for Z_N<N> {
     }
 }
 
+impl<const N: u64> RingElementDivModdable for Z_N<N> {
+    fn div_mod(&self, a: u64) -> (Self, Self) {
+        ((self.a / a).into(), (self.a % a).into())
+    }
+}
+
 /*
  * Formatting
  */

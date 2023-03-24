@@ -5,7 +5,7 @@ use crate::math::polynomial::PolynomialZ_N;
 use crate::math::rand_sampled::{
     RandDiscreteGaussianSampled, RandUniformSampled, RandZeroOneSampled,
 };
-use crate::math::ring_elem::{RingElement, RingElementRef};
+use crate::math::ring_elem::{RingElement, RingElementDivModdable, RingElementRef};
 use crate::math::z_n::Z_N;
 
 /*
@@ -29,6 +29,14 @@ pub struct Z_N_CycloRaw<const D: usize, const N: u64> {
 /*
  * Conversions
  */
+
+impl<const D: usize, const N: u64> From<u64> for Z_N_CycloRaw<D, N> {
+    fn from(a: u64) -> Self {
+        let mut result = Self::zero();
+        result.coeff[0] = a.into();
+        result
+    }
+}
 
 impl<const D: usize, const N: u64> From<[Z_N<N>; D]> for Z_N_CycloRaw<D, N> {
     fn from(coeff: [Z_N<N>; D]) -> Self {
@@ -59,6 +67,19 @@ impl<const D: usize, const N: u64> From<Vec<u64>> for Z_N_CycloRaw<D, N> {
 impl<const D: usize, const N: u64> From<Vec<Z_N<N>>> for Z_N_CycloRaw<D, N> {
     fn from(coeff: Vec<Z_N<N>>) -> Self {
         Z_N_CycloRaw::from(PolynomialZ_N::from(coeff))
+    }
+}
+
+impl<const D: usize, const N: u64> TryFrom<&Z_N_CycloRaw<D, N>> for Z_N<N> {
+    type Error = ();
+
+    fn try_from(a: &Z_N_CycloRaw<D, N>) -> Result<Self, Self::Error> {
+        for i in 1..D {
+            if a.coeff[i] != Z_N::zero() {
+                return Err(());
+            }
+        }
+        Ok(a.coeff[0])
     }
 }
 
@@ -146,9 +167,16 @@ impl<'a, const D: usize, const N: u64> MulAssign<&'a Self> for Z_N_CycloRaw<D, N
     }
 }
 
+impl<const D: usize, const N: u64> RingElementDivModdable for Z_N_CycloRaw<D, N> {
+    fn div_mod(&self, a: u64) -> (Self, Self) {
+        todo!()
+    }
+}
+
 /*
  * Random sampling
  */
+
 impl<const D: usize, const N: u64> RandUniformSampled for Z_N_CycloRaw<D, N> {
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
         let mut result = Self::zero();

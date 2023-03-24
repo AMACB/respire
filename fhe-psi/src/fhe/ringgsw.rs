@@ -1,12 +1,15 @@
 use crate::fhe::fhe::{CiphertextRef, FHEScheme};
-use crate::math::matrix::{Matrix, stack};
-use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
+use crate::fhe::gadget::{build_gadget, gadget_inverse};
+use crate::math::matrix::{stack, Matrix, identity};
+use crate::math::rand_sampled::{
+    RandDiscreteGaussianSampled, RandUniformSampled, RandZeroOneSampled,
+};
+use crate::math::ring_elem::RingElement;
 use crate::math::z_n::Z_N;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::ops::{Add, Mul};
-use crate::math::ring_elem::RingElement;
 
 pub struct RingGSW<
     const N_MINUS_1: usize,
@@ -91,11 +94,29 @@ impl<
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext {
-        todo!()
+        let A = &pk.A;
+
+        let mut rng = ChaCha20Rng::from_entropy();
+        let R: Matrix<M, M, Z_N_CycloRaw<D, Q>> = Matrix::rand_zero_one(&mut rng);
+
+        let G = build_gadget::<Z_N_CycloRaw<D, Q>, N, M, Q, G_BASE, G_LEN>();
+
+        let mu = Z_N_CycloRaw::<D, Q>::from(u64::from(mu));
+        let ct = &(A * &R) + &(&G * &mu);
+        CiphertextRaw { ct }
     }
 
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
-        todo!()
+        let s_T = &sk.s_T;
+        let ct = &ct.ct;
+        let q_over_p = Z_N_CycloRaw::from(Q / P);
+        let g_inv =
+            &gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, N, G_BASE, G_LEN>(&(&identity::<N, Z_N_CycloRaw<D, Q>>() * &q_over_p));
+
+        let pt = &(&(s_T * ct) * g_inv)[(0, N - 1)];
+        let pt= Z_N::<Q>::try_from(pt).unwrap();
+        let floored = u64::from(pt) * P * 2 / Q;
+        Z_N::from((floored + 1) / 2)
     }
 }
 
@@ -191,4 +212,12 @@ macro_rules! ring_gsw_from_params {
             { $params.NOISE_WIDTH_MILLIONTHS },
         >
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test123() {}
 }

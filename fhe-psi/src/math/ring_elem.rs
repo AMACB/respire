@@ -5,6 +5,7 @@ pub trait RingElement:
     + Clone
     + PartialEq
     + Eq
+    + From<u64>
     + for<'a> AddAssign<&'a Self>
     + for<'a> SubAssign<&'a Self>
     + for<'a> MulAssign<&'a Self>
@@ -13,6 +14,13 @@ where
 {
     fn zero() -> Self;
     fn one() -> Self;
+}
+
+pub trait RingElementDivModdable: RingElement
+where
+    for<'a> &'a Self: RingElementRef<Self>,
+{
+    fn div_mod(&self, a: u64) -> (Self, Self);
 }
 
 pub trait RingElementRef<Owned: RingElement>:

@@ -1,13 +1,17 @@
 use crate::math::matrix::*;
-use crate::math::z_n::*;
+use crate::math::ring_elem::{RingElementDivModdable, RingElementRef};
 
 pub fn build_gadget<
+    R: RingElementDivModdable,
     const N: usize,
     const M: usize,
     const Q: u64,
     const G_BASE: u64,
     const G_LEN: usize,
->() -> Matrix<N, M, Z_N<Q>> {
+>() -> Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
     let mut gadget = Matrix::zero();
 
     let mut x = 1;
@@ -26,23 +30,27 @@ pub fn build_gadget<
 }
 
 pub fn gadget_inverse<
+    R: RingElementDivModdable,
     const N: usize,
     const M: usize,
     const K: usize,
-    const Q: u64,
     const G_BASE: u64,
     const G_LEN: usize,
 >(
-    m: &Matrix<N, K, Z_N<Q>>,
-) -> Matrix<M, K, Z_N<Q>> {
-    let mut m_expanded: Matrix<M, K, Z_N<Q>> = Matrix::zero();
+    m: &Matrix<N, K, R>,
+) -> Matrix<M, K, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    let mut m_expanded: Matrix<M, K, R> = Matrix::zero();
 
     for i in 0..N {
         for j in 0..K {
-            let mut a: u64 = m[(i, j)].into();
+            let mut a: R = m[(i, j)].clone();
+            let mut r;
             for k in 0..G_LEN {
-                m_expanded[(i * G_LEN + k, j)] = (a % G_BASE).into();
-                a /= G_BASE;
+                (a, r) = a.div_mod(G_BASE);
+                m_expanded[(i * G_LEN + k, j)] = r;
             }
         }
     }
@@ -53,6 +61,7 @@ pub fn gadget_inverse<
 mod test {
     use super::*;
     use crate::math::utils::ceil_log;
+    use crate::math::z_n::Z_N;
 
     const N: usize = 2;
     const M: usize = 8;
@@ -62,7 +71,7 @@ mod test {
 
     #[test]
     fn gadget_is_correct() {
-        let G = build_gadget::<N, M, Q, G_BASE, G_LEN>();
+        let G = build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>();
 
         let mut expected_G: Matrix<N, M, Z_N<Q>> = Matrix::zero();
         expected_G[(0, 0)] = 1_u64.into();
@@ -88,8 +97,8 @@ mod test {
             }
         }
 
-        let G = build_gadget::<N, M, Q, G_BASE, G_LEN>();
-        let R_inv = gadget_inverse::<N, M, M, Q, G_BASE, G_LEN>(&R);
+        let G = build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>();
+        let R_inv = gadget_inverse::<Z_N<Q>, N, M, M, G_BASE, G_LEN>(&R);
         let R_hopefully = &G * &R_inv;
         assert_eq!(R, R_hopefully, "gadget inverse was not correct");
     }
