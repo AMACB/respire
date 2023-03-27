@@ -1,9 +1,7 @@
 use crate::fhe::fhe::{CiphertextRef, FHEScheme};
 use crate::fhe::gadget::{build_gadget, gadget_inverse};
-use crate::math::matrix::{identity, stack, Matrix};
-use crate::math::rand_sampled::{
-    RandDiscreteGaussianSampled, RandUniformSampled, RandZeroOneSampled,
-};
+use crate::math::matrix::Matrix;
+use crate::math::rand_sampled::*;
 use crate::math::ring_elem::RingElement;
 use crate::math::z_n::Z_N;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
@@ -86,7 +84,8 @@ impl<
         let e: Matrix<1, M, Z_N_CycloRaw<D, Q>> =
             Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
 
-        let A: Matrix<N, M, Z_N_CycloRaw<D, Q>> = stack(&a_bar, &(&(&s_bar_T * &a_bar) + &e));
+        let A: Matrix<N, M, Z_N_CycloRaw<D, Q>> =
+            Matrix::stack(&a_bar, &(&(&s_bar_T * &a_bar) + &e));
         let mut s_T: Matrix<1, N, Z_N_CycloRaw<D, Q>> = Matrix::zero();
         s_T.copy_into(&(-&s_bar_T), 0, 0);
         s_T[(0, N - 1)] = Z_N_CycloRaw::one();
@@ -111,7 +110,7 @@ impl<
         let ct = &ct.ct;
         let q_over_p = Z_N_CycloRaw::from(Q / P);
         let g_inv = &gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, N, G_BASE, G_LEN>(
-            &(&identity::<N, Z_N_CycloRaw<D, Q>>() * &q_over_p),
+            &(&Matrix::<N, N, Z_N_CycloRaw<D, Q>>::identity() * &q_over_p),
         );
 
         let pt = &(&(s_T * ct) * g_inv)[(0, N - 1)];

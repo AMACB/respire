@@ -1,40 +1,43 @@
+//! The ring `Z_n` of integers modulo `n`.
+
+use crate::fhe::discrete_gaussian::DiscreteGaussian;
+use crate::math::rand_sampled::*;
+use crate::math::ring_elem::*;
+use rand::Rng;
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use crate::fhe::discrete_gaussian::DiscreteGaussian;
-use crate::math::rand_sampled::{
-    RandDiscreteGaussianSampled, RandUniformSampled, RandZeroOneSampled,
-};
-use rand::Rng;
+// TODO Optimize use of %
 
-use crate::math::ring_elem::*;
-
-/*
- * TODO (for this whole file): mod can be optimized, but later
- */
-
+/// Integers modulo `N` with overloaded modular arithmetic operation (`+`, `-`, `*`, unary `-`), and
+/// several other utility methods.
+///
+/// Internally, elements of this type are represented as a u64 `a` in reduced form: `0 <= a < N`.
+/// Thus `Z_N` is `Clone`. Furthermore the non-inplace operations are implemented in addition to the
+/// inplace versions required by [`RingElement`].
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Z_N<const N: u64> {
     a: u64,
 }
 
-/*
- * Conversions
- */
+/// Conversions
 
 impl<const N: u64> From<Z_N<N>> for u64 {
+    /// Extracts the reduced form modulo `N`.
     fn from(a: Z_N<N>) -> Self {
         a.a
     }
 }
 
 impl<const N: u64> From<u64> for Z_N<N> {
+    /// Converts u64 to Z_N by modular reduction.
     fn from(a: u64) -> Self {
         Z_N { a: a % N }
     }
 }
 
 impl<const N: u64> From<i64> for Z_N<N> {
+    /// Converts i64 to Z_N by modular reduction.
     fn from(a: i64) -> Self {
         Z_N {
             a: (a % (N as i64) + (N as i64)) as u64 % N,
@@ -42,9 +45,7 @@ impl<const N: u64> From<i64> for Z_N<N> {
     }
 }
 
-/*
- * Math Operations (owned)
- */
+/// Math operations on owned `Z_N<N>`, including [`RingElement`] implementation.
 
 impl<const N: u64> RingElement for Z_N<N> {
     fn zero() -> Self {
@@ -107,9 +108,7 @@ impl<const N: u64> RingElementDivModdable for Z_N<N> {
     }
 }
 
-/*
- * Formatting
- */
+/// Formatting
 
 impl<const N: u64> fmt::Debug for Z_N<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -121,9 +120,7 @@ impl<const N: u64> fmt::Debug for Z_N<N> {
     }
 }
 
-/*
- * Math Operations (borrows)
- */
+/// Math operations on borrows `&Z_N<N>`, including [`RingElementRef`] implementation.
 
 impl<const N: u64> RingElementRef<Z_N<N>> for &Z_N<N> {}
 
@@ -173,9 +170,7 @@ impl<const N: u64> MulAssign<&Z_N<N>> for Z_N<N> {
     }
 }
 
-/*
- * Random sampling
- */
+/// Random sampling
 
 impl<const N: u64> RandUniformSampled for Z_N<N> {
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {

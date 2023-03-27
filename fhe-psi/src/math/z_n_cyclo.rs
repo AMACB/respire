@@ -1,34 +1,26 @@
+//! The cyclotomic ring `Z_n[x]/x^d + 1)`. `d` is assumed to be a power of `2`.
+
+use crate::math::polynomial::PolynomialZ_N;
+use crate::math::rand_sampled::*;
+use crate::math::ring_elem::*;
+use crate::math::z_n::Z_N;
 use rand::Rng;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use crate::math::polynomial::PolynomialZ_N;
-use crate::math::rand_sampled::{
-    RandDiscreteGaussianSampled, RandUniformSampled, RandZeroOneSampled,
-};
-use crate::math::ring_elem::{RingElement, RingElementDivModdable, RingElementRef};
-use crate::math::z_n::Z_N;
+// TODO
+// This is the stupid implementation. We will need:
+// * something to account for roots of unity (type parameter probably)
+// * something to bind these roots of unity to modulus (probably similar approach to FHE / GSW)
 
-/*
- * Z_N[X] / (X^D + 1)
- * D must be a power of 2 so X^D+1 is cyclotomic.
- *
- * Z_N_CycloRaw is the coefficient representation
- * Z_N_CycloNTT is the evaluation representation
- */
-
-/*
- * TODO: This is the stupid implementation. We will need:
- *  * something to account for roots of unity (type parameter probably)
- *  * something to bind these roots of unity to modulus (probably similar approach to FHE / GSW)
- */
+/// The raw (coefficient) representation of an element of a cyclotomic ring.
+///
+/// Internally, this is an array of coefficients where the `i`th index corresponds to `x^i`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Z_N_CycloRaw<const D: usize, const N: u64> {
     coeff: [Z_N<N>; D],
 }
 
-/*
- * Conversions
- */
+/// Conversions
 
 impl<const D: usize, const N: u64> From<u64> for Z_N_CycloRaw<D, N> {
     fn from(a: u64) -> Self {
@@ -73,6 +65,7 @@ impl<const D: usize, const N: u64> From<Vec<Z_N<N>>> for Z_N_CycloRaw<D, N> {
 impl<const D: usize, const N: u64> TryFrom<&Z_N_CycloRaw<D, N>> for Z_N<N> {
     type Error = ();
 
+    /// Inverse of `From<u64>`. Errors if element is not a constant.
     fn try_from(a: &Z_N_CycloRaw<D, N>) -> Result<Self, Self::Error> {
         for i in 1..D {
             if a.coeff[i] != Z_N::zero() {
@@ -83,9 +76,7 @@ impl<const D: usize, const N: u64> TryFrom<&Z_N_CycloRaw<D, N>> for Z_N<N> {
     }
 }
 
-/*
- * RingElementRef implementation
- */
+/// [`RingElementRef`] implementation
 
 impl<const D: usize, const N: u64> RingElementRef<Z_N_CycloRaw<D, N>> for &Z_N_CycloRaw<D, N> {}
 
@@ -132,9 +123,7 @@ impl<const D: usize, const N: u64> Neg for &Z_N_CycloRaw<D, N> {
     }
 }
 
-/*
- * RingElement implementation
- */
+/// [`RingElement`] implementation
 
 impl<const D: usize, const N: u64> RingElement for Z_N_CycloRaw<D, N> {
     fn zero() -> Z_N_CycloRaw<D, N> {
@@ -173,9 +162,7 @@ impl<const D: usize, const N: u64> RingElementDivModdable for Z_N_CycloRaw<D, N>
     }
 }
 
-/*
- * Random sampling
- */
+/// Random sampling
 
 impl<const D: usize, const N: u64> RandUniformSampled for Z_N_CycloRaw<D, N> {
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {

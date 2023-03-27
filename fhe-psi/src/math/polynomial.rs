@@ -1,18 +1,22 @@
+//! Polynomials over `Z_n`.
+
+use crate::math::ring_elem::*;
+use crate::math::z_n::Z_N;
 use std::iter;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::slice::Iter;
 
-use crate::math::ring_elem::{RingElement, RingElementRef};
-use crate::math::z_n::Z_N;
+// TODO: Improve the in-place `RingElement` operations
 
+/// Coefficient representation of a polynomial with coefficients mod `n`. While this type does
+/// implement [`RingElement`], [`RingElementRef`], it is not intended for use if high efficiency is
+/// required.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolynomialZ_N<const N: u64> {
     coeff: Vec<Z_N<N>>,
 }
 
-/*
- * Conversions
- */
+/// Conversions
 
 impl<const N: u64> From<u64> for PolynomialZ_N<N> {
     fn from(a: u64) -> Self {
@@ -41,9 +45,7 @@ impl<const N: u64> From<Vec<Z_N<N>>> for PolynomialZ_N<N> {
     }
 }
 
-/*
- * RingElementRef implementation
- */
+/// RingElementRef implementation
 
 impl<const N: u64> RingElementRef<PolynomialZ_N<N>> for &PolynomialZ_N<N> {}
 
@@ -95,21 +97,16 @@ impl<const N: u64> Neg for &PolynomialZ_N<N> {
     }
 }
 
-/*
- * RingElement implementation
- */
+/// RingElement implementation
 
 impl<const N: u64> RingElement for PolynomialZ_N<N> {
     fn zero() -> PolynomialZ_N<N> {
         vec![0_u64].into()
     }
-
     fn one() -> PolynomialZ_N<N> {
         vec![1_u64].into()
     }
 }
-
-// TODO: make these not stupid
 
 impl<'a, const N: u64> AddAssign<&'a Self> for PolynomialZ_N<N> {
     fn add_assign(&mut self, rhs: &'a Self) {
@@ -132,15 +129,15 @@ impl<'a, const N: u64> MulAssign<&'a Self> for PolynomialZ_N<N> {
     }
 }
 
-/*
- * Other Polynomial things
- */
+/// Other polynomial-specific operations.
 
 impl<const N: u64> PolynomialZ_N<N> {
+    /// Constructs the polynomial `x`.
     pub fn x() -> PolynomialZ_N<N> {
         vec![0_u64, 1_u64].into()
     }
 
+    /// Evaluates the polynomial at the given point.
     pub fn eval(&self, x: Z_N<N>) -> Z_N<N> {
         let mut result: Z_N<N> = 0_u64.into();
         let mut current_pow: Z_N<N> = 1_u64.into();
@@ -151,11 +148,12 @@ impl<const N: u64> PolynomialZ_N<N> {
         result
     }
 
-    /* Degree of polynomial. By convention 0 has degree -1. */
+    /// Degree of polynomial. By convention 0 has degree -1.
     pub fn deg(&self) -> isize {
         (self.coeff.len() as isize) - 1
     }
 
+    /// Iterator over the coefficients in order of increasing power (`x^0`, `x^1`, ...)
     pub fn coeff_iter(&self) -> Iter<'_, Z_N<{ N }>> {
         self.coeff.iter()
     }

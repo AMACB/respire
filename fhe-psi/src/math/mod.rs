@@ -1,3 +1,4 @@
+//! Math-related constructs.
 pub mod matrix;
 pub mod polynomial;
 pub mod rand_sampled;

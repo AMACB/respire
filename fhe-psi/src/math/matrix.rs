@@ -1,24 +1,36 @@
+//! Matrices over generic rings.
+
+use crate::math::rand_sampled::*;
+use crate::math::ring_elem::*;
+use rand::Rng;
 use std::ops::{Add, Index, IndexMut, Mul, Neg};
 
-use crate::math::rand_sampled::{
-    RandDiscreteGaussianSampled, RandUniformSampled, RandZeroOneSampled,
-};
-use rand::Rng;
+// TODO
+// * Implement as an array instead of as a `Vec`. The main sticking point is that to move a matrix
+// as an array to the heap, we are forced to copy (or use unsafe).
+// * Enforce compile time checks for matrix dimensions
 
-use crate::math::ring_elem::*;
-
+/// Representation of a matrix as a flattened row-major order vector. The operations in ring type
+/// `R` are those used in the relevant matrix operations.
+///
+/// Technically, `Matrix` could in itself be `RingElement`. But so far there has not been a need
+/// for this, so it is not implemented.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Matrix<const N: usize, const M: usize, R: RingElement>
 where
+    R: Sized,
     for<'a> &'a R: RingElementRef<R>,
 {
     data: Vec<R>,
 }
 
+/// Matrix methods.
+
 impl<const N: usize, const M: usize, R: RingElement> Matrix<N, M, R>
 where
     for<'a> &'a R: RingElementRef<R>,
 {
+    /// Constructs the zero matrix.
     pub fn zero() -> Self {
         let mut vec = Vec::with_capacity(N * M);
         for _ in 0..N * M {
@@ -27,65 +39,71 @@ where
         Matrix { data: vec }
     }
 
+    /// Copies `m` into `self`, starting at `(target_row, target_col)`, by cloning each element.
     pub fn copy_into<const N2: usize, const M2: usize>(
         &mut self,
         m: &Matrix<N2, M2, R>,
         target_row: usize,
         target_col: usize,
     ) {
-        assert!(target_row < N, "copy out of bounds");
-        assert!(target_col < M, "copy out of bounds");
-        assert!(target_row + N2 <= N, "copy out of bounds");
-        assert!(target_col + M2 <= M, "copy out of bounds");
+        debug_assert!(target_row < N, "copy out of bounds");
+        debug_assert!(target_col < M, "copy out of bounds");
+        debug_assert!(target_row + N2 <= N, "copy out of bounds");
+        debug_assert!(target_col + M2 <= M, "copy out of bounds");
         for r in 0..N2 {
             for c in 0..M2 {
                 self[(target_row + r, target_col + c)] = m[(r, c)].clone();
             }
         }
     }
-}
 
-pub fn identity<const N: usize, R: RingElement>() -> Matrix<N, N, R>
-where
-    for<'a> &'a R: RingElementRef<R>,
-{
-    let mut out = Matrix::zero();
-    for i in 0..N {
-        out[(i, i)] = R::one();
+    /// Appends `b` to `a` by augmentation, returning `[a | b]`.
+    pub fn append<const M1: usize, const M2: usize>(
+        a: &Matrix<N, M1, R>,
+        b: &Matrix<N, M2, R>,
+    ) -> Self
+    where
+        for<'a> &'a R: RingElementRef<R>,
+    {
+        debug_assert_eq!(M1 + M2, M, "dimensions do not add correctly");
+        let mut c = Matrix::zero();
+        c.copy_into(a, 0, 0);
+        c.copy_into(b, 0, M1);
+        c
     }
-    out
+
+    /// Stacks `a` on top of `b` by "vertical" augmentation, returning `[a^T | b^T]^T`.
+    pub fn stack<const N1: usize, const N2: usize>(
+        a: &Matrix<N1, M, R>,
+        b: &Matrix<N2, M, R>,
+    ) -> Self
+    where
+        for<'a> &'a R: RingElementRef<R>,
+    {
+        debug_assert_eq!(N1 + N2, N, "dimensions do not add correctly");
+        let mut c = Matrix::zero();
+        c.copy_into(a, 0, 0);
+        c.copy_into(b, N1, 0);
+        c
+    }
 }
 
-// TODO: lol oops cannot smartly do M1+M2 or N1+N2
-pub fn append<const N: usize, const M1: usize, const M2: usize, const M3: usize, R: RingElement>(
-    a: &Matrix<N, M1, R>,
-    b: &Matrix<N, M2, R>,
-) -> Matrix<N, M3, R>
+/// Square matrix specific methods.
+
+impl<const N: usize, const M: usize, R: RingElement> Matrix<N, M, R>
 where
     for<'a> &'a R: RingElementRef<R>,
 {
-    assert_eq!(M1 + M2, M3, "dimensions do not add correctly");
-    let mut c = Matrix::zero();
-    c.copy_into(a, 0, 0);
-    c.copy_into(b, 0, M1);
-    c
+    pub fn identity() -> Self {
+        let mut out = Matrix::zero();
+        for i in 0..N {
+            out[(i, i)] = R::one();
+        }
+        out
+    }
 }
 
-pub fn stack<const N1: usize, const N2: usize, const N3: usize, const M: usize, R: RingElement>(
-    a: &Matrix<N1, M, R>,
-    b: &Matrix<N2, M, R>,
-) -> Matrix<N3, M, R>
-where
-    for<'a> &'a R: RingElementRef<R>,
-{
-    assert_eq!(N1 + N2, N3, "dimensions do not add correctly");
-    let mut c = Matrix::zero();
-    c.copy_into(a, 0, 0);
-    c.copy_into(b, N1, 0);
-    c
-}
-
-// TODO: is it possible to make this good at compile time bounds checks?
+/// Indexing
 
 impl<const N: usize, const M: usize, R: RingElement> Index<(usize, usize)> for Matrix<N, M, R>
 where
@@ -93,9 +111,10 @@ where
 {
     type Output = R;
 
+    /// Returns the `(row, col)` element of the matrix.
     fn index(&self, index: (usize, usize)) -> &Self::Output {
-        assert!(index.0 < N, "index out of bounds");
-        assert!(index.1 < M, "index out of bounds");
+        debug_assert!(index.0 < N, "index out of bounds");
+        debug_assert!(index.1 < M, "index out of bounds");
         &self.data[index.0 * M + index.1]
     }
 }
@@ -104,10 +123,13 @@ impl<const N: usize, const M: usize, R: RingElement> IndexMut<(usize, usize)> fo
 where
     for<'a> &'a R: RingElementRef<R>,
 {
+    /// Returns the `(row, col)` element of the matrix.
     fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
         &mut self.data[index.0 * M + index.1]
     }
 }
+
+/// Arithmetic operations
 
 impl<const N: usize, const M: usize, R: RingElement> Mul<&R> for &Matrix<N, M, R>
 where
@@ -177,6 +199,8 @@ where
         out
     }
 }
+
+/// Random sampling implementations inherited from the base ring.
 
 impl<const N: usize, const M: usize, R: RingElement> RandUniformSampled for Matrix<N, M, R>
 where
@@ -248,7 +272,7 @@ mod test {
 
     #[test]
     fn identity_matrix_is_correct() {
-        let I: Matrix<M, M, Z_N<Q>> = identity();
+        let I: Matrix<M, M, Z_N<Q>> = Matrix::identity();
         for i in 0..M {
             for j in 0..M {
                 if i == j {
@@ -309,7 +333,7 @@ mod test {
                 mat[(i, j)] = Z_N::from((i * M + j) as u64);
             }
         }
-        let I = identity();
+        let I = Matrix::identity();
         assert_eq!(&mat * &I, mat, "multiplication by identity failed");
     }
 
