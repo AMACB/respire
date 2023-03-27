@@ -122,8 +122,9 @@ impl<
         let s_T = &sk.s_T;
         let ct = &ct.ct;
         let q_over_p = Z_N::from(Q / P);
-        let g_inv =
-            &gadget_inverse::<Z_N<Q>, N, M, N, G_BASE, G_LEN>(&(&identity::<N, Z_N<Q>>() * &q_over_p));
+        let g_inv = &gadget_inverse::<Z_N<Q>, N, M, N, G_BASE, G_LEN>(
+            &(&identity::<N, Z_N<Q>>() * &q_over_p),
+        );
 
         let pt = &(&(s_T * ct) * g_inv)[(0, N - 1)];
         let floored = u64::from(*pt) * P * 2 / Q;

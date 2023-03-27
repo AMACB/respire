@@ -1,6 +1,6 @@
 use crate::fhe::fhe::{CiphertextRef, FHEScheme};
 use crate::fhe::gadget::{build_gadget, gadget_inverse};
-use crate::math::matrix::{stack, Matrix, identity};
+use crate::math::matrix::{identity, stack, Matrix};
 use crate::math::rand_sampled::{
     RandDiscreteGaussianSampled, RandUniformSampled, RandZeroOneSampled,
 };
@@ -110,11 +110,12 @@ impl<
         let s_T = &sk.s_T;
         let ct = &ct.ct;
         let q_over_p = Z_N_CycloRaw::from(Q / P);
-        let g_inv =
-            &gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, N, G_BASE, G_LEN>(&(&identity::<N, Z_N_CycloRaw<D, Q>>() * &q_over_p));
+        let g_inv = &gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, N, G_BASE, G_LEN>(
+            &(&identity::<N, Z_N_CycloRaw<D, Q>>() * &q_over_p),
+        );
 
         let pt = &(&(s_T * ct) * g_inv)[(0, N - 1)];
-        let pt= Z_N::<Q>::try_from(pt).unwrap();
+        let pt = Z_N::<Q>::try_from(pt).unwrap();
         let floored = u64::from(pt) * P * 2 / Q;
         Z_N::from((floored + 1) / 2)
     }
