@@ -80,6 +80,7 @@ mod test {
     use crate::fhe::fhe::FHEInsecure;
     use crate::fhe::gsw::{GSWTest, GSW_TEST_PARAMS};
     use std::collections::HashSet;
+    use crate::fhe::ringgsw::RingGSWTest;
 
     const TEST_P: u64 = GSW_TEST_PARAMS.P;
 
@@ -109,6 +110,11 @@ mod test {
     #[test]
     fn test_intersect_additive_gsw() {
         do_intersect_additive::<TEST_P, GSWTest>();
+    }
+
+    #[test]
+    fn test_intersect_additive_ringgsw() {
+        do_intersect_additive::<TEST_P, RingGSWTest>();
     }
 
     // TODO: make these generic over intersection functions
