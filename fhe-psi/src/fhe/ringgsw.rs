@@ -1,8 +1,9 @@
-use crate::fhe::fhe::{CiphertextRef, FHEScheme};
-use crate::fhe::gadget::{build_gadget, gadget_inverse};
+use crate::fhe::fhe::*;
+use crate::fhe::gadget::*;
 use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::RingElement;
+use crate::math::utils::ceil_log;
 use crate::math::z_n::Z_N;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
 use rand::SeedableRng;
@@ -114,7 +115,8 @@ impl<
         );
 
         let pt = &(&(s_T * ct) * g_inv)[(0, N - 1)];
-        let pt = Z_N::<Q>::try_from(pt).unwrap();
+        // TODO support arbitrary messages, not just constants
+        let pt = pt[0];
         let floored = u64::from(pt) * P * 2 / Q;
         Z_N::from((floored + 1) / 2)
     }
@@ -134,7 +136,9 @@ impl<
     type Output = CiphertextRaw<N, M, P, Q, D, G_BASE, G_LEN>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        todo!()
+        CiphertextRaw {
+            ct: &self.ct + &rhs.ct,
+        }
     }
 }
 
@@ -152,7 +156,9 @@ impl<
     type Output = CiphertextRaw<N, M, P, Q, D, G_BASE, G_LEN>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        todo!()
+        CiphertextRaw {
+            ct: &self.ct * &gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, M, G_BASE, G_LEN>(&rhs.ct),
+        }
     }
 }
 
@@ -169,7 +175,7 @@ impl<
 {
     type Output = CiphertextRaw<N, M, P, Q, D, G_BASE, G_LEN>;
 
-    fn mul(self, rhs: Z_N<P>) -> Self::Output {
+    fn mul(self, _: Z_N<P>) -> Self::Output {
         todo!()
     }
 }
@@ -214,10 +220,44 @@ macro_rules! ring_gsw_from_params {
     }
 }
 
+pub const RING_GSW_TEST_PARAMS: Params = Params {
+    N: 5,
+    M: 140,
+    P: 31,
+    Q: 268369921,
+    D: 4,
+    G_BASE: 2,
+    NOISE_WIDTH_MILLIONTHS: 6_400_000,
+};
+
+pub type RingGSWTest = ring_gsw_from_params!(RING_GSW_TEST_PARAMS);
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    fn test123() {}
+    fn keygen_is_correct() {
+        let threshold = 4f64 * (RING_GSW_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
+        let (A, s_T) = RingGSWTest::keygen();
+        let e = &s_T.s_T * &A.A;
+
+        for i in 0..RING_GSW_TEST_PARAMS.M {
+            assert!(
+                (e[(0, i)].norm() as f64) < threshold,
+                "e^T = s_T * A was too big"
+            );
+        }
+    }
+
+    #[test]
+    fn encryption_is_correct() {
+        let (A, s_T) = RingGSWTest::keygen();
+        for i in 0_u64..10_u64 {
+            let mu = Z_N::from(i);
+            let ct = RingGSWTest::encrypt(&A, mu);
+            let pt = RingGSWTest::decrypt(&s_T, &ct);
+            assert_eq!(pt, mu, "decryption failed");
+        }
+    }
 }

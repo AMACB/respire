@@ -1,11 +1,10 @@
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
-use std::f64::consts::PI;
-use std::sync::RwLock;
-
 use rand::distributions::WeightedIndex;
 use rand::prelude::Distribution;
 use rand::Rng;
+use std::collections::HashMap;
+use std::f64::consts::PI;
+use std::sync::RwLock;
 
 pub const NUM_WIDTHS: usize = 8;
 
@@ -14,6 +13,7 @@ struct DiscreteGaussianTable {
     dist: WeightedIndex<f64>,
 }
 
+/// Memoization table for discrete gaussian sampling.
 static DISCRETE_GAUSSIAN_TABLES: Lazy<RwLock<HashMap<u64, DiscreteGaussianTable>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 

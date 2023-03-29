@@ -4,3 +4,6 @@ pub mod fhe;
 pub mod gadget;
 pub mod gsw;
 pub mod ringgsw;
+
+// TODO
+// Handle errors more gracefully (e.g. don't panic on decryption failure)

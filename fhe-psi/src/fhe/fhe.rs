@@ -22,10 +22,7 @@ where
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P>;
 }
 
-/*
- * Trivial FHE scheme, useful for testing
- */
-
+/// A trivial (insecure) FHE scheme, useful for testing.
 pub struct FHEInsecure {}
 
 impl<const P: u64> CiphertextRef<P, Z_N<P>> for &Z_N<P> {}

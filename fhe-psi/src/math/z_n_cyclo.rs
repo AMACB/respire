@@ -5,7 +5,8 @@ use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use crate::math::z_n::Z_N;
 use rand::Rng;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::cmp::{max, min};
+use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
 
 // TODO
 // This is the stupid implementation. We will need:
@@ -130,7 +131,9 @@ impl<const D: usize, const N: u64> RingElement for Z_N_CycloRaw<D, N> {
         [0_u64.into(); D].into()
     }
     fn one() -> Z_N_CycloRaw<D, N> {
-        [1_u64.into(); D].into()
+        let mut result = Self::zero();
+        result.coeff[0] = 1_u64.into();
+        result
     }
 }
 
@@ -157,8 +160,13 @@ impl<'a, const D: usize, const N: u64> MulAssign<&'a Self> for Z_N_CycloRaw<D, N
 }
 
 impl<const D: usize, const N: u64> RingElementDivModdable for Z_N_CycloRaw<D, N> {
-    fn div_mod(&self, a: u64) -> (Self, Self) {
-        todo!()
+    fn div_mod(&self, rhs: u64) -> (Self, Self) {
+        let mut quot = Z_N_CycloRaw::zero();
+        let mut rem = Z_N_CycloRaw::zero();
+        for i in 0..D {
+            (quot.coeff[i], rem.coeff[i]) = self.coeff[i].div_mod(rhs);
+        }
+        (quot, rem)
     }
 }
 
@@ -191,6 +199,26 @@ impl<const D: usize, const N: u64> RandDiscreteGaussianSampled for Z_N_CycloRaw<
             result.coeff[i] = Z_N::<N>::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(rng);
         }
         result
+    }
+}
+
+/// Other methods
+impl<const D: usize, const N: u64> Z_N_CycloRaw<D, N> {
+    pub fn norm(&self) -> u64 {
+        let mut worst: u64 = 0;
+        for i in 0..D {
+            let pos: u64 = self.coeff[i].into();
+            let neg: u64 = (-self.coeff[i]).into();
+            worst = max(worst, min(pos, neg));
+        }
+        worst
+    }
+}
+
+impl<const D: usize, const N: u64> Index<usize> for Z_N_CycloRaw<D, N> {
+    type Output = Z_N<N>;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.coeff[index]
     }
 }
 

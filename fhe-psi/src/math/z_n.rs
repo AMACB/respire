@@ -4,6 +4,7 @@ use crate::fhe::discrete_gaussian::DiscreteGaussian;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use rand::Rng;
+use std::cmp::min;
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -190,6 +191,15 @@ impl<const N: u64> RandDiscreteGaussianSampled for Z_N<N> {
     }
 }
 
+/// Other methods
+impl<const N: u64> Z_N<N> {
+    pub fn norm(&self) -> u64 {
+        let pos: u64 = u64::from(*self);
+        let neg: u64 =u64::from(-*self);
+        min(pos, neg)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -278,5 +288,29 @@ mod test {
         assert_eq!(u64::MAX - 1 - 7872512, (a * b).into());
         a *= Z_BIG::from(3968_u64);
         assert_eq!(u64::MAX - 1 - 7872512, a.into());
+    }
+
+    #[test]
+    fn test_norm() {
+        type Z_31 = Z_N<31>;
+        type Z_BIG = Z_N<{ u64::MAX - 1 }>;
+
+        let zero: Z_31 = 0_u64.into();
+        let one_pos: Z_31 = 1_u64.into();
+        let one_neg: Z_31 = 30_u64.into();
+        let two_pos: Z_31 = 2_u64.into();
+        let two_neg: Z_31 = 29_u64.into();
+        let fifteen_pos: Z_31 = 15_u64.into();
+        let fifteen_neg: Z_31 = 16_u64.into();
+        assert_eq!(zero.norm(), 0);
+        assert_eq!(one_pos.norm(), 1);
+        assert_eq!(one_neg.norm(), 1);
+        assert_eq!(two_pos.norm(), 2);
+        assert_eq!(two_neg.norm(), 2);
+        assert_eq!(fifteen_pos.norm(), 15);
+        assert_eq!(fifteen_neg.norm(), 15);
+
+        let one_neg_big: Z_BIG = (u64::MAX - 2).into();
+        assert_eq!(one_neg_big.norm(), 1);
     }
 }
