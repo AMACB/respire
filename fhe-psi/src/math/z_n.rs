@@ -195,7 +195,7 @@ impl<const N: u64> RandDiscreteGaussianSampled for Z_N<N> {
 impl<const N: u64> Z_N<N> {
     pub fn norm(&self) -> u64 {
         let pos: u64 = u64::from(*self);
-        let neg: u64 =u64::from(-*self);
+        let neg: u64 = u64::from(-*self);
         min(pos, neg)
     }
 }
