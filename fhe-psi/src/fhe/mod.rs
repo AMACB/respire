@@ -7,3 +7,4 @@ pub mod ringgsw;
 
 // TODO
 // Handle errors more gracefully (e.g. don't panic on decryption failure)
+// Documentation - explain why FHEScheme is a trait; params as generics/types.

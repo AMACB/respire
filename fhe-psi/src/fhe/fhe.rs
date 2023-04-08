@@ -1,3 +1,5 @@
+//! Generic FHE scheme traits.
+
 use crate::math::z_n::Z_N;
 use std::ops::{Add, Mul};
 
@@ -8,6 +10,10 @@ where
 {
 }
 
+/// A generic FHE scheme type that supports keygen, encrypt, decrypt, addition, multiplication, and
+/// scalar multiplication.
+/// TODO make message and scalar type generic
+/// TODO
 pub trait FHEScheme<const P: u64>: Sized
 where
     for<'a> &'a <Self as FHEScheme<P>>::Ciphertext:
@@ -22,7 +28,7 @@ where
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P>;
 }
 
-/// A trivial (insecure) FHE scheme, useful for testing.
+/// The trivial (insecure) FHE scheme where encryption does nothing, useful for testing.
 pub struct FHEInsecure {}
 
 impl<const P: u64> CiphertextRef<P, Z_N<P>> for &Z_N<P> {}

@@ -1,3 +1,5 @@
+//! Plain GSW.
+
 use crate::fhe::fhe::*;
 use crate::fhe::gadget::*;
 use crate::math::matrix::Matrix;

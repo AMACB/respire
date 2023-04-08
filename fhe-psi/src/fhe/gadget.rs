@@ -1,3 +1,5 @@
+//! Gadget matrix and gadget inverse (n-ary decomposition).
+
 use crate::math::matrix::*;
 use crate::math::ring_elem::*;
 
