@@ -1,8 +1,10 @@
 //! Math-related constructs.
 pub mod matrix;
+pub mod ntt;
 pub mod polynomial;
 pub mod rand_sampled;
 pub mod ring_elem;
 pub mod utils;
 pub mod z_n;
 pub mod z_n_cyclo;
+pub mod z_n_cyclo_ntt;

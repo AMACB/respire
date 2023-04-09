@@ -1,11 +1,14 @@
 //! The cyclotomic ring `Z_n[x]/x^d + 1)`. `d` is assumed to be a power of `2`.
 
+use crate::math::ntt::*;
 use crate::math::polynomial::PolynomialZ_N;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use crate::math::z_n::Z_N;
+use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 use rand::Rng;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::slice::Iter;
 
 // TODO
 // This is the stupid implementation. We will need:
@@ -62,6 +65,8 @@ impl<const D: usize, const N: u64> From<Vec<Z_N<N>>> for Z_N_CycloRaw<D, N> {
     }
 }
 
+
+
 impl<const D: usize, const N: u64> TryFrom<&Z_N_CycloRaw<D, N>> for Z_N<N> {
     type Error = ();
 
@@ -73,6 +78,36 @@ impl<const D: usize, const N: u64> TryFrom<&Z_N_CycloRaw<D, N>> for Z_N<N> {
             }
         }
         Ok(a.coeff[0])
+    }
+}
+
+impl<const D: usize, const N: u64, const W: u64> From<Z_N_CycloNTT<D,N,W>> for Z_N_CycloRaw<D, N> {
+    fn from(z_n_cyclo_ntt: Z_N_CycloNTT<D,N,W>) -> Self {
+        // TODO: this should be in the type, probably
+        let mut log_d = 1;
+        while (1 << log_d) < D {
+            log_d += 1;
+        }
+        assert_eq!(1 << log_d, D);
+
+        let root = W.into();
+
+        let mut coeff: [Z_N<N>; D] = [0_u64.into(); D];
+        for (i, x) in z_n_cyclo_ntt.points_iter().enumerate() {
+            coeff[i] = x.clone();
+        }
+
+        bit_reverse_order(&mut coeff, log_d);
+        ntt(&mut coeff, inverse(root * root), log_d);
+
+        for i in 0..D {
+            // divide by degree
+            coeff[i] *= inverse((D as u64).into());
+            // fancy no-reduction technique
+            coeff[i] *= inverse(pow(root, i as u64));
+        }
+
+        return Self { coeff }
     }
 }
 
@@ -191,6 +226,14 @@ impl<const D: usize, const N: u64> RandDiscreteGaussianSampled for Z_N_CycloRaw<
             result.coeff[i] = Z_N::<N>::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(rng);
         }
         result
+    }
+}
+
+/// Other polynomial-specific operations.
+
+impl<const D: usize, const N: u64> Z_N_CycloRaw<D, N> {
+    pub fn coeff_iter(&self) -> Iter<'_, Z_N<{ N }>> {
+        self.coeff.iter()
     }
 }
 
