@@ -22,7 +22,7 @@ pub struct RingGSW<
     const NOISE_WIDTH_MILLIONTHS: u64,
 > {}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CiphertextRaw<
     const N: usize,
     const M: usize,
@@ -35,7 +35,7 @@ pub struct CiphertextRaw<
     ct: Matrix<N, M, Z_N_CycloRaw<D, Q>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PublicKey<
     const N: usize,
     const M: usize,
@@ -48,7 +48,7 @@ pub struct PublicKey<
     A: Matrix<N, M, Z_N_CycloRaw<D, Q>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SecretKey<
     const N: usize,
     const M: usize,

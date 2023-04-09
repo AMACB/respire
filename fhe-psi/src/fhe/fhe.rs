@@ -19,9 +19,9 @@ where
     for<'a> &'a <Self as FHEScheme<P>>::Ciphertext:
         CiphertextRef<P, <Self as FHEScheme<P>>::Ciphertext>,
 {
-    type Ciphertext: Sized;
-    type PublicKey: Sized;
-    type SecretKey: Sized;
+    type Ciphertext: Sized + Clone;
+    type PublicKey: Sized + Clone;
+    type SecretKey: Sized + Clone;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey);
     fn encrypt(pk: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext;

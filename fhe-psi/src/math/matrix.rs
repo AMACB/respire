@@ -15,7 +15,7 @@ use std::ops::{Add, Index, IndexMut, Mul, Neg};
 ///
 /// Technically, `Matrix` could in itself be `RingElement`. But so far there has not been a need
 /// for this, so it is not implemented.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Matrix<const N: usize, const M: usize, R: RingElement>
 where
     R: Sized,

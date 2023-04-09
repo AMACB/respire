@@ -36,7 +36,7 @@ pub struct GSW<
     const NOISE_WIDTH_MILLIONTHS: u64,
 > {}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Ciphertext<
     const N: usize,
     const M: usize,
@@ -48,7 +48,7 @@ pub struct Ciphertext<
     ct: Matrix<N, M, Z_N<Q>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PublicKey<
     const N: usize,
     const M: usize,
@@ -60,7 +60,7 @@ pub struct PublicKey<
     A: Matrix<N, M, Z_N<Q>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SecretKey<
     const N: usize,
     const M: usize,
