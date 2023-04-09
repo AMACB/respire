@@ -183,9 +183,18 @@ impl<'a, const D: usize, const N: u64, const W: u64> MulAssign<&'a Self> for Z_N
     }
 }
 
+// TODO: this is wrong. Why?
+// It does what it should, but I believe gadget matrix does something that it doesn't like in the context of GSW.
 impl<const D: usize, const N: u64, const W: u64> RingElementDivModdable for Z_N_CycloNTT<D, N, W> {
-    fn div_mod(&self, a: u64) -> (Self, Self) {
-        todo!()
+    fn div_mod(&self, rhs: u64) -> (Self, Self) {
+        // let mut quot = Z_N_CycloNTT::zero();
+        // let mut rem = Z_N_CycloNTT::zero();
+        // for i in 0..D {
+        //     (quot.points[i], rem.points[i]) = self.points[i].div_mod(rhs);
+        // }
+        // (quot, rem)
+        let (quot, rem) = Z_N_CycloRaw::from(self.clone()).div_mod(rhs);
+        (quot.into(), rem.into())
     }
 }
 
@@ -203,25 +212,17 @@ impl<const D: usize, const N: u64, const W: u64> RandUniformSampled for Z_N_Cycl
 }
 
 // These functions cannot be natively supported by Z_N_CycloNTT, but can be done by calling the associated Z_N_CycloRaw versions.
-// impl<const D: usize, const N: u64, const W: u64> RandZeroOneSampled for Z_N_CycloNTT<D, N, W> {
-//     fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
-//         let mut result = Self::zero();
-//         for i in 0..D {
-//             result.coeff[i] = Z_N::<N>::rand_zero_one(rng);
-//         }
-//         result
-//     }
-// }
+impl<const D: usize, const N: u64, const W: u64> RandZeroOneSampled for Z_N_CycloNTT<D, N, W> {
+    fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
+        Z_N_CycloRaw::rand_zero_one(rng).into()
+    }
+}
 
-// impl<const D: usize, const N: u64, const W: u64> RandDiscreteGaussianSampled for Z_N_CycloNTT<D, N, W> {
-//     fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
-//         let mut result = Self::zero();
-//         for i in 0..D {
-//             result.coeff[i] = Z_N::<N>::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(rng);
-//         }
-//         result
-//     }
-// }
+impl<const D: usize, const N: u64, const W: u64> RandDiscreteGaussianSampled for Z_N_CycloNTT<D, N, W> {
+    fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
+        Z_N_CycloRaw::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(rng).into()
+    }
+}
 
 
 /// Other polynomial-specific operations.
@@ -236,6 +237,7 @@ impl<const D: usize, const N: u64, const W: u64> Z_N_CycloNTT<D, N, W> {
 mod test {
     use super::*;
     use crate::math::matrix::Matrix;
+    use crate::fhe::gadget::*;
 
     const D: usize = 4; // Z_q[X] / (X^4 + 1)
     const P: u64 = 268369921u64;

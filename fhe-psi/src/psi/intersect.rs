@@ -159,6 +159,7 @@ pub fn intersect_log_multiplicative<const P: u64, FHE: FHEScheme<P>>(
 mod test {
     use crate::fhe::fhe::FHEInsecure;
     use crate::fhe::gsw::{GSWTest, GSW_TEST_PARAMS};
+    use crate::fhe::ringgsw_ntt::RingGSWNTTTest;
     use std::collections::HashSet;
     use crate::fhe::ringgsw::RingGSWTest;
 
@@ -198,6 +199,11 @@ mod test {
     }
 
     #[test]
+    fn test_intersect_additive_ringgsw_ntt() {
+        do_intersect_additive::<TEST_P, RingGSWNTTTest>();
+    }
+
+    #[test]
     fn test_intersect_log_multiplicative_insecure() {
         do_intersect_log_multiplicative::<TEST_P, FHEInsecure>();
     }
@@ -210,6 +216,11 @@ mod test {
     #[test]
     fn test_intersect_log_multiplicative_ringgsw() {
         do_intersect_log_multiplicative::<TEST_P, RingGSWTest>();
+    }
+
+    #[test]
+    fn test_intersect_log_multiplicative_ringgsw_ntt() {
+        do_intersect_log_multiplicative::<TEST_P, RingGSWNTTTest>();
     }
 
     // TODO: make these generic over intersection functions
