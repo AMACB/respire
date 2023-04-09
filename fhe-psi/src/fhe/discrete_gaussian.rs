@@ -1,21 +1,21 @@
+//! Discrete gaussian distribution over the integers. Related to [RandDiscreteGaussianSampled].
+
 use once_cell::sync::Lazy;
+use rand::distributions::WeightedIndex;
+use rand::prelude::Distribution;
+use rand::Rng;
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::RwLock;
 
-use rand::distributions::WeightedIndex;
-use rand::prelude::Distribution;
-use rand::Rng;
-
+/// Number of std deviations (width) to sample from. A z-score of 8 has probability < 1.23 x 10^-15.
 pub const NUM_WIDTHS: usize = 8;
 
+/// A single table used for sampling a discrete gaussian of a particular width.
 struct DiscreteGaussianTable {
     choices: Vec<i64>,
     dist: WeightedIndex<f64>,
 }
-
-static DISCRETE_GAUSSIAN_TABLES: Lazy<RwLock<HashMap<u64, DiscreteGaussianTable>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
 
 impl DiscreteGaussianTable {
     fn init(noise_width: f64) -> Self {
@@ -38,9 +38,16 @@ impl DiscreteGaussianTable {
     }
 }
 
+/// Memoization table for discrete gaussian sampling.
+static DISCRETE_GAUSSIAN_TABLES: Lazy<RwLock<HashMap<u64, DiscreteGaussianTable>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// Discrete gaussian distributions
 pub struct DiscreteGaussian {}
 
 impl DiscreteGaussian {
+    /// Samples a discrete gaussian of the given width. This function memoized based on the noise
+    /// width, so the first call of a particular noise width will take longer than future calls.
     pub fn sample<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> i64 {
         if let Some(table) = DISCRETE_GAUSSIAN_TABLES
             .read()

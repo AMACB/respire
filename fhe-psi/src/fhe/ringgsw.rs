@@ -1,8 +1,9 @@
-use crate::fhe::fhe::{CiphertextRef, FHEScheme};
-use crate::fhe::gadget::{build_gadget, gadget_inverse};
+use crate::fhe::fhe::*;
+use crate::fhe::gadget::*;
 use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::RingElement;
+use crate::math::utils::ceil_log;
 use crate::math::z_n::Z_N;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
 use rand::SeedableRng;
@@ -21,7 +22,7 @@ pub struct RingGSW<
     const NOISE_WIDTH_MILLIONTHS: u64,
 > {}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CiphertextRaw<
     const N: usize,
     const M: usize,
@@ -34,7 +35,7 @@ pub struct CiphertextRaw<
     ct: Matrix<N, M, Z_N_CycloRaw<D, Q>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PublicKey<
     const N: usize,
     const M: usize,
@@ -47,7 +48,7 @@ pub struct PublicKey<
     A: Matrix<N, M, Z_N_CycloRaw<D, Q>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SecretKey<
     const N: usize,
     const M: usize,
@@ -114,7 +115,8 @@ impl<
         );
 
         let pt = &(&(s_T * ct) * g_inv)[(0, N - 1)];
-        let pt = Z_N::<Q>::try_from(pt).unwrap();
+        // TODO support arbitrary messages, not just constants
+        let pt = pt[0];
         let floored = u64::from(pt) * P * 2 / Q;
         Z_N::from((floored + 1) / 2)
     }
@@ -134,7 +136,9 @@ impl<
     type Output = CiphertextRaw<N, M, P, Q, D, G_BASE, G_LEN>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        todo!()
+        CiphertextRaw {
+            ct: &self.ct + &rhs.ct,
+        }
     }
 }
 
@@ -152,7 +156,9 @@ impl<
     type Output = CiphertextRaw<N, M, P, Q, D, G_BASE, G_LEN>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        todo!()
+        CiphertextRaw {
+            ct: &self.ct * &gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, M, G_BASE, G_LEN>(&rhs.ct),
+        }
     }
 }
 
@@ -170,7 +176,13 @@ impl<
     type Output = CiphertextRaw<N, M, P, Q, D, G_BASE, G_LEN>;
 
     fn mul(self, rhs: Z_N<P>) -> Self::Output {
-        todo!()
+        let rhs_q = &Z_N_CycloRaw::<D, Q>::from(u64::from(rhs));
+        CiphertextRaw {
+            ct: &self.ct
+                * &gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, M, G_BASE, G_LEN>(
+                    &(&build_gadget::<Z_N_CycloRaw<D, Q>, N, M, Q, G_BASE, G_LEN>() * rhs_q),
+                ),
+        }
     }
 }
 
@@ -214,10 +226,95 @@ macro_rules! ring_gsw_from_params {
     }
 }
 
+pub const RING_GSW_TEST_PARAMS: Params = Params {
+    N: 2,
+    M: 56,
+    P: 31,
+    Q: 268369921,
+    D: 4,
+    G_BASE: 2,
+    NOISE_WIDTH_MILLIONTHS: 6_400_000,
+};
+
+pub type RingGSWTest = ring_gsw_from_params!(RING_GSW_TEST_PARAMS);
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    fn test123() {}
+    fn keygen_is_correct() {
+        let threshold = 4f64 * (RING_GSW_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
+        let (A, s_T) = RingGSWTest::keygen();
+        let e = &s_T.s_T * &A.A;
+
+        for i in 0..RING_GSW_TEST_PARAMS.M {
+            assert!(
+                (e[(0, i)].norm() as f64) < threshold,
+                "e^T = s_T * A was too big"
+            );
+        }
+    }
+
+    #[test]
+    fn encryption_is_correct() {
+        let (A, s_T) = RingGSWTest::keygen();
+        for i in 0_u64..10_u64 {
+            let mu = Z_N::from(i);
+            let ct = RingGSWTest::encrypt(&A, mu);
+            let pt = RingGSWTest::decrypt(&s_T, &ct);
+            assert_eq!(pt, mu, "decryption failed");
+        }
+    }
+
+    #[test]
+    fn homomorphism_is_correct() {
+        let (A, s_T) = RingGSWTest::keygen();
+        for i in 0_u64..10_u64 {
+            for j in 0_u64..10_u64 {
+                let mu1 = Z_N::from(i);
+                let mu2 = Z_N::from(j);
+                let ct1 = RingGSWTest::encrypt(&A, mu1);
+                let ct2 = RingGSWTest::encrypt(&A, mu2);
+                // let pt_add = GSWTest::decrypt(&s_T, &(&ct1 + mu2));
+                let pt_mul = RingGSWTest::decrypt(&s_T, &(&ct1 * mu2));
+                let pt_add_ct = RingGSWTest::decrypt(&s_T, &(&ct1 + &ct2));
+                let pt_mul_ct = RingGSWTest::decrypt(&s_T, &(&ct1 * &ct2));
+                // assert_eq!(pt_add, &mu1 + &mu2, "addition by scalar failed");
+                assert_eq!(pt_add_ct, &mu1 + &mu2, "ciphertext addition failed");
+
+                assert_eq!(pt_mul, &mu1 * &mu2, "multiplication by scalar failed");
+                assert_eq!(pt_mul_ct, &mu1 * &mu2, "ciphertext multiplication failed");
+            }
+        }
+    }
+
+    #[test]
+    fn homomorphism_mul_multiple_correct() {
+        let (A, s_T) = RingGSWTest::keygen();
+        let mu1 = Z_N::from(5_u64);
+        let mu2 = Z_N::from(12_u64);
+        let mu3 = Z_N::from(6_u64);
+        let mu4 = Z_N::from(18_u64);
+
+        let ct1 = RingGSWTest::encrypt(&A, mu1);
+        let ct2 = RingGSWTest::encrypt(&A, mu2);
+        let ct3 = RingGSWTest::encrypt(&A, mu3);
+        let ct4 = RingGSWTest::encrypt(&A, mu4);
+
+        let ct12 = &ct1 * &ct2;
+        let ct34 = &ct3 * &ct4;
+        let ct1234 = &ct12 * &ct34;
+        // let ct31234 = &ct3 * &ct1234;
+
+        let pt12 = RingGSWTest::decrypt(&s_T, &ct12);
+        let pt34 = RingGSWTest::decrypt(&s_T, &ct34);
+        let pt1234 = RingGSWTest::decrypt(&s_T, &ct1234);
+        // let pt31234 = gsw::decrypt(&s_T, &ct31234);
+
+        assert_eq!(pt12, &mu1 * &mu2);
+        assert_eq!(pt34, &mu3 * &mu4);
+        assert_eq!(pt1234, &(&(&mu1 * &mu2) * &mu3) * &mu4);
+        // assert_eq!(pt31234, &(&(&(&mu1 * &mu2) * &mu3) * &mu4) * &mu3);
+    }
 }

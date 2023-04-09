@@ -1,5 +1,7 @@
-use crate::fhe::fhe::{CiphertextRef, FHEScheme};
-use crate::fhe::gadget::{build_gadget, gadget_inverse};
+//! Plain GSW.
+
+use crate::fhe::fhe::*;
+use crate::fhe::gadget::*;
 use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::RingElement;
@@ -34,7 +36,7 @@ pub struct GSW<
     const NOISE_WIDTH_MILLIONTHS: u64,
 > {}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Ciphertext<
     const N: usize,
     const M: usize,
@@ -46,7 +48,7 @@ pub struct Ciphertext<
     ct: Matrix<N, M, Z_N<Q>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PublicKey<
     const N: usize,
     const M: usize,
@@ -58,7 +60,7 @@ pub struct PublicKey<
     A: Matrix<N, M, Z_N<Q>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SecretKey<
     const N: usize,
     const M: usize,
@@ -276,11 +278,8 @@ mod test {
         let e = &s_T.s_T * &A.A;
 
         for i in 0..GSW_TEST_PARAMS.M {
-            // abs(e[i]) < threshold
-            let ei_pos: u64 = e[(0, i)].into();
-            let ei_neg: u64 = (-e[(0, i)]).into();
             assert!(
-                (ei_pos as f64) < threshold || (ei_neg as f64) < threshold,
+                (e[(0, i)].norm() as f64) < threshold,
                 "e^T = s_T * A was too big"
             );
         }

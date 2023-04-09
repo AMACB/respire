@@ -1,5 +1,10 @@
+//! Gadget matrix and gadget inverse (n-ary decomposition).
+
 use crate::math::matrix::*;
-use crate::math::ring_elem::{RingElementDivModdable, RingElementRef};
+use crate::math::ring_elem::*;
+
+// TODO
+// Write tests for Z_N_Cyclo
 
 pub fn build_gadget<
     R: RingElementDivModdable,

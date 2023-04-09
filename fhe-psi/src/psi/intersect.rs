@@ -2,6 +2,7 @@ use crate::fhe::fhe::{CiphertextRef, FHEScheme};
 
 use crate::math::polynomial::PolynomialZ_N;
 use crate::math::ring_elem::RingElement;
+use crate::math::utils::floor_log;
 use crate::math::z_n::Z_N;
 
 // pub trait IntersectionStrategy {}
@@ -19,6 +20,8 @@ pub fn intersect_naive<const P: u64>(
     result_set
 }
 
+/// Computes a PSI completely additively. For every client element `a`, the client computes and
+/// sends encryptions of `a^i` for `i = 0..|B|`.
 pub fn intersect_additive<const P: u64, FHE: FHEScheme<P>>(
     client_set: &Vec<Z_N<P>>,
     server_set: &Vec<Z_N<P>>,
@@ -31,9 +34,9 @@ where
 
     /* Server computes its polynomial and sets up interface for client */
     let mut server_polynomial = PolynomialZ_N::<P>::one();
-    for i in server_set {
-        // Monomial x - i
-        let monomial = vec![-*i, Z_N::one()].into();
+    for b in server_set {
+        // Monomial x - b
+        let monomial = vec![-*b, Z_N::one()].into();
         server_polynomial *= &monomial;
     }
 
@@ -41,13 +44,13 @@ where
     assert!(server_polynomial_deg >= 0);
 
     let server_interface = |pk: &<FHE as FHEScheme<P>>::PublicKey,
-                            powers_of_i: &Vec<FHE::Ciphertext>|
+                            powers_of_a: &Vec<FHE::Ciphertext>|
      -> FHE::Ciphertext {
         let mut server_polynomial_iter = server_polynomial.coeff_iter();
         let mut result = FHE::encrypt(pk, *server_polynomial_iter.next().unwrap());
-        assert_eq!(powers_of_i.len(), server_polynomial_iter.len());
-        for (pow_of_i, coeff) in powers_of_i.iter().zip(server_polynomial_iter) {
-            result = &result + &(pow_of_i * *coeff);
+        assert_eq!(powers_of_a.len(), server_polynomial_iter.len());
+        for (pow_of_a, coeff) in powers_of_a.iter().zip(server_polynomial_iter) {
+            result = &result + &(pow_of_a * *coeff);
         }
         // TODO: blinding factor
         result
@@ -56,19 +59,96 @@ where
     /* Client interacts with server and computes intersection */
     let mut result_set = vec![];
 
-    for i in client_set {
-        let mut powers_of_i: Vec<FHE::Ciphertext> =
+    for a in client_set {
+        let mut powers_of_a: Vec<FHE::Ciphertext> =
             Vec::with_capacity(server_polynomial_deg as usize);
-        let mut curr_power_of_i: Z_N<P> = 1_u64.into();
+        let mut curr_power_of_a: Z_N<P> = 1_u64.into();
+        // TODO check: this should send 1? Off by one?
         for _ in 0..server_polynomial_deg {
-            curr_power_of_i *= i;
-            powers_of_i.push(FHE::encrypt(&pk, curr_power_of_i));
+            curr_power_of_a *= a;
+            powers_of_a.push(FHE::encrypt(&pk, curr_power_of_a));
         }
 
-        let result = server_interface(&pk, &powers_of_i);
+        let result = server_interface(&pk, &powers_of_a);
         let result = FHE::decrypt(&sk, &result);
         if result == Z_N::<P>::zero() {
-            result_set.push(*i);
+            result_set.push(*a);
+        }
+    }
+
+    result_set
+}
+
+/// Computes a PSI with log-depth multiplications. For every client element `a`, the client computes
+/// and sends encryptions of `a^(2^i)` for `i = 0..floor(log2(|B|))`.
+pub fn intersect_log_multiplicative<const P: u64, FHE: FHEScheme<P>>(
+    client_set: &Vec<Z_N<P>>,
+    server_set: &Vec<Z_N<P>>,
+) -> Vec<Z_N<P>>
+    where
+            for<'a> &'a <FHE as FHEScheme<P>>::Ciphertext:
+    CiphertextRef<P, <FHE as FHEScheme<P>>::Ciphertext>,
+{
+    let (pk, sk) = FHE::keygen();
+
+    /* Server computes its polynomial and sets up interface for client */
+    let mut server_polynomial = PolynomialZ_N::<P>::one();
+    for b in server_set {
+        // Monomial x - b
+        let monomial = vec![-*b, Z_N::one()].into();
+        server_polynomial *= &monomial;
+    }
+
+    let server_polynomial_deg = server_polynomial.deg();
+    assert!(server_polynomial_deg >= 0);
+
+    let server_interface = |pk: &<FHE as FHEScheme<P>>::PublicKey,
+                            powers_of_a_bin: &Vec<FHE::Ciphertext>|
+                            -> FHE::Ciphertext {
+        let mut server_polynomial_iter = server_polynomial.coeff_iter().enumerate();
+        let mut result = FHE::encrypt(pk, *server_polynomial_iter.next().unwrap().1);
+        assert_eq!(powers_of_a_bin.len(), floor_log(2, server_polynomial_iter.len() as u64) + 1);
+        for (mut i, coeff) in server_polynomial_iter {
+            assert!(i > 0);
+            let mut bin_idx = 0;
+            // Find the first nonzero bit to avoid an extra multiplication
+            while i % 2 == 0 {
+                bin_idx += 1;
+                i /= 2;
+            }
+            let mut a_pow_i = powers_of_a_bin[bin_idx].clone();
+            bin_idx += 1;
+            i /= 2;
+            while i > 0 {
+                if i % 2 == 1 {
+                    a_pow_i = &a_pow_i * &powers_of_a_bin[bin_idx];
+                }
+                bin_idx += 1;
+                i /= 2;
+            }
+            result = &result + &(&a_pow_i * *coeff);
+        }
+        // TODO: blinding factor
+        result
+    };
+
+    /* Client interacts with server and computes intersection */
+    let mut result_set = vec![];
+
+    for a in client_set {
+        let log_degree: u64 = floor_log(2, server_polynomial_deg as u64) as u64 + 1;
+        let mut powers_of_a: Vec<FHE::Ciphertext> =
+            Vec::with_capacity(log_degree as usize);
+        let mut curr_power_of_a: Z_N<P> = *a;
+        for _ in 0..log_degree {
+            powers_of_a.push(FHE::encrypt(&pk, curr_power_of_a));
+            curr_power_of_a *= curr_power_of_a;
+        }
+
+        let result = server_interface(&pk, &powers_of_a);
+        let result = FHE::decrypt(&sk, &result);
+        if result == Z_N::<P>::zero() {
+            result_set.push(*a);
         }
     }
 
@@ -80,6 +160,7 @@ mod test {
     use crate::fhe::fhe::FHEInsecure;
     use crate::fhe::gsw::{GSWTest, GSW_TEST_PARAMS};
     use std::collections::HashSet;
+    use crate::fhe::ringgsw::RingGSWTest;
 
     const TEST_P: u64 = GSW_TEST_PARAMS.P;
 
@@ -111,6 +192,26 @@ mod test {
         do_intersect_additive::<TEST_P, GSWTest>();
     }
 
+    #[test]
+    fn test_intersect_additive_ringgsw() {
+        do_intersect_additive::<TEST_P, RingGSWTest>();
+    }
+
+    #[test]
+    fn test_intersect_log_multiplicative_insecure() {
+        do_intersect_log_multiplicative::<TEST_P, FHEInsecure>();
+    }
+
+    #[test]
+    fn test_intersect_log_multiplicative_gsw() {
+        do_intersect_log_multiplicative::<TEST_P, GSWTest>();
+    }
+
+    #[test]
+    fn test_intersect_log_multiplicative_ringgsw() {
+        do_intersect_log_multiplicative::<TEST_P, RingGSWTest>();
+    }
+
     // TODO: make these generic over intersection functions
     // TODO: make general test function that takes client_set, server_set, expected_set & generic intersection function
 
@@ -128,6 +229,24 @@ mod test {
 
         assert_eq!(
             HashSet::<Z_N<P>>::from_iter(intersect_additive::<P, FHE>(&client_set, &server_set)),
+            HashSet::<Z_N<P>>::from_iter(expected)
+        );
+    }
+
+    fn do_intersect_log_multiplicative<const P: u64, FHE: FHEScheme<P>>()
+        where
+                for<'a> &'a <FHE as FHEScheme<P>>::Ciphertext:
+        CiphertextRef<P, <FHE as FHEScheme<P>>::Ciphertext>,
+    {
+        let client_set: Vec<Z_N<P>> = vec![4_u64, 6, 7, 15].into_iter().map(Z_N::from).collect();
+        let server_set: Vec<Z_N<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
+            .into_iter()
+            .map(Z_N::from)
+            .collect();
+        let expected: Vec<Z_N<P>> = vec![4_u64, 7].into_iter().map(Z_N::from).collect();
+
+        assert_eq!(
+            HashSet::<Z_N<P>>::from_iter(intersect_log_multiplicative::<P, FHE>(&client_set, &server_set)),
             HashSet::<Z_N<P>>::from_iter(expected)
         );
     }
