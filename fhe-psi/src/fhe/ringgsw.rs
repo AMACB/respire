@@ -236,7 +236,18 @@ pub const RING_GSW_TEST_PARAMS: Params = Params {
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
 };
 
+pub const RING_GSW_TEST_MEDIUM_PARAMS: Params = Params {
+    N: 1,
+    M: 28,
+    P: 3571,
+    Q: 268369921,
+    D: 256,
+    G_BASE: 2,
+    NOISE_WIDTH_MILLIONTHS: 6_400_000,
+};
+
 pub type RingGSWTest = ring_gsw_from_params!(RING_GSW_TEST_PARAMS);
+pub type RingGSWTestMedium = ring_gsw_from_params!(RING_GSW_TEST_MEDIUM_PARAMS);
 
 #[cfg(test)]
 mod test {

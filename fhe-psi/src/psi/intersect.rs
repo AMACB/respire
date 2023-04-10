@@ -161,9 +161,10 @@ mod test {
     use crate::fhe::gsw::{GSWTest, GSW_TEST_PARAMS};
     use crate::fhe::ringgsw_ntt::RingGSWNTTTest;
     use std::collections::HashSet;
-    use crate::fhe::ringgsw::RingGSWTest;
+    use crate::fhe::ringgsw::{RING_GSW_TEST_MEDIUM_PARAMS, RingGSWTest, RingGSWTestMedium};
 
     const TEST_P: u64 = GSW_TEST_PARAMS.P;
+    const TEST_MEDIUM_P: u64 = RING_GSW_TEST_MEDIUM_PARAMS.P;
 
     use super::*;
 
@@ -192,6 +193,11 @@ mod test {
     fn test_intersect_additive_gsw() {
         do_intersect_additive::<TEST_P, GSWTest>();
     }
+
+    // #[test]
+    // fn test_intersect_log_multiplicative_ringgsw_medium() {
+    //     do_intersect_log_multiplicative::<TEST_MEDIUM_P, RingGSWTestMedium>();
+    // }
 
     #[test]
     fn test_intersect_additive_ringgsw() {
