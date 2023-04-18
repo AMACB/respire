@@ -122,11 +122,6 @@ impl<
 
         let pt = &(&(s_T * ct) * g_inv)[(0, N - 1)];
         // TODO support arbitrary messages, not just constants
-        let tmp = Z_N_CycloRaw::from(pt.clone());
-        for point in tmp.coeff_iter() {
-            print!("{:?} ", Z_N::<P>::from((u64::from(point.clone()) * P * 2 / Q + 1) / 2));
-        }
-        println!();
         let pt = Z_N_CycloRaw::from(pt.clone())[0];
         let floored = u64::from(pt) * P * 2 / Q;
         Z_N::from((floored + 1) / 2)
@@ -170,7 +165,8 @@ impl<
 
     fn mul(self, rhs: Self) -> Self::Output {
         CiphertextRaw {
-            ct: &self.ct * &gadget_inverse::<Z_N_CycloNTT<D, Q, W>, N, M, M, G_BASE, G_LEN>(&rhs.ct),
+            ct: &self.ct
+                * &gadget_inverse::<Z_N_CycloNTT<D, Q, W>, N, M, M, G_BASE, G_LEN>(&rhs.ct),
         }
     }
 }
@@ -254,7 +250,21 @@ pub const RING_GSW_NTT_TEST_PARAMS: Params = Params {
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
 };
 
+pub const RING_GSW_NTT_TEST_MEDIUM_PARAMS: Params = Params {
+    N: 2,
+    M: 56,
+    P: 3571,
+    Q: 268369921,
+    D: 256,
+    W: 63703579,
+    G_BASE: 2,
+    NOISE_WIDTH_MILLIONTHS: 6_400_000,
+};
+
+// For parameter selection: fix Q, then choose smallest N*D for appropriate security.
+
 pub type RingGSWNTTTest = ring_gsw_ntt_from_params!(RING_GSW_NTT_TEST_PARAMS);
+pub type RingGSWNTTTestMedium = ring_gsw_ntt_from_params!(RING_GSW_NTT_TEST_MEDIUM_PARAMS);
 
 #[cfg(test)]
 mod test {
@@ -262,7 +272,8 @@ mod test {
 
     #[test]
     fn keygen_is_correct() {
-        let threshold = 4f64 * (RING_GSW_NTT_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
+        let threshold =
+            4f64 * (RING_GSW_NTT_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
         let (A, s_T) = RingGSWNTTTest::keygen();
         let e = &s_T.s_T * &A.A;
 

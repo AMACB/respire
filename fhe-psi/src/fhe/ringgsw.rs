@@ -237,8 +237,8 @@ pub const RING_GSW_TEST_PARAMS: Params = Params {
 };
 
 pub const RING_GSW_TEST_MEDIUM_PARAMS: Params = Params {
-    N: 1,
-    M: 28,
+    N: 2,
+    M: 56,
     P: 3571,
     Q: 268369921,
     D: 256,

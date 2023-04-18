@@ -85,9 +85,9 @@ pub fn intersect_log_multiplicative<const P: u64, FHE: FHEScheme<P>>(
     client_set: &Vec<Z_N<P>>,
     server_set: &Vec<Z_N<P>>,
 ) -> Vec<Z_N<P>>
-    where
-            for<'a> &'a <FHE as FHEScheme<P>>::Ciphertext:
-    CiphertextRef<P, <FHE as FHEScheme<P>>::Ciphertext>,
+where
+    for<'a> &'a <FHE as FHEScheme<P>>::Ciphertext:
+        CiphertextRef<P, <FHE as FHEScheme<P>>::Ciphertext>,
 {
     let (pk, sk) = FHE::keygen();
 
@@ -104,10 +104,13 @@ pub fn intersect_log_multiplicative<const P: u64, FHE: FHEScheme<P>>(
 
     let server_interface = |pk: &<FHE as FHEScheme<P>>::PublicKey,
                             powers_of_a_bin: &Vec<FHE::Ciphertext>|
-                            -> FHE::Ciphertext {
+     -> FHE::Ciphertext {
         let mut server_polynomial_iter = server_polynomial.coeff_iter().enumerate();
         let mut result = FHE::encrypt(pk, *server_polynomial_iter.next().unwrap().1);
-        assert_eq!(powers_of_a_bin.len(), floor_log(2, server_polynomial_iter.len() as u64) + 1);
+        assert_eq!(
+            powers_of_a_bin.len(),
+            floor_log(2, server_polynomial_iter.len() as u64) + 1
+        );
         for (mut i, coeff) in server_polynomial_iter {
             assert!(i > 0);
             let mut bin_idx = 0;
@@ -137,8 +140,7 @@ pub fn intersect_log_multiplicative<const P: u64, FHE: FHEScheme<P>>(
 
     for a in client_set {
         let log_degree: u64 = floor_log(2, server_polynomial_deg as u64) as u64 + 1;
-        let mut powers_of_a: Vec<FHE::Ciphertext> =
-            Vec::with_capacity(log_degree as usize);
+        let mut powers_of_a: Vec<FHE::Ciphertext> = Vec::with_capacity(log_degree as usize);
         let mut curr_power_of_a: Z_N<P> = *a;
         for _ in 0..log_degree {
             powers_of_a.push(FHE::encrypt(&pk, curr_power_of_a));
@@ -159,9 +161,9 @@ pub fn intersect_log_multiplicative<const P: u64, FHE: FHEScheme<P>>(
 mod test {
     use crate::fhe::fhe::FHEInsecure;
     use crate::fhe::gsw::{GSWTest, GSW_TEST_PARAMS};
-    use crate::fhe::ringgsw_ntt::RingGSWNTTTest;
+    use crate::fhe::ringgsw::{RingGSWTest, RingGSWTestMedium, RING_GSW_TEST_MEDIUM_PARAMS};
+    use crate::fhe::ringgsw_ntt::{RingGSWNTTTest, RingGSWNTTTestMedium};
     use std::collections::HashSet;
-    use crate::fhe::ringgsw::{RING_GSW_TEST_MEDIUM_PARAMS, RingGSWTest, RingGSWTestMedium};
 
     const TEST_P: u64 = GSW_TEST_PARAMS.P;
     const TEST_MEDIUM_P: u64 = RING_GSW_TEST_MEDIUM_PARAMS.P;
@@ -229,6 +231,16 @@ mod test {
         do_intersect_log_multiplicative::<TEST_P, RingGSWNTTTest>();
     }
 
+    #[test]
+    fn test_intersect_log_multiplicative_ringgsw_medium() {
+        do_intersect_log_multiplicative::<TEST_MEDIUM_P, RingGSWTestMedium>();
+    }
+
+    #[test]
+    fn test_intersect_log_multiplicative_ringgsw_ntt_medium() {
+        do_intersect_log_multiplicative::<TEST_MEDIUM_P, RingGSWNTTTestMedium>();
+    }
+
     // TODO: make these generic over intersection functions
     // TODO: make general test function that takes client_set, server_set, expected_set & generic intersection function
 
@@ -251,9 +263,9 @@ mod test {
     }
 
     fn do_intersect_log_multiplicative<const P: u64, FHE: FHEScheme<P>>()
-        where
-                for<'a> &'a <FHE as FHEScheme<P>>::Ciphertext:
-        CiphertextRef<P, <FHE as FHEScheme<P>>::Ciphertext>,
+    where
+        for<'a> &'a <FHE as FHEScheme<P>>::Ciphertext:
+            CiphertextRef<P, <FHE as FHEScheme<P>>::Ciphertext>,
     {
         let client_set: Vec<Z_N<P>> = vec![4_u64, 6, 7, 15].into_iter().map(Z_N::from).collect();
         let server_set: Vec<Z_N<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
@@ -263,7 +275,10 @@ mod test {
         let expected: Vec<Z_N<P>> = vec![4_u64, 7].into_iter().map(Z_N::from).collect();
 
         assert_eq!(
-            HashSet::<Z_N<P>>::from_iter(intersect_log_multiplicative::<P, FHE>(&client_set, &server_set)),
+            HashSet::<Z_N<P>>::from_iter(intersect_log_multiplicative::<P, FHE>(
+                &client_set,
+                &server_set
+            )),
             HashSet::<Z_N<P>>::from_iter(expected)
         );
     }

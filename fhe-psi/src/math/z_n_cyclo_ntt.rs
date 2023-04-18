@@ -40,8 +40,10 @@ impl<const D: usize, const N: u64, const W: u64> From<[Z_N<N>; D]> for Z_N_Cyclo
     }
 }
 
-impl<const D: usize, const N: u64, const W: u64> From<Z_N_CycloRaw<D,N>> for Z_N_CycloNTT<D, N, W> {
-    fn from(z_n_cyclo: Z_N_CycloRaw<D,N>) -> Self {
+impl<const D: usize, const N: u64, const W: u64> From<Z_N_CycloRaw<D, N>>
+    for Z_N_CycloNTT<D, N, W>
+{
+    fn from(z_n_cyclo: Z_N_CycloRaw<D, N>) -> Self {
         // TODO: this should be in the type, probably
         let mut log_d = 1;
         while (1 << log_d) < D {
@@ -62,10 +64,9 @@ impl<const D: usize, const N: u64, const W: u64> From<Z_N_CycloRaw<D,N>> for Z_N
         bit_reverse_order(&mut points, log_d);
         ntt(&mut points, root * root, log_d);
 
-        return Self { points }
+        return Self { points };
     }
 }
-
 
 impl<const D: usize, const N: u64, const W: u64> From<PolynomialZ_N<N>> for Z_N_CycloNTT<D, N, W> {
     fn from(polynomial: PolynomialZ_N<N>) -> Self {
@@ -102,7 +103,10 @@ impl<const D: usize, const N: u64, const W: u64> TryFrom<&Z_N_CycloNTT<D, N, W>>
 
 /// [`RingElementRef`] implementation
 
-impl<const D: usize, const N: u64, const W: u64> RingElementRef<Z_N_CycloNTT<D, N, W>> for &Z_N_CycloNTT<D, N, W> {}
+impl<const D: usize, const N: u64, const W: u64> RingElementRef<Z_N_CycloNTT<D, N, W>>
+    for &Z_N_CycloNTT<D, N, W>
+{
+}
 
 impl<const D: usize, const N: u64, const W: u64> Add for &Z_N_CycloNTT<D, N, W> {
     type Output = Z_N_CycloNTT<D, N, W>;
@@ -218,12 +222,13 @@ impl<const D: usize, const N: u64, const W: u64> RandZeroOneSampled for Z_N_Cycl
     }
 }
 
-impl<const D: usize, const N: u64, const W: u64> RandDiscreteGaussianSampled for Z_N_CycloNTT<D, N, W> {
+impl<const D: usize, const N: u64, const W: u64> RandDiscreteGaussianSampled
+    for Z_N_CycloNTT<D, N, W>
+{
     fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
         Z_N_CycloRaw::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(rng).into()
     }
 }
-
 
 /// Other polynomial-specific operations.
 
@@ -237,7 +242,6 @@ impl<const D: usize, const N: u64, const W: u64> Z_N_CycloNTT<D, N, W> {
 mod test {
     use super::*;
     use crate::math::matrix::Matrix;
-    use crate::fhe::gadget::*;
 
     const D: usize = 4; // Z_q[X] / (X^4 + 1)
     const P: u64 = 268369921u64;
@@ -246,14 +250,19 @@ mod test {
     // TODO: add more tests.
     #[test]
     fn test_from_into() {
-
-        let mut p = Z_N_CycloNTT::<D, P, W>::from([1u64.into(), 1u64.into(), 1u64.into(), 1u64.into()]);
+        let mut p =
+            Z_N_CycloNTT::<D, P, W>::from([1u64.into(), 1u64.into(), 1u64.into(), 1u64.into()]);
         let mut q = Z_N_CycloNTT::<D, P, W>::from(Z_N_CycloRaw::from(vec![1u64]));
         assert_eq!(p, q);
         assert_eq!(Z_N_CycloRaw::<D, P>::from(p), Z_N_CycloRaw::<D, P>::from(q));
 
         let root = W.into();
-        p = Z_N_CycloNTT::<D, P, W>::from([pow(root, 1u64), pow(root, 3u64), pow(root, 5u64), pow(root, 7u64)]);
+        p = Z_N_CycloNTT::<D, P, W>::from([
+            pow(root, 1u64),
+            pow(root, 3u64),
+            pow(root, 5u64),
+            pow(root, 7u64),
+        ]);
         q = Z_N_CycloNTT::<D, P, W>::from(Z_N_CycloRaw::from(vec![0u64, 1u64]));
         assert_eq!(p, q);
         assert_eq!(Z_N_CycloRaw::<D, P>::from(p), Z_N_CycloRaw::<D, P>::from(q));
@@ -264,12 +273,12 @@ mod test {
         let p = Z_N_CycloRaw::<D, P>::from(vec![1, 2, 3, 4]);
         let q = Z_N_CycloRaw::<D, P>::from(vec![5, 6, 7, 8]);
 
-        let p_ntt : Z_N_CycloNTT<D, P, W> = p.clone().into();
-        let q_ntt : Z_N_CycloNTT<D, P, W> = q.clone().into();
+        let p_ntt: Z_N_CycloNTT<D, P, W> = p.clone().into();
+        let q_ntt: Z_N_CycloNTT<D, P, W> = q.clone().into();
 
-        assert_eq!(Z_N_CycloNTT::<D, P, W>::from(&p+&q), &p_ntt+&q_ntt);
-        assert_eq!(Z_N_CycloNTT::<D, P, W>::from(&p-&q), &p_ntt-&q_ntt);
-        assert_eq!(Z_N_CycloNTT::<D, P, W>::from(&p*&q), &p_ntt*&q_ntt);
+        assert_eq!(Z_N_CycloNTT::<D, P, W>::from(&p + &q), &p_ntt + &q_ntt);
+        assert_eq!(Z_N_CycloNTT::<D, P, W>::from(&p - &q), &p_ntt - &q_ntt);
+        assert_eq!(Z_N_CycloNTT::<D, P, W>::from(&p * &q), &p_ntt * &q_ntt);
     }
 
     #[test]
@@ -337,4 +346,3 @@ mod test {
         );
     }
 }
-

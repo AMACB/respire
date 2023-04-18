@@ -8,7 +8,7 @@ use std::cmp::min;
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-// TODO Optimize use of %
+// TODO Optimize use of % !!!!
 
 /// Integers modulo `N` with overloaded modular arithmetic operation (`+`, `-`, `*`, unary `-`), and
 /// several other utility methods.

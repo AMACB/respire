@@ -16,7 +16,7 @@ pub fn pow<const N: u64>(mut val: Z_N<N>, mut e: u64) -> Z_N<N> {
 
 // TODO: this should also go somewhere else, aslo this is not efficient
 pub fn inverse<const N: u64>(val: Z_N<N>) -> Z_N<N> {
-    return pow(val, N-2);
+    return pow(val, N - 2);
 }
 
 pub fn ntt<const D: usize, const N: u64>(values: &mut [Z_N<N>; D], root: Z_N<N>, log_d: usize) {
@@ -26,12 +26,12 @@ pub fn ntt<const D: usize, const N: u64>(values: &mut [Z_N<N>; D], root: Z_N<N>,
         let w_m = pow(root, (D as u64) >> (round + 1));
 
         for block_start in (0..D).step_by(prev_block_size * 2) {
-            let mut w : Z_N<N> = 1u64.into();
-            for i in block_start..block_start+prev_block_size {
+            let mut w: Z_N<N> = 1u64.into();
+            for i in block_start..block_start + prev_block_size {
                 let x = values[i];
                 let y = w * (values[i + prev_block_size]);
-                values[i] = x+y;
-                values[i+prev_block_size] = x-y;
+                values[i] = x + y;
+                values[i + prev_block_size] = x - y;
                 w *= w_m;
             }
         }
@@ -61,7 +61,7 @@ mod test {
     // TODO: add more tests.
     #[test]
     fn ntt_self_inverse() {
-        let mut coeff : [Z_N<P> ; 4] = [1u64.into(), 2u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
+        let mut coeff: [Z_N<P>; 4] = [1u64.into(), 2u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
 
         let coeff_orig = coeff.clone();
         let root = pow(W.into(), 1 << 14);
@@ -80,7 +80,7 @@ mod test {
 
     #[test]
     fn forward_ntt() {
-        let mut coeff : [Z_N<P> ; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
+        let mut coeff: [Z_N<P>; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
 
         let root = pow(W.into(), 1 << 14);
 
@@ -88,7 +88,12 @@ mod test {
         ntt(&mut coeff, root, LOG_D);
 
         let one = Z_N::one();
-        let evaluated = [one+one, root+one, root*root+one, root*root*root+one];
+        let evaluated = [
+            one + one,
+            root + one,
+            root * root + one,
+            root * root * root + one,
+        ];
 
         assert_eq!(coeff, evaluated);
     }
@@ -98,7 +103,12 @@ mod test {
         let root = pow(W.into(), 1 << 14);
         let one = Z_N::one();
 
-        let mut evaluated = [one+one, root+one, root*root+one, root*root*root+one];
+        let mut evaluated = [
+            one + one,
+            root + one,
+            root * root + one,
+            root * root * root + one,
+        ];
 
         bit_reverse_order(&mut evaluated, LOG_D);
         ntt(&mut evaluated, inverse(root), LOG_D);
@@ -107,17 +117,16 @@ mod test {
             evaluated[i] *= inverse((D as u64).into());
         }
 
-        let coeff : [Z_N<P> ; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
+        let coeff: [Z_N<P>; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
 
         assert_eq!(coeff, evaluated);
     }
 
-
     #[test]
     fn test_fancy_ntt() {
-        let mut coeff1 : [Z_N<P> ; D] = [1u64.into(), 2u64.into(), 3u64.into(), 4u64.into()];
-        let mut coeff2 : [Z_N<P> ; D] = [1u64.into(), 1u64.into(), 1u64.into(), 1u64.into()];
-        let ans : [Z_N<P> ; D] = [(P-8).into(), (P-4).into(), 2u64.into(), 10u64.into()];
+        let mut coeff1: [Z_N<P>; D] = [1u64.into(), 2u64.into(), 3u64.into(), 4u64.into()];
+        let mut coeff2: [Z_N<P>; D] = [1u64.into(), 1u64.into(), 1u64.into(), 1u64.into()];
+        let ans: [Z_N<P>; D] = [(P - 8).into(), (P - 4).into(), 2u64.into(), 10u64.into()];
 
         let root = pow(W.into(), 1 << 13);
 
@@ -127,9 +136,9 @@ mod test {
         }
 
         bit_reverse_order(&mut coeff1, LOG_D);
-        ntt(&mut coeff1, root*root, LOG_D);
+        ntt(&mut coeff1, root * root, LOG_D);
         bit_reverse_order(&mut coeff2, LOG_D);
-        ntt(&mut coeff2, root*root, LOG_D);
+        ntt(&mut coeff2, root * root, LOG_D);
 
         let mut coeff3 = [0u64.into(); 4];
         for i in 0..coeff1.len() {

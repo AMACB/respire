@@ -66,8 +66,6 @@ impl<const D: usize, const N: u64> From<Vec<Z_N<N>>> for Z_N_CycloRaw<D, N> {
     }
 }
 
-
-
 impl<const D: usize, const N: u64> TryFrom<&Z_N_CycloRaw<D, N>> for Z_N<N> {
     type Error = ();
 
@@ -82,8 +80,10 @@ impl<const D: usize, const N: u64> TryFrom<&Z_N_CycloRaw<D, N>> for Z_N<N> {
     }
 }
 
-impl<const D: usize, const N: u64, const W: u64> From<Z_N_CycloNTT<D,N,W>> for Z_N_CycloRaw<D, N> {
-    fn from(z_n_cyclo_ntt: Z_N_CycloNTT<D,N,W>) -> Self {
+impl<const D: usize, const N: u64, const W: u64> From<Z_N_CycloNTT<D, N, W>>
+    for Z_N_CycloRaw<D, N>
+{
+    fn from(z_n_cyclo_ntt: Z_N_CycloNTT<D, N, W>) -> Self {
         // TODO: this should be in the type, probably
         let mut log_d = 1;
         while (1 << log_d) < D {
@@ -108,7 +108,7 @@ impl<const D: usize, const N: u64, const W: u64> From<Z_N_CycloNTT<D,N,W>> for Z
             coeff[i] *= inverse(pow(root, i as u64));
         }
 
-        return Self { coeff }
+        return Self { coeff };
     }
 }
 
