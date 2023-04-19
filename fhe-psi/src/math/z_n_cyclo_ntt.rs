@@ -46,6 +46,14 @@ impl<const D: usize, const N: u64, const W: u64> From<Z_N_CycloRaw<D, N>>
     for Z_N_CycloNTT<D, N, W>
 {
     fn from(z_n_cyclo: Z_N_CycloRaw<D, N>) -> Self {
+        (&z_n_cyclo).into()
+    }
+}
+
+impl<const D: usize, const N: u64, const W: u64> From<&Z_N_CycloRaw<D, N>>
+    for Z_N_CycloNTT<D, N, W>
+{
+    fn from(z_n_cyclo: &Z_N_CycloRaw<D, N>) -> Self {
         // TODO: this should be in the type, probably
         let mut log_d = 1;
         while (1 << log_d) < D {
@@ -198,7 +206,7 @@ impl<const D: usize, const NN: u64, const W: u64, const BASE: u64, const LEN: us
         i: usize,
         j: usize,
     ) {
-        let self_raw = Z_N_CycloRaw::from(self.clone());
+        let self_raw = Z_N_CycloRaw::from(self);
         let mut a: [u64; D] = [0; D];
         for (l, coeff) in self_raw.coeff_iter().enumerate() {
             a[l] = (*coeff).into();
