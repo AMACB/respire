@@ -7,7 +7,7 @@ use crate::math::ring_elem::*;
 // Write tests for Z_N_Cyclo
 
 pub fn build_gadget<
-    R: RingElementDivModdable,
+    R: RingElementDecomposable<G_BASE, G_LEN>,
     const N: usize,
     const M: usize,
     const Q: u64,
@@ -34,8 +34,22 @@ where
     gadget
 }
 
+pub trait RingElementDecomposable<const BASE: u64, const LEN: usize>: RingElement
+where
+    for<'a> &'a Self: RingElementRef<Self>,
+{
+    /// Computes the `BASE`-ary decomposition as a `1 x LEN` column vector, and writes it into `mat`
+    /// starting at the index `(i,j)`.
+    fn decompose_into_mat<const N: usize, const M: usize>(
+        &self,
+        mat: &mut Matrix<N, M, Self>,
+        i: usize,
+        j: usize,
+    );
+}
+
 pub fn gadget_inverse<
-    R: RingElementDivModdable,
+    R: RingElementDecomposable<G_BASE, G_LEN>,
     const N: usize,
     const M: usize,
     const K: usize,
@@ -51,12 +65,7 @@ where
 
     for i in 0..N {
         for j in 0..K {
-            let mut a: R = m[(i, j)].clone();
-            let mut r;
-            for k in 0..G_LEN {
-                (a, r) = a.div_mod(G_BASE);
-                m_expanded[(i * G_LEN + k, j)] = r;
-            }
+            m[(i, j)].decompose_into_mat(&mut m_expanded, i * G_LEN, j);
         }
     }
     m_expanded

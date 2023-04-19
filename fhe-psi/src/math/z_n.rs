@@ -1,6 +1,8 @@
 //! The ring `Z_n` of integers modulo `n`.
 
 use crate::fhe::discrete_gaussian::DiscreteGaussian;
+use crate::fhe::gadget::RingElementDecomposable;
+use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use rand::Rng;
@@ -170,9 +172,20 @@ impl<const N: u64> Neg for Z_N<N> {
     }
 }
 
-impl<const N: u64> RingElementDivModdable for Z_N<N> {
-    fn div_mod(&self, a: u64) -> (Self, Self) {
-        ((self.a / a).into(), (self.a % a).into())
+impl<const NN: u64, const BASE: u64, const LEN: usize> RingElementDecomposable<BASE, LEN>
+    for Z_N<NN>
+{
+    fn decompose_into_mat<const N: usize, const M: usize>(
+        &self,
+        mat: &mut Matrix<N, M, Self>,
+        i: usize,
+        j: usize,
+    ) {
+        let mut a = self.a;
+        for k in 0..LEN {
+            mat[(i + k, j)] = (a % BASE).into();
+            a /= BASE;
+        }
     }
 }
 

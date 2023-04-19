@@ -1,5 +1,7 @@
 //! The cyclotomic ring `Z_n[x]/x^d + 1)`, represented as its DFT. `d` is assumed to be a power of `2`.
 
+use crate::fhe::gadget::RingElementDecomposable;
+use crate::math::matrix::Matrix;
 use crate::math::ntt::*;
 use crate::math::polynomial::PolynomialZ_N;
 use crate::math::rand_sampled::*;
@@ -187,18 +189,28 @@ impl<'a, const D: usize, const N: u64, const W: u64> MulAssign<&'a Self> for Z_N
     }
 }
 
-// TODO: this is wrong. Why?
-// It does what it should, but I believe gadget matrix does something that it doesn't like in the context of GSW.
-impl<const D: usize, const N: u64, const W: u64> RingElementDivModdable for Z_N_CycloNTT<D, N, W> {
-    fn div_mod(&self, rhs: u64) -> (Self, Self) {
-        // let mut quot = Z_N_CycloNTT::zero();
-        // let mut rem = Z_N_CycloNTT::zero();
-        // for i in 0..D {
-        //     (quot.points[i], rem.points[i]) = self.points[i].div_mod(rhs);
-        // }
-        // (quot, rem)
-        let (quot, rem) = Z_N_CycloRaw::from(self.clone()).div_mod(rhs);
-        (quot.into(), rem.into())
+impl<const D: usize, const NN: u64, const W: u64, const BASE: u64, const LEN: usize>
+    RingElementDecomposable<BASE, LEN> for Z_N_CycloNTT<D, NN, W>
+{
+    fn decompose_into_mat<const N: usize, const M: usize>(
+        &self,
+        mat: &mut Matrix<N, M, Self>,
+        i: usize,
+        j: usize,
+    ) {
+        let self_raw = Z_N_CycloRaw::from(self.clone());
+        let mut a: [u64; D] = [0; D];
+        for (l, coeff) in self_raw.coeff_iter().enumerate() {
+            a[l] = (*coeff).into();
+        }
+        for k in 0..LEN {
+            let mut a_rem: [Z_N<NN>; D] = [0_u64.into(); D];
+            for l in 0..D {
+                a_rem[l] = (a[l] % BASE).into();
+                a[l] /= BASE;
+            }
+            mat[(i + k, j)] = Z_N_CycloNTT::from(Z_N_CycloRaw::from(a_rem));
+        }
     }
 }
 

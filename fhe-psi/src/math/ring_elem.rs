@@ -27,19 +27,6 @@ where
     fn one() -> Self;
 }
 
-/// A ring element where we can sensibly perform division by a scalar. This is useful for computing
-/// `n`-ary decompositions of ring elements.
-///
-/// Mathematically, implementing this trait means (1) there is a canonical representative of `R/aR`
-/// and (2) this can be efficiently computed.
-pub trait RingElementDivModdable: RingElement
-where
-    for<'a> &'a Self: RingElementRef<Self>,
-{
-    /// Computes the `(quotient, remainder)` upon division by `a`.
-    fn div_mod(&self, a: u64) -> (Self, Self);
-}
-
 /// A reference to a RingElement that supports non-inplace ring operations. This is required for
 /// e.g. matrices over a ring to avoid possibly expensive copying.
 pub trait RingElementRef<Owned: RingElement>:

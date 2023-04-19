@@ -77,7 +77,8 @@ impl<
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > FHEScheme<P> for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    > FHEScheme<P>
+    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     type Ciphertext = CiphertextRaw<N, M, P, Q, D, W, G_BASE, G_LEN>;
     type PublicKey = PublicKey<N, M, P, Q, D, W, G_BASE, G_LEN>;

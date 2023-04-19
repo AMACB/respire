@@ -1,5 +1,7 @@
 //! The cyclotomic ring `Z_n[x]/x^d + 1)`. `d` is assumed to be a power of `2`.
 
+use crate::fhe::gadget::RingElementDecomposable;
+use crate::math::matrix::Matrix;
 use crate::math::ntt::*;
 use crate::math::polynomial::PolynomialZ_N;
 use crate::math::rand_sampled::*;
@@ -194,14 +196,27 @@ impl<'a, const D: usize, const N: u64> MulAssign<&'a Self> for Z_N_CycloRaw<D, N
     }
 }
 
-impl<const D: usize, const N: u64> RingElementDivModdable for Z_N_CycloRaw<D, N> {
-    fn div_mod(&self, rhs: u64) -> (Self, Self) {
-        let mut quot = Z_N_CycloRaw::zero();
-        let mut rem = Z_N_CycloRaw::zero();
-        for i in 0..D {
-            (quot.coeff[i], rem.coeff[i]) = self.coeff[i].div_mod(rhs);
+impl<const D: usize, const NN: u64, const BASE: u64, const LEN: usize>
+    RingElementDecomposable<BASE, LEN> for Z_N_CycloRaw<D, NN>
+{
+    fn decompose_into_mat<const N: usize, const M: usize>(
+        &self,
+        mat: &mut Matrix<N, M, Self>,
+        i: usize,
+        j: usize,
+    ) {
+        let mut a: [u64; D] = [0; D];
+        for l in 0..D {
+            a[l] = self.coeff[l].into();
         }
-        (quot, rem)
+        for k in 0..LEN {
+            let mut a_rem = Z_N_CycloRaw::zero();
+            for l in 0..D {
+                a_rem.coeff[l] = (a[l] % BASE).into();
+                a[l] /= BASE;
+            }
+            mat[(i + k, j)] = a_rem;
+        }
     }
 }
 
