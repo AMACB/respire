@@ -11,7 +11,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::ops::{Add, Mul};
 
-pub struct RingGSW<
+pub struct RingGSWNTT<
     const N_MINUS_1: usize,
     const N: usize,
     const M: usize,
@@ -77,7 +77,7 @@ impl<
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > FHEScheme<P> for RingGSW<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    > FHEScheme<P> for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     type Ciphertext = CiphertextRaw<N, M, P, Q, D, W, G_BASE, G_LEN>;
     type PublicKey = PublicKey<N, M, P, Q, D, W, G_BASE, G_LEN>;
@@ -224,7 +224,7 @@ pub struct Params {
 
 macro_rules! ring_gsw_ntt_from_params {
     ($params:expr) => {
-        RingGSW<
+        RingGSWNTT<
             { $params.N - 1 },
             { $params.N },
             { $params.M },
