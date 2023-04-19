@@ -50,6 +50,7 @@ pub fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [Z_N<N>; D],
     }
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
 
