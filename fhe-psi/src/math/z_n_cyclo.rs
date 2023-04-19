@@ -198,6 +198,14 @@ impl<'a, const D: usize, const N: u64> SubAssign<&'a Self> for Z_N_CycloRaw<D, N
     }
 }
 
+impl<'a, const D: usize, const N: u64> MulAssign<Z_N<N>> for Z_N_CycloRaw<D, N> {
+    fn mul_assign(&mut self, rhs: Z_N<N>) {
+        for i in 0..D {
+            self.coeff[i] *= rhs;
+        }
+    }
+}
+
 impl<'a, const D: usize, const N: u64> MulAssign<&'a Self> for Z_N_CycloRaw<D, N> {
     fn mul_assign(&mut self, _: &'a Self) {
         todo!()

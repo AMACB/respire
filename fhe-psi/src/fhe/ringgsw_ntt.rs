@@ -25,7 +25,7 @@ pub struct RingGSWNTT<
 > {}
 
 #[derive(Clone, Debug)]
-pub struct CiphertextRaw<
+pub struct CiphertextNTT<
     const N: usize,
     const M: usize,
     const P: u64,
@@ -80,7 +80,7 @@ impl<
     > FHEScheme<P>
     for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
-    type Ciphertext = CiphertextRaw<N, M, P, Q, D, W, G_BASE, G_LEN>;
+    type Ciphertext = CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>;
     type PublicKey = PublicKey<N, M, P, Q, D, W, G_BASE, G_LEN>;
     type SecretKey = SecretKey<N, M, P, Q, D, W, G_BASE, G_LEN>;
 
@@ -110,7 +110,7 @@ impl<
 
         let mu = Z_N_CycloNTT::<D, Q, W>::from(u64::from(mu));
         let ct = &(A * &R) + &(&G * &mu);
-        CiphertextRaw { ct }
+        CiphertextNTT { ct }
     }
 
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
@@ -139,12 +139,12 @@ impl<
         const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
-    > Add for &'a CiphertextRaw<N, M, P, Q, D, W, G_BASE, G_LEN>
+    > Add for &'a CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>
 {
-    type Output = CiphertextRaw<N, M, P, Q, D, W, G_BASE, G_LEN>;
+    type Output = CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        CiphertextRaw {
+        CiphertextNTT {
             ct: &self.ct + &rhs.ct,
         }
     }
@@ -160,12 +160,12 @@ impl<
         const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
-    > Mul for &'a CiphertextRaw<N, M, P, Q, D, W, G_BASE, G_LEN>
+    > Mul for &'a CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>
 {
-    type Output = CiphertextRaw<N, M, P, Q, D, W, G_BASE, G_LEN>;
+    type Output = CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        CiphertextRaw {
+        CiphertextNTT {
             ct: &self.ct
                 * &gadget_inverse::<Z_N_CycloNTT<D, Q, W>, N, M, M, G_BASE, G_LEN>(&rhs.ct),
         }
@@ -182,17 +182,30 @@ impl<
         const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
-    > Mul<Z_N<P>> for &'a CiphertextRaw<N, M, P, Q, D, W, G_BASE, G_LEN>
+    > Mul<Z_N<P>> for &'a CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>
 {
-    type Output = CiphertextRaw<N, M, P, Q, D, W, G_BASE, G_LEN>;
+    type Output = CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>;
 
     fn mul(self, rhs: Z_N<P>) -> Self::Output {
-        let rhs_q = &Z_N_CycloNTT::<D, Q, W>::from(u64::from(rhs));
-        CiphertextRaw {
-            ct: &self.ct
-                * &gadget_inverse::<Z_N_CycloNTT<D, Q, W>, N, M, M, G_BASE, G_LEN>(
-                    &(&build_gadget::<Z_N_CycloNTT<D, Q, W>, N, M, Q, G_BASE, G_LEN>() * rhs_q),
-                ),
+        let rhs_q = Z_N::from(u64::from(rhs));
+        let mut G_rhs: Matrix<N, M, Z_N_CycloRaw<D, Q>> = build_gadget::<Z_N_CycloRaw<D, Q>, N, M, Q, G_BASE, G_LEN>();
+        for i in 0..N {
+            for j in 0..M {
+                G_rhs[(i, j)] *= rhs_q;
+            }
+        }
+
+        let G_inv_G_rhs_raw: Matrix<M, M, Z_N_CycloRaw<D, Q>> = gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, M, G_BASE, G_LEN>(&G_rhs);
+
+        let mut G_inv_G_rhs_ntt: Matrix<M, M, Z_N_CycloNTT<D, Q, W>> = Matrix::zero();
+        for i in 0..M {
+            for j in 0..M {
+                G_inv_G_rhs_ntt[(i, j)] = (&G_inv_G_rhs_raw[(i, j)]).into();
+            }
+        }
+
+        CiphertextNTT {
+            ct: &self.ct * &G_inv_G_rhs_ntt,
         }
     }
 }
@@ -207,8 +220,8 @@ impl<
         const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
-    > CiphertextRef<P, CiphertextRaw<N, M, P, Q, D, W, G_BASE, G_LEN>>
-    for &'a CiphertextRaw<N, M, P, Q, D, W, G_BASE, G_LEN>
+    > CiphertextRef<P, CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>>
+    for &'a CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>
 {
 }
 
@@ -306,15 +319,16 @@ mod test {
                 let mu2 = Z_N::from(j);
                 let ct1 = RingGSWNTTTest::encrypt(&A, mu1);
                 let ct2 = RingGSWNTTTest::encrypt(&A, mu2);
-                // let pt_add = GSWNTTTest::decrypt(&s_T, &(&ct1 + mu2));
-                // let pt_mul = RingGSWNTTTest::decrypt(&s_T, &(&ct1 * mu2));
-                let pt_add_ct = RingGSWNTTTest::decrypt(&s_T, &(&ct1 + &ct2));
-                let pt_mul_ct = RingGSWNTTTest::decrypt(&s_T, &(&ct1 * &ct2));
-                // assert_eq!(pt_add, &mu1 + &mu2, "addition by scalar failed");
-                assert_eq!(pt_add_ct, &mu1 + &mu2, "ciphertext addition failed");
-
-                // assert_eq!(pt_mul, &mu1 * &mu2, "multiplication by scalar failed");
-                assert_eq!(pt_mul_ct, &mu1 * &mu2, "ciphertext multiplication failed");
+                let ct_add_ct = RingGSWNTTTest::decrypt(&s_T, &(&ct1 + &ct2));
+                let ct_mul_ct = RingGSWNTTTest::decrypt(&s_T, &(&ct1 * &ct2));
+                let ct_mul_scalar = RingGSWNTTTest::decrypt(&s_T, &(&ct1 * mu2));
+                assert_eq!(ct_add_ct, &mu1 + &mu2, "ciphertext addition failed");
+                assert_eq!(ct_mul_ct, &mu1 * &mu2, "ciphertext multiplication failed");
+                assert_eq!(
+                    ct_mul_scalar,
+                    &mu1 * &mu2,
+                    "multiplication by scalar failed"
+                );
             }
         }
     }
