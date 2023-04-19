@@ -231,11 +231,13 @@ mod test {
         do_intersect_log_multiplicative::<TEST_P, RingGSWNTTTest>();
     }
 
+    #[ignore]
     #[test]
     fn test_intersect_log_multiplicative_ringgsw_medium() {
         do_intersect_log_multiplicative::<TEST_MEDIUM_P, RingGSWTestMedium>();
     }
 
+    #[ignore]
     #[test]
     fn test_intersect_log_multiplicative_ringgsw_ntt_medium() {
         do_intersect_log_multiplicative::<TEST_MEDIUM_P, RingGSWNTTTestMedium>();

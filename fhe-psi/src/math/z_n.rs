@@ -8,18 +8,25 @@ use std::cmp::min;
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-// TODO Optimize use of % !!!!
-
 /// Integers modulo `N` with overloaded modular arithmetic operation (`+`, `-`, `*`, unary `-`), and
 /// several other utility methods.
 ///
 /// Internally, elements of this type are represented as a u64 `a` in reduced form: `0 <= a < N`.
 /// Thus `Z_N` is `Clone`. Furthermore the non-inplace operations are implemented in addition to the
 /// inplace versions required by [`RingElement`].
+///
+/// The assumption as noted above is that `a` must be in reduced form at all times. The public
+/// conversion methods accomplish this by doing % every time. However, there are times when it is
+/// known that a certain value is already reduced, in which case the wrapper type NoReduce can
+/// be used for the conversion. It is the caller's responsibility to ensure such a NoReduce is
+/// indeed reduced already.
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Z_N<const N: u64> {
     a: u64,
 }
+
+#[repr(transparent)]
+pub struct NoReduce(u64);
 
 /// Conversions
 
@@ -33,15 +40,58 @@ impl<const N: u64> From<Z_N<N>> for u64 {
 impl<const N: u64> From<u64> for Z_N<N> {
     /// Converts u64 to Z_N by modular reduction.
     fn from(a: u64) -> Self {
+        // Optimized special case that is slower than just using %
+        // if N == 268369921 {
+        //     if a < N {
+        //         return Z_N {
+        //             a
+        //         }
+        //     }
+        //     // 268369921 = 2^28 - 2^16 + 1
+        //     const LSB28_MASK: u64 = (1 << 28) - 1;
+        //     let low = a & LSB28_MASK;
+        //     let mid = (a >> 28) & LSB28_MASK;
+        //     let high = (a >> 56) & LSB28_MASK;
+        //     // a = high * 2^56 + mid * 2^28 + low
+        //     //   = high * (2^16-1)^2 + mid * (2^16-1) + low
+        //     //   = high * (2^32 - 2^17 + 1) + mid * 2^16 - mid + low
+        //     let a = (high << 32) - (high << 17) + high + (mid << 16) - mid + low;
+        //     debug_assert!(a < (1 << 45));
+        //
+        //     let low = a & LSB28_MASK;
+        //     let mid = (a >> 28) & LSB28_MASK;
+        //     // a = mid * 2^28 + low
+        //     //   = mid * (2^16-1) + low
+        //     let a = (mid << 16) - mid + low;
+        //     debug_assert!(a < (1 << 34));
+        //
+        //     let low = a & LSB28_MASK;
+        //     let mid = (a >> 28) & LSB28_MASK;
+        //     // Same thing, but now both terms are small
+        //     return Z_N::<N> {
+        //         a: (mid << 16) - mid
+        //     } + Z_N::<N> {
+        //         a: low
+        //     };
+        // }
+
         Z_N { a: a % N }
+    }
+}
+
+impl<const N: u64> From<NoReduce> for Z_N<N> {
+    fn from(nr: NoReduce) -> Self {
+        Z_N { a: nr.0 }
     }
 }
 
 impl<const N: u64> From<i64> for Z_N<N> {
     /// Converts i64 to Z_N by modular reduction.
     fn from(a: i64) -> Self {
-        Z_N {
-            a: (a % (N as i64) + (N as i64)) as u64 % N,
+        if a < 0 {
+            -Z_N::from(-a as u64)
+        } else {
+            Z_N::from(a as u64)
         }
     }
 }
@@ -60,6 +110,15 @@ impl<const N: u64> RingElement for Z_N<N> {
 impl<const N: u64> Add for Z_N<N> {
     type Output = Z_N<N>;
     fn add(self, rhs: Self) -> Self::Output {
+        if N < (1 << 63) {
+            let result = self.a + rhs.a;
+            return if result >= N {
+                NoReduce(result - N).into()
+            } else {
+                NoReduce(result).into()
+            };
+        }
+
         (((self.a as u128 + rhs.a as u128) % (N as u128)) as u64).into()
     }
 }
@@ -73,6 +132,10 @@ impl<const N: u64> AddAssign for Z_N<N> {
 impl<const N: u64> Mul for Z_N<N> {
     type Output = Z_N<N>;
     fn mul(self, rhs: Self) -> Self::Output {
+        if N < (1 << 32) {
+            return (self.a * rhs.a).into();
+        }
+
         (((self.a as u128 * rhs.a as u128) % (N as u128)) as u64).into()
     }
 }
@@ -99,7 +162,11 @@ impl<const N: u64> SubAssign for Z_N<N> {
 impl<const N: u64> Neg for Z_N<N> {
     type Output = Z_N<N>;
     fn neg(self) -> Self::Output {
-        ((N - self.a) % N).into()
+        if self.a == 0 {
+            self
+        } else {
+            NoReduce(N - self.a).into()
+        }
     }
 }
 
@@ -243,6 +310,10 @@ mod test {
         let b: Z_31 = -a;
         assert_eq!(21_u64, b.into());
 
+        let a: Z_31 = 0_u64.into();
+        let b: Z_31 = -a;
+        assert_eq!(a, b);
+
         let mut a: Z_31 = 23_u64.into();
         let b: Z_31 = 24_u64.into();
         assert_eq!(16_u64, (a + b).into());
@@ -313,4 +384,15 @@ mod test {
         let one_neg_big: Z_BIG = (u64::MAX - 2).into();
         assert_eq!(one_neg_big.norm(), 1);
     }
+
+    // #[test]
+    // fn test_268369921() {
+    //     type Z_Q = Z_N<268369921>;
+    //     assert_eq!(Z_Q::from(6365999520220238746_u64), Z_Q::from(4475005_u64));
+    //     assert_eq!(
+    //         Z_Q::from(18446744073709551615_u64),
+    //         Z_Q::from(234877183_u64)
+    //     );
+    //     assert_eq!(Z_Q::from(3615920400745237573_u64), Z_Q::from(64263131_u64));
+    // }
 }
