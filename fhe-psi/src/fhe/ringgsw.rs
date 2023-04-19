@@ -239,11 +239,11 @@ pub const RING_GSW_TEST_PARAMS: Params = Params {
 pub const RING_GSW_TEST_MEDIUM_PARAMS: Params = Params {
     N: 2,
     M: 56,
-    P: 3571,
+    P: 31,
     Q: 268369921,
-    D: 256,
+    D: 2048,
     G_BASE: 2,
-    NOISE_WIDTH_MILLIONTHS: 6_400_000,
+    NOISE_WIDTH_MILLIONTHS: 1,
 };
 
 pub type RingGSWTest = ring_gsw_from_params!(RING_GSW_TEST_PARAMS);
