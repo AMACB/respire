@@ -22,13 +22,15 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 /// known that a certain value is already reduced, in which case the wrapper type NoReduce can
 /// be used for the conversion. It is the caller's responsibility to ensure such a NoReduce is
 /// indeed reduced already.
+///
+/// The behavior when `N < 2` is not defined.
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Z_N<const N: u64> {
     a: u64,
 }
 
 #[repr(transparent)]
-pub struct NoReduce(u64);
+pub struct NoReduce(pub u64);
 
 /// Conversions
 

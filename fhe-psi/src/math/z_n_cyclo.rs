@@ -6,7 +6,7 @@ use crate::math::ntt::*;
 use crate::math::polynomial::PolynomialZ_N;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
-use crate::math::z_n::Z_N;
+use crate::math::z_n::{NoReduce, Z_N};
 use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 use rand::Rng;
 use std::cmp::{max, min};
@@ -83,7 +83,7 @@ impl<const D: usize, const N: u64> TryFrom<&Z_N_CycloRaw<D, N>> for Z_N<N> {
 }
 
 impl<const D: usize, const N: u64, const W: u64> From<Z_N_CycloNTT<D, N, W>>
-for Z_N_CycloRaw<D, N>
+    for Z_N_CycloRaw<D, N>
 {
     fn from(z_n_cyclo_ntt: Z_N_CycloNTT<D, N, W>) -> Self {
         (&z_n_cyclo_ntt).into()
@@ -243,8 +243,16 @@ impl<const D: usize, const N: u64> RandUniformSampled for Z_N_CycloRaw<D, N> {
 impl<const D: usize, const N: u64> RandZeroOneSampled for Z_N_CycloRaw<D, N> {
     fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
         let mut result = Self::zero();
-        for i in 0..D {
-            result.coeff[i] = Z_N::<N>::rand_zero_one(rng);
+        for i in 0..(D / 64) {
+            let rand = rng.gen::<u64>();
+            for bit in 0..64 {
+                result.coeff[i * 64 + bit] = NoReduce((rand >> bit) & 1).into();
+            }
+        }
+
+        let rand = rng.gen::<u64>();
+        for bit in 0..(D % 64) {
+            result.coeff[(D / 64) * 64 + bit] = NoReduce((rand >> bit) & 1).into();
         }
         result
     }
