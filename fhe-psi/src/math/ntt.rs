@@ -1,5 +1,8 @@
 use crate::math::ring_elem::*;
 use crate::math::z_n::Z_N;
+use once_cell::sync::Lazy;
+use std::sync::RwLock;
+use std::collections::HashMap;
 
 // TODO: this should go somewhere else probably
 pub fn pow<const N: u64>(mut val: Z_N<N>, mut e: u64) -> Z_N<N> {
@@ -19,20 +22,46 @@ pub fn inverse<const N: u64>(val: Z_N<N>) -> Z_N<N> {
     return pow(val, N - 2);
 }
 
+/// Memoization table for discrete gaussian sampling.
+/// Each key is (root, degree, modulus), which is likely overdescriptive.
+
+
+// TODO: currently, forward and reverse tables are computed separately. This isn't necessary since the reverse table is just the forward table, reversed.
+static ROOT_TABLES: Lazy<RwLock<HashMap<(u64, u64, usize), Vec<u64>>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
 pub fn ntt<const D: usize, const N: u64>(values: &mut [Z_N<N>; D], root: Z_N<N>, log_d: usize) {
+
+    // compute root table, if necessary
+    // TODO: see above. This unnecessarily recomputes the reverse table.
+    let key = (root.into(), N, D);
+    if ROOT_TABLES.read().unwrap().get(&key) == None
+    {
+        let mut table = vec![0; D];
+        let mut cur = Z_N::one();
+        for i in 0..D {
+            table[i] = cur.into();
+            cur *= root;
+        }
+        ROOT_TABLES.write().unwrap().insert(key.clone(), table);
+    }
+
+    // get table
+    let table_map = ROOT_TABLES.read().unwrap();
+    let table = table_map.get(&key).unwrap();
+
     // Cooley Tukey
     for round in 0..log_d {
         let prev_block_size = 1 << round;
-        let w_m = pow(root, (D as u64) >> (round + 1));
+        let s = (D as usize) >> (round+1);
 
         for block_start in (0..D).step_by(prev_block_size * 2) {
-            let mut w: Z_N<N> = 1u64.into();
-            for i in block_start..block_start + prev_block_size {
-                let x = values[i];
-                let y = w * (values[i + prev_block_size]);
-                values[i] = x + y;
-                values[i + prev_block_size] = x - y;
-                w *= w_m;
+            for i in 0..prev_block_size {
+                let w : Z_N<N> = table[s*i].into();
+                let x = values[block_start + i];
+                let y = w * (values[block_start + i + prev_block_size]);
+                values[block_start + i] = x + y;
+                values[block_start + i + prev_block_size] = x - y;
             }
         }
     }

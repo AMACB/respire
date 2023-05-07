@@ -35,7 +35,7 @@ impl<const D: usize, const N: u64, const W: u64> From<u64> for Z_N_CycloNTT<D, N
 
 // TODO: This conversion is unintuitive, since it would be taking pointwise coordinates instead of degrees, which breaks the convention from polynomial / Z_N_CycloRaw.
 // It is currently kept intact since other functions require this.
-//
+
 impl<const D: usize, const N: u64, const W: u64> From<[Z_N<N>; D]> for Z_N_CycloNTT<D, N, W> {
     fn from(points: [Z_N<N>; D]) -> Self {
         Self { points }
@@ -61,14 +61,16 @@ impl<const D: usize, const N: u64, const W: u64> From<&Z_N_CycloRaw<D, N>>
         }
         assert_eq!(1 << log_d, D);
 
-        let root = W.into();
+        let root : Z_N<N> = W.into();
 
+        let mut root_power : Z_N<N> = 1u64.into();
         let mut points: [Z_N<N>; D] = [0_u64.into(); D];
         for (i, x) in z_n_cyclo.coeff_iter().enumerate() {
             points[i] = x.clone();
 
-            // fancy no-reduction technique
-            points[i] *= pow(root, i as u64);
+            // negacyclic preprocessing
+            points[i] *= root_power;
+            root_power *= root;
         }
 
         bit_reverse_order(&mut points, log_d);

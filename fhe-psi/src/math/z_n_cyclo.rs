@@ -111,11 +111,15 @@ impl<const D: usize, const N: u64, const W: u64> From<&Z_N_CycloNTT<D, N, W>>
         bit_reverse_order(&mut coeff, log_d);
         ntt(&mut coeff, inverse(root * root), log_d);
 
+        let mut inv_root_pow : Z_N<N> = 1u64.into();
+        let inv_root = inverse(root);
+        let inv_D = inverse((D as u64).into());
         for i in 0..D {
             // divide by degree
-            coeff[i] *= inverse((D as u64).into());
-            // fancy no-reduction technique
-            coeff[i] *= inverse(pow(root, i as u64));
+            coeff[i] *= inv_D;
+            // negacyclic post-processing
+            coeff[i] *= inv_root_pow;
+            inv_root_pow *= inv_root;
         }
 
         return Self { coeff };
