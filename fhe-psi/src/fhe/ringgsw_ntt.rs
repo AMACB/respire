@@ -188,14 +188,16 @@ impl<
 
     fn mul(self, rhs: Z_N<P>) -> Self::Output {
         let rhs_q = Z_N::from(u64::from(rhs));
-        let mut G_rhs: Matrix<N, M, Z_N_CycloRaw<D, Q>> = build_gadget::<Z_N_CycloRaw<D, Q>, N, M, Q, G_BASE, G_LEN>();
+        let mut G_rhs: Matrix<N, M, Z_N_CycloRaw<D, Q>> =
+            build_gadget::<Z_N_CycloRaw<D, Q>, N, M, Q, G_BASE, G_LEN>();
         for i in 0..N {
             for j in 0..M {
                 G_rhs[(i, j)] *= rhs_q;
             }
         }
 
-        let G_inv_G_rhs_raw: Matrix<M, M, Z_N_CycloRaw<D, Q>> = gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, M, G_BASE, G_LEN>(&G_rhs);
+        let G_inv_G_rhs_raw: Matrix<M, M, Z_N_CycloRaw<D, Q>> =
+            gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, M, G_BASE, G_LEN>(&G_rhs);
 
         let mut G_inv_G_rhs_ntt: Matrix<M, M, Z_N_CycloNTT<D, Q, W>> = Matrix::zero();
         for i in 0..M {

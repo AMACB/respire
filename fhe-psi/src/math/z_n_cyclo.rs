@@ -111,7 +111,7 @@ impl<const D: usize, const N: u64, const W: u64> From<&Z_N_CycloNTT<D, N, W>>
         bit_reverse_order(&mut coeff, log_d);
         ntt(&mut coeff, inverse(root * root), log_d);
 
-        let mut inv_root_pow : Z_N<N> = 1u64.into();
+        let mut inv_root_pow: Z_N<N> = 1u64.into();
         let inv_root = inverse(root);
         let inv_D = inverse((D as u64).into());
         for i in 0..D {
