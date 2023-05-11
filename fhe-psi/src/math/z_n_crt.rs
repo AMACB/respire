@@ -24,17 +24,16 @@ pub struct Z_N_CRT<const N1: u64, const N2: u64> {
 impl<const N1: u64, const N2: u64> From<Z_N_CRT<N1, N2>> for u64 {
     /// Reconstructs the reduced form modulo `N`.
     fn from(a: Z_N_CRT<N1, N2>) -> Self {
-        // TODO: CRT reconstruction
         // This should be statically cached / type parametered, since
-        // this conversion is likely used often enough that even a
-        //log factor will be very noticeable.
+        // this conversion is likely used often enough that even the
+        // current extra log factor will be very noticeable.
 
-        let n1_inv : u128 = u64::from(Z_N::<N2>::from(N1).inverse()) as u128;
-        let n2_inv : u128 = u64::from(Z_N::<N1>::from(N2).inverse()) as u128;
-        let a1 : u128 = u64::from(a.a1) as u128;
-        let a2 : u128 = u64::from(a.a2) as u128;
-        let n1 : u128 = N1.into();
-        let n2 : u128 = N2.into();
+        let n1_inv: u128 = u64::from(Z_N::<N2>::from(N1).inverse()) as u128;
+        let n2_inv: u128 = u64::from(Z_N::<N1>::from(N2).inverse()) as u128;
+        let a1: u128 = u64::from(a.a1) as u128;
+        let a2: u128 = u64::from(a.a2) as u128;
+        let n1: u128 = N1.into();
+        let n2: u128 = N2.into();
         ((n2_inv * n2 * a1 + n1_inv * n1 * a2) % (n1 * n2)) as u64
     }
 }
@@ -42,7 +41,10 @@ impl<const N1: u64, const N2: u64> From<Z_N_CRT<N1, N2>> for u64 {
 impl<const N1: u64, const N2: u64> From<u64> for Z_N_CRT<N1, N2> {
     /// Converts u64 to Z_N_CRT by modular reductions.
     fn from(a: u64) -> Self {
-        Z_N_CRT { a1: a.into(), a2: a.into() }
+        Z_N_CRT {
+            a1: a.into(),
+            a2: a.into(),
+        }
     }
 }
 
@@ -125,8 +127,8 @@ impl<const N1: u64, const N2: u64> Neg for Z_N_CRT<N1, N2> {
     }
 }
 
-impl<const N1: u64, const N2: u64, const BASE: u64, const LEN: usize> RingElementDecomposable<BASE, LEN>
-    for Z_N_CRT<N1, N2>
+impl<const N1: u64, const N2: u64, const BASE: u64, const LEN: usize>
+    RingElementDecomposable<BASE, LEN> for Z_N_CRT<N1, N2>
 {
     fn decompose_into_mat<const N: usize, const M: usize>(
         &self,
@@ -134,7 +136,7 @@ impl<const N1: u64, const N2: u64, const BASE: u64, const LEN: usize> RingElemen
         i: usize,
         j: usize,
     ) {
-        let mut a : u64 = self.clone().into();
+        let mut a: u64 = self.clone().into();
         for k in 0..LEN {
             mat[(i + k, j)] = (a % BASE).into();
             a /= BASE;

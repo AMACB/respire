@@ -278,7 +278,7 @@ mod test {
         assert_eq!(p, q);
         assert_eq!(Z_N_CycloRaw::<D, P>::from(p), Z_N_CycloRaw::<D, P>::from(q));
 
-        let root : Z_N<P> = W.into();
+        let root: Z_N<P> = W.into();
         p = Z_N_CycloNTT::<D, P, W>::from([
             root.pow(1u64),
             root.pow(3u64),

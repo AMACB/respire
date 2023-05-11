@@ -101,7 +101,7 @@ impl<
         let s_T = &sk.s_T;
         let ct = &ct.ct;
         let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, Z_N<Q>>(s_T, ct);
-        gsw_round(pt)
+        gsw_round::<P, Q, Z_N<Q>>(pt)
     }
 }
 

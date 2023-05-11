@@ -104,7 +104,7 @@ where
     (&(s_T * ct) * g_inv)[(0, N - 1)].clone()
 }
 
-pub fn gsw_round<const P: u64, const Q: u64>(x: Z_N<Q>) -> Z_N<P> {
-    let floored = u64::from(x) * P * 2 / Q;
+pub fn gsw_round<const P: u64, const Q: u64, T: Into<u64>>(x: T) -> Z_N<P> {
+    let floored = x.into() * P * 2 / Q;
     Z_N::from((floored + 1) / 2)
 }

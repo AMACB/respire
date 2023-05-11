@@ -299,7 +299,6 @@ impl<const N: u64> Z_N<N> {
     pub fn inverse(&self) -> Z_N<N> {
         return self.pow(N - 2);
     }
-
 }
 
 #[cfg(test)]

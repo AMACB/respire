@@ -98,7 +98,7 @@ impl<
         let ct = &ct.ct;
         let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, Z_N_CycloNTT<D, Q, W>>(s_T, ct);
         // TODO support arbitrary messages, not just constants
-        gsw_round(Z_N_CycloRaw::from(pt)[0])
+        gsw_round::<P, Q, Z_N<Q>>(Z_N_CycloRaw::from(pt)[0])
     }
 }
 
