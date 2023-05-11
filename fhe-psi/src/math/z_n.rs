@@ -280,6 +280,26 @@ impl<const N: u64> Z_N<N> {
         let neg: u64 = u64::from(-*self);
         min(pos, neg)
     }
+
+    pub fn pow(&self, mut e: u64) -> Z_N<N> {
+        let mut val = self.clone();
+        let mut res = Z_N::one();
+        while e > 0 {
+            if (e & 1) == 1 {
+                res *= val;
+            }
+            e >>= 1;
+            val *= val;
+        }
+        return res;
+    }
+
+    // TODO: this is not efficient, I think euclidean is faster
+    // this also assumes N is prime
+    pub fn inverse(&self) -> Z_N<N> {
+        return self.pow(N - 2);
+    }
+
 }
 
 #[cfg(test)]
