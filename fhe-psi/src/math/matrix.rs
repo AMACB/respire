@@ -90,7 +90,7 @@ where
 
 /// Square matrix specific methods.
 
-impl<const N: usize, const M: usize, R: RingElement> Matrix<N, M, R>
+impl<const N: usize, R: RingElement> Matrix<N, N, R>
 where
     for<'a> &'a R: RingElementRef<R>,
 {

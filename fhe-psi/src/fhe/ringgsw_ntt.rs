@@ -1,14 +1,11 @@
 use crate::fhe::fhe::*;
 use crate::fhe::gadget::*;
+use crate::fhe::gsw_utils::*;
 use crate::math::matrix::Matrix;
-use crate::math::rand_sampled::*;
-use crate::math::ring_elem::RingElement;
 use crate::math::utils::ceil_log;
 use crate::math::z_n::Z_N;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
 use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
-use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
 use std::ops::{Add, Mul};
 
 pub struct RingGSWNTT<
@@ -85,47 +82,23 @@ impl<
     type SecretKey = SecretKey<N, M, P, Q, D, W, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        let mut rng = ChaCha20Rng::from_entropy();
-
-        let a_bar: Matrix<N_MINUS_1, M, Z_N_CycloNTT<D, Q, W>> = Matrix::rand_uniform(&mut rng);
-        let s_bar_T: Matrix<1, N_MINUS_1, Z_N_CycloNTT<D, Q, W>> = Matrix::rand_uniform(&mut rng);
-        let e: Matrix<1, M, Z_N_CycloNTT<D, Q, W>> =
-            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-
-        let A: Matrix<N, M, Z_N_CycloNTT<D, Q, W>> =
-            Matrix::stack(&a_bar, &(&(&s_bar_T * &a_bar) + &e));
-        let mut s_T: Matrix<1, N, Z_N_CycloNTT<D, Q, W>> = Matrix::zero();
-        s_T.copy_into(&(-&s_bar_T), 0, 0);
-        s_T[(0, N - 1)] = Z_N_CycloNTT::one();
+        let (A, s_T) =
+            gsw_keygen::<N_MINUS_1, N, M, Z_N_CycloNTT<D, Q, W>, NOISE_WIDTH_MILLIONTHS>();
         (PublicKey { A }, SecretKey { s_T })
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext {
-        let A = &pk.A;
-
-        let mut rng = ChaCha20Rng::from_entropy();
-        let R: Matrix<M, M, Z_N_CycloNTT<D, Q, W>> = Matrix::rand_zero_one(&mut rng);
-
-        let G = build_gadget::<Z_N_CycloNTT<D, Q, W>, N, M, Q, G_BASE, G_LEN>();
-
         let mu = Z_N_CycloNTT::<D, Q, W>::from(u64::from(mu));
-        let ct = &(A * &R) + &(&G * &mu);
+        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, Z_N_CycloNTT<D, Q, W>>(&pk.A, mu);
         CiphertextNTT { ct }
     }
 
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
-        let q_over_p = Z_N_CycloNTT::from(Q / P);
-        let g_inv = &gadget_inverse::<Z_N_CycloNTT<D, Q, W>, N, M, N, G_BASE, G_LEN>(
-            &(&Matrix::<N, N, Z_N_CycloNTT<D, Q, W>>::identity() * &q_over_p),
-        );
-
-        let pt = &(&(s_T * ct) * g_inv)[(0, N - 1)];
+        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, Z_N_CycloNTT<D, Q, W>>(s_T, ct);
         // TODO support arbitrary messages, not just constants
-        let pt = Z_N_CycloRaw::from(pt.clone())[0];
-        let floored = u64::from(pt) * P * 2 / Q;
-        Z_N::from((floored + 1) / 2)
+        gsw_round(Z_N_CycloRaw::from(pt)[0])
     }
 }
 
@@ -188,14 +161,16 @@ impl<
 
     fn mul(self, rhs: Z_N<P>) -> Self::Output {
         let rhs_q = Z_N::from(u64::from(rhs));
-        let mut G_rhs: Matrix<N, M, Z_N_CycloRaw<D, Q>> = build_gadget::<Z_N_CycloRaw<D, Q>, N, M, Q, G_BASE, G_LEN>();
+        let mut G_rhs: Matrix<N, M, Z_N_CycloRaw<D, Q>> =
+            build_gadget::<Z_N_CycloRaw<D, Q>, N, M, G_BASE, G_LEN>();
         for i in 0..N {
             for j in 0..M {
                 G_rhs[(i, j)] *= rhs_q;
             }
         }
 
-        let G_inv_G_rhs_raw: Matrix<M, M, Z_N_CycloRaw<D, Q>> = gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, M, G_BASE, G_LEN>(&G_rhs);
+        let G_inv_G_rhs_raw: Matrix<M, M, Z_N_CycloRaw<D, Q>> =
+            gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, M, G_BASE, G_LEN>(&G_rhs);
 
         let mut G_inv_G_rhs_ntt: Matrix<M, M, Z_N_CycloNTT<D, Q, W>> = Matrix::zero();
         for i in 0..M {

@@ -2,13 +2,10 @@
 
 use crate::fhe::fhe::*;
 use crate::fhe::gadget::*;
+use crate::fhe::gsw_utils::*;
 use crate::math::matrix::Matrix;
-use crate::math::rand_sampled::*;
-use crate::math::ring_elem::RingElement;
 use crate::math::utils::ceil_log;
 use crate::math::z_n::Z_N;
-use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
 use std::ops::{Add, Mul};
 
 /*
@@ -90,44 +87,21 @@ impl<
     type SecretKey = SecretKey<N, M, P, Q, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        let mut rng = ChaCha20Rng::from_entropy();
-
-        let a_bar: Matrix<N_MINUS_1, M, Z_N<Q>> = Matrix::rand_uniform(&mut rng);
-        let s_bar_T: Matrix<1, N_MINUS_1, Z_N<Q>> = Matrix::rand_uniform(&mut rng);
-        let e: Matrix<1, M, Z_N<Q>> =
-            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-
-        let A: Matrix<N, M, Z_N<Q>> = Matrix::stack(&a_bar, &(&(&s_bar_T * &a_bar) + &e));
-        let mut s_T: Matrix<1, N, Z_N<Q>> = Matrix::zero();
-        s_T.copy_into(&(-&s_bar_T), 0, 0);
-        s_T[(0, N - 1)] = Z_N::one();
+        let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, Z_N<Q>, NOISE_WIDTH_MILLIONTHS>();
         (PublicKey { A }, SecretKey { s_T })
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext {
-        let A = &pk.A;
-
-        let mut rng = ChaCha20Rng::from_entropy();
-        let R: Matrix<M, M, Z_N<Q>> = Matrix::rand_zero_one(&mut rng);
-
-        let G = build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>();
-
         let mu = Z_N::<Q>::from(u64::from(mu));
-        let ct = &(A * &R) + &(&G * &mu);
+        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, Z_N<Q>>(&pk.A, mu);
         Ciphertext { ct }
     }
 
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
-        let q_over_p = Z_N::from(Q / P);
-        let g_inv = &gadget_inverse::<Z_N<Q>, N, M, N, G_BASE, G_LEN>(
-            &(&Matrix::<N, N, Z_N<Q>>::identity() * &q_over_p),
-        );
-
-        let pt = &(&(s_T * ct) * g_inv)[(0, N - 1)];
-        let floored = u64::from(*pt) * P * 2 / Q;
-        Z_N::from((floored + 1) / 2)
+        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, Z_N<Q>>(s_T, ct);
+        gsw_round(pt)
     }
 }
 
@@ -182,7 +156,7 @@ impl<
         Ciphertext {
             ct: &self.ct
                 * &gadget_inverse::<Z_N<Q>, N, M, M, G_BASE, G_LEN>(
-                    &(&build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>() * rhs_q),
+                    &(&build_gadget::<Z_N<Q>, N, M, G_BASE, G_LEN>() * rhs_q),
                 ),
         }
     }

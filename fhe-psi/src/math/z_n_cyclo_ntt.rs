@@ -61,9 +61,9 @@ impl<const D: usize, const N: u64, const W: u64> From<&Z_N_CycloRaw<D, N>>
         }
         assert_eq!(1 << log_d, D);
 
-        let root : Z_N<N> = W.into();
+        let root: Z_N<N> = W.into();
 
-        let mut root_power : Z_N<N> = 1u64.into();
+        let mut root_power: Z_N<N> = 1u64.into();
         let mut points: [Z_N<N>; D] = [0_u64.into(); D];
         for (i, x) in z_n_cyclo.coeff_iter().enumerate() {
             points[i] = x.clone();
