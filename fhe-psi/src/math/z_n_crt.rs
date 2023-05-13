@@ -38,6 +38,15 @@ impl<const N1: u64, const N2: u64> From<Z_N_CRT<N1, N2>> for u64 {
     }
 }
 
+impl<const N1: u64, const N2: u64> From<(Z_N<N1>, Z_N<N2>)> for Z_N_CRT<N1, N2> {
+    fn from(a: (Z_N<N1>, Z_N<N2>)) -> Self {
+        Z_N_CRT {
+            a1: a.0,
+            a2: a.1,
+        }
+    }
+}
+
 impl<const N1: u64, const N2: u64> From<u64> for Z_N_CRT<N1, N2> {
     /// Converts u64 to Z_N_CRT by modular reductions.
     fn from(a: u64) -> Self {

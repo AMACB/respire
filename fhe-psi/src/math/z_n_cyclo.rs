@@ -62,6 +62,12 @@ impl<const D: usize, const N: u64> From<Vec<u64>> for Z_N_CycloRaw<D, N> {
     }
 }
 
+impl<const D: usize, const N: u64> From<Vec<i64>> for Z_N_CycloRaw<D, N> {
+    fn from(coeff: Vec<i64>) -> Self {
+        Z_N_CycloRaw::from(PolynomialZ_N::from(coeff))
+    }
+}
+
 impl<const D: usize, const N: u64> From<Vec<Z_N<N>>> for Z_N_CycloRaw<D, N> {
     fn from(coeff: Vec<Z_N<N>>) -> Self {
         Z_N_CycloRaw::from(PolynomialZ_N::from(coeff))
@@ -319,9 +325,9 @@ mod test {
     // TODO: add more tests.
     #[test]
     fn test_from_into() {
-        let p = Z_N_CycloRaw::<D, P>::from(vec![42, 6, 1, 0, 5]);
-        let q = Z_N_CycloRaw::<D, P>::from(vec![37, 6, 1, 0]);
-        let r = Z_N_CycloRaw::<D, P>::from(vec![41, 6, 1, 0, 5, 0, 0, 0, 1]);
+        let p = Z_N_CycloRaw::<D, P>::from(vec![42u64, 6, 1, 0, 5]);
+        let q = Z_N_CycloRaw::<D, P>::from(vec![37u64, 6, 1, 0]);
+        let r = Z_N_CycloRaw::<D, P>::from(vec![41u64, 6, 1, 0, 5, 0, 0, 0, 1]);
         assert_eq!(p, q);
         assert_eq!(p, r);
         assert_eq!(q, r);
@@ -333,9 +339,9 @@ mod test {
 
     #[test]
     fn test_ops() {
-        let p = Z_N_CycloRaw::<D, P>::from(vec![0, 0, 0, 1]);
-        let q = Z_N_CycloRaw::<D, P>::from(vec![0, 0, 2, 0]);
-        let sum = Z_N_CycloRaw::<D, P>::from(vec![0, 0, 2, 1]);
+        let p = Z_N_CycloRaw::<D, P>::from(vec![0u64, 0, 0, 1]);
+        let q = Z_N_CycloRaw::<D, P>::from(vec![0u64, 0, 2, 0]);
+        let sum = Z_N_CycloRaw::<D, P>::from(vec![0u64, 0, 2, 1]);
         let diff = Z_N_CycloRaw::<D, P>::from(vec![0, 0, P - 2, 1]);
         let prod = Z_N_CycloRaw::<D, P>::from(vec![0, P - 2, 0, 0]);
         let square = Z_N_CycloRaw::<D, P>::from(vec![0, 0, P - 1, 0]);
@@ -350,10 +356,10 @@ mod test {
     #[test]
     fn test_matrix() {
         let mut M: Matrix<2, 2, Z_N_CycloRaw<D, P>> = Matrix::zero();
-        M[(0, 0)] = Z_N_CycloRaw::<D, P>::from(vec![0, 0, 0, 1]);
-        M[(0, 1)] = Z_N_CycloRaw::<D, P>::from(vec![0, 0, 1, 0]);
-        M[(1, 0)] = Z_N_CycloRaw::<D, P>::from(vec![0, 1, 0, 0]);
-        M[(1, 1)] = Z_N_CycloRaw::<D, P>::from(vec![1, 0, 0, 0]);
+        M[(0, 0)] = Z_N_CycloRaw::<D, P>::from(vec![0u64, 0, 0, 1]);
+        M[(0, 1)] = Z_N_CycloRaw::<D, P>::from(vec![0u64, 0, 1, 0]);
+        M[(1, 0)] = Z_N_CycloRaw::<D, P>::from(vec![0u64, 1, 0, 0]);
+        M[(1, 1)] = Z_N_CycloRaw::<D, P>::from(vec![1u64, 0, 0, 0]);
         // M =
         // [ x^3 x^2 ]
         // [ x   1   ]
@@ -372,25 +378,25 @@ mod test {
         ); // x + x^4
         assert_eq!(
             M_square[(1, 1)],
-            Z_N_CycloRaw::<D, P>::from(vec![1, 0, 0, 1])
+            Z_N_CycloRaw::<D, P>::from(vec![1u64, 0, 0, 1])
         ); // 1 + x^3
 
         let M_double = &M + &M;
         assert_eq!(
             M_double[(0, 0)],
-            Z_N_CycloRaw::<D, P>::from(vec![0, 0, 0, 2])
+            Z_N_CycloRaw::<D, P>::from(vec![0u64, 0, 0, 2])
         );
         assert_eq!(
             M_double[(0, 1)],
-            Z_N_CycloRaw::<D, P>::from(vec![0, 0, 2, 0])
+            Z_N_CycloRaw::<D, P>::from(vec![0u64, 0, 2, 0])
         );
         assert_eq!(
             M_double[(1, 0)],
-            Z_N_CycloRaw::<D, P>::from(vec![0, 2, 0, 0])
+            Z_N_CycloRaw::<D, P>::from(vec![0u64, 2, 0, 0])
         );
         assert_eq!(
             M_double[(1, 1)],
-            Z_N_CycloRaw::<D, P>::from(vec![2, 0, 0, 0])
+            Z_N_CycloRaw::<D, P>::from(vec![2u64, 0, 0, 0])
         );
 
         let M_neg = -&M;

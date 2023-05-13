@@ -161,6 +161,7 @@ where
 mod test {
     use crate::fhe::fhe::FHEInsecure;
     use crate::fhe::gsw::{GSWTest, GSW_TEST_PARAMS};
+    use crate::fhe::gsw_crt::GSW_CRTTest;
     use crate::fhe::ringgsw::{RingGSWTest, RingGSWTestMedium, RING_GSW_TEST_MEDIUM_PARAMS};
     use crate::fhe::ringgsw_ntt::{RingGSWNTTTest, RingGSWNTTTestMedium};
     use std::collections::HashSet;
@@ -196,10 +197,10 @@ mod test {
         do_intersect_additive::<TEST_P, GSWTest>();
     }
 
-    // #[test]
-    // fn test_intersect_log_multiplicative_ringgsw_medium() {
-    //     do_intersect_log_multiplicative::<TEST_MEDIUM_P, RingGSWTestMedium>();
-    // }
+    #[test]
+    fn test_intersect_additive_gsw_crt() {
+        do_intersect_additive::<TEST_P, GSW_CRTTest>();
+    }
 
     #[test]
     fn test_intersect_additive_ringgsw() {

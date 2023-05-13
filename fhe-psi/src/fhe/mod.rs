@@ -6,6 +6,7 @@ pub mod gsw;
 pub mod gsw_crt;
 pub mod gsw_utils;
 pub mod ringgsw;
+pub mod ringgsw_crt;
 pub mod ringgsw_ntt;
 
 // TODO
