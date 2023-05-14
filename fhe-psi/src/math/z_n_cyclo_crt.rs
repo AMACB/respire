@@ -3,13 +3,14 @@
 use crate::fhe::discrete_gaussian::DiscreteGaussian;
 use crate::fhe::gadget::RingElementDecomposable;
 use crate::math::matrix::Matrix;
-use crate::math::ntt::*;
 use crate::math::polynomial::PolynomialZ_N;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use crate::math::z_n::{NoReduce, Z_N};
 use crate::math::z_n_crt::Z_N_CRT;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
+use crate::math::z_n_cyclo_crt_ntt::Z_N_CycloNTT_CRT;
+use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 use rand::Rng;
 use std::cmp::max;
 use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -40,6 +41,14 @@ impl<const D: usize, const N1: u64, const N2: u64> From<(Z_N_CycloRaw<D, N1>, Z_
             p1: a.0,
             p2: a.1,
         }
+    }
+}
+
+impl<const D: usize, const N1: u64, const N2: u64, const W1: u64, const W2: u64> From<&Z_N_CycloRaw_CRT<D, N1, N2>> for Z_N_CycloNTT_CRT<D, N1, N2, W1, W2> {
+    fn from(a: &Z_N_CycloRaw_CRT<D, N1, N2>) -> Self {
+        let p1_ntt: Z_N_CycloNTT<D, N1, W1> = (&a.p1).into();
+        let p2_ntt: Z_N_CycloNTT<D, N2, W2> = (&a.p2).into();
+        (p1_ntt, p2_ntt).into()
     }
 }
 

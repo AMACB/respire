@@ -9,4 +9,5 @@ pub mod z_n;
 pub mod z_n_crt;
 pub mod z_n_cyclo;
 pub mod z_n_cyclo_crt;
+pub mod z_n_cyclo_crt_ntt;
 pub mod z_n_cyclo_ntt;
