@@ -289,13 +289,27 @@ pub const RingGSW_NTT_CRT_TEST_PARAMS: Params = Params {
     G_BASE: 2,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
 };
+pub const RING_GSW_NTT_CRT_TEST_MEDIUM_PARAMS: Params = Params {
+    N: 2,
+    M: 112,
+    P: 31,
+    Q1: 268369921,
+    Q2: 249561089,
+    // W1: 66294444,
+    // W2: 30909463,
+    // D: 2048,
+    W1: 63703579,
+    W2: 162490677,
+    D: 256,
+    G_BASE: 2,
+    NOISE_WIDTH_MILLIONTHS: 6_400_000,
+};
 
 pub type RingGSW_NTT_CRTTest = gsw_from_params!(RingGSW_NTT_CRT_TEST_PARAMS);
+pub type RingGSW_NTT_CRTTestMedium = gsw_from_params!(RING_GSW_NTT_CRT_TEST_MEDIUM_PARAMS);
 
 #[cfg(test)]
 mod test {
-    use crate::math::z_n_cyclo_crt::Z_N_CycloRaw_CRT;
-
     use super::*;
 
     #[test]

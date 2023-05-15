@@ -163,7 +163,9 @@ mod test {
     use crate::fhe::gsw::{GSWTest, GSW_TEST_PARAMS};
     use crate::fhe::gsw_crt::GSW_CRTTest;
     use crate::fhe::ringgsw::{RingGSWTest, RingGSWTestMedium, RING_GSW_TEST_MEDIUM_PARAMS};
+    use crate::fhe::ringgsw_crt::RingGSW_CRTTest;
     use crate::fhe::ringgsw_ntt::{RingGSWNTTTest, RingGSWNTTTestMedium};
+    use crate::fhe::ringgsw_ntt_crt::{RingGSW_NTT_CRTTest, RingGSW_NTT_CRTTestMedium};
     use std::collections::HashSet;
 
     const TEST_P: u64 = GSW_TEST_PARAMS.P;
@@ -232,6 +234,16 @@ mod test {
         do_intersect_log_multiplicative::<TEST_P, RingGSWNTTTest>();
     }
 
+    #[test]
+    fn test_intersect_log_multiplicative_ringgsw_crt() {
+        do_intersect_log_multiplicative::<TEST_P, RingGSW_CRTTest>();
+    }
+
+    #[test]
+    fn test_intersect_log_multiplicative_ringgsw_crt_ntt() {
+        do_intersect_log_multiplicative::<TEST_P, RingGSW_NTT_CRTTest>();
+    }
+
     #[ignore]
     #[test]
     fn test_intersect_log_multiplicative_ringgsw_medium() {
@@ -242,6 +254,12 @@ mod test {
     #[test]
     fn test_intersect_log_multiplicative_ringgsw_ntt_medium() {
         do_intersect_log_multiplicative::<TEST_MEDIUM_P, RingGSWNTTTestMedium>();
+    }
+
+    #[ignore]
+    #[test]
+    fn test_intersect_log_multiplicative_ringgsw_ntt_crt_medium() {
+        do_intersect_log_multiplicative::<TEST_MEDIUM_P, RingGSW_NTT_CRTTestMedium>();
     }
 
     // TODO: make these generic over intersection functions

@@ -244,8 +244,10 @@ pub const RING_GSW_NTT_TEST_MEDIUM_PARAMS: Params = Params {
     M: 56,
     P: 31,
     Q: 268369921,
+    // D: 256,
+    // W: 63703579,
     D: 2048,
-    W: 63703579,
+    W: 66294444,
     G_BASE: 2,
     NOISE_WIDTH_MILLIONTHS: 1,
 };
