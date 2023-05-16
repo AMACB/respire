@@ -93,6 +93,12 @@ impl<
         CiphertextNTT { ct }
     }
 
+    fn encrypt_sk(sk: &Self::SecretKey, mu: Z_N<P>) -> Self::Ciphertext {
+        let mu = Z_N_CycloNTT::<D, Q, W>::from(u64::from(mu));
+        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, Z_N_CycloNTT<D, Q, W>, NOISE_WIDTH_MILLIONTHS>(&sk.s_T, mu);
+        CiphertextNTT { ct }
+    }
+
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;

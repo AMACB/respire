@@ -94,6 +94,11 @@ impl<
         let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, Z_N_CRT<Q1, Q2>>(&pk.A, mu);
         Ciphertext { ct }
     }
+    fn encrypt_sk(sk: &Self::SecretKey, mu: Z_N<P>) -> Self::Ciphertext {
+        let mu = Z_N_CRT::<Q1, Q2>::from(u64::from(mu));
+        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, Z_N_CRT<Q1, Q2>, NOISE_WIDTH_MILLIONTHS>(&sk.s_T, mu);
+        Ciphertext { ct }
+    }
 
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         let s_T = &sk.s_T;

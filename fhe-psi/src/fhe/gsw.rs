@@ -97,6 +97,12 @@ impl<
         Ciphertext { ct }
     }
 
+    fn encrypt_sk(sk: &Self::SecretKey, mu: Z_N<P>) -> Self::Ciphertext {
+        let mu = Z_N::<Q>::from(u64::from(mu));
+        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, Z_N<Q>, NOISE_WIDTH_MILLIONTHS>(&sk.s_T, mu);
+        Ciphertext { ct }
+    }
+
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
@@ -265,6 +271,17 @@ mod test {
         for i in 0_u64..10_u64 {
             let mu = Z_N::from(i);
             let ct = GSWTest::encrypt(&A, mu);
+            let pt = GSWTest::decrypt(&s_T, &ct);
+            assert_eq!(pt, mu, "decryption failed");
+        }
+    }
+
+    #[test]
+    fn encryption_sk_is_correct() {
+        let (A, s_T) = GSWTest::keygen();
+        for i in 0_u64..10_u64 {
+            let mu = Z_N::from(i);
+            let ct = GSWTest::encrypt_sk(&s_T, mu);
             let pt = GSWTest::decrypt(&s_T, &ct);
             assert_eq!(pt, mu, "decryption failed");
         }

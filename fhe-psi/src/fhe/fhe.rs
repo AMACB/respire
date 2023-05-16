@@ -25,6 +25,7 @@ where
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey);
     fn encrypt(pk: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext;
+    fn encrypt_sk(sk: &Self::SecretKey, mu: Z_N<P>) -> Self::Ciphertext;
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P>;
 }
 
@@ -50,6 +51,10 @@ impl<const P: u64> FHEScheme<P> for FHEInsecure {
     }
 
     fn encrypt(_: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext {
+        mu
+    }
+
+    fn encrypt_sk(_: &Self::SecretKey, mu: Z_N<P>) -> Self::Ciphertext {
         mu
     }
 

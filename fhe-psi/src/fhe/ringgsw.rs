@@ -84,6 +84,11 @@ impl<
         let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, Z_N_CycloRaw<D, Q>>(&pk.A, mu);
         CiphertextRaw { ct }
     }
+    fn encrypt_sk(sk: &Self::SecretKey, mu: Z_N<P>) -> Self::Ciphertext {
+        let mu = Z_N_CycloRaw::<D, Q>::from(u64::from(mu));
+        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, Z_N_CycloRaw<D, Q>, NOISE_WIDTH_MILLIONTHS>(&sk.s_T, mu);
+        CiphertextRaw { ct }
+    }
 
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         let s_T = &sk.s_T;

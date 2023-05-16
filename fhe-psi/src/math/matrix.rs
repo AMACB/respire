@@ -3,7 +3,7 @@
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use rand::Rng;
-use std::ops::{Add, Index, IndexMut, Mul, Neg};
+use std::ops::{Add, Index, IndexMut, Mul, Neg, Sub};
 
 // TODO
 // * Implement as an array instead of as a `Vec`. The main sticking point is that to move a matrix
@@ -46,12 +46,25 @@ where
         target_row: usize,
         target_col: usize,
     ) {
+        self.copy_into_with_len(m, target_row, target_col, N2, M2);
+    }
+
+    pub fn copy_into_with_len<const N2: usize, const M2: usize>(
+        &mut self,
+        m: &Matrix<N2, M2, R>,
+        target_row: usize,
+        target_col: usize,
+        row_len: usize,
+        col_len: usize
+    ) {
         debug_assert!(target_row < N, "copy out of bounds");
         debug_assert!(target_col < M, "copy out of bounds");
-        debug_assert!(target_row + N2 <= N, "copy out of bounds");
-        debug_assert!(target_col + M2 <= M, "copy out of bounds");
-        for r in 0..N2 {
-            for c in 0..M2 {
+        debug_assert!(target_row + row_len <= N, "copy out of bounds");
+        debug_assert!(target_col + col_len <= M, "copy out of bounds");
+        debug_assert!(row_len <= N2, "copy out of bounds");
+        debug_assert!(col_len <= M2, "copy out of bounds");
+        for r in 0..row_len {
+            for c in 0..col_len {
                 self[(target_row + r, target_col + c)] = m[(r, c)].clone();
             }
         }
@@ -178,6 +191,22 @@ where
         for r in 0..N {
             for c in 0..M {
                 out[(r, c)] = &self[(r, c)] + &other[(r, c)]
+            }
+        }
+        out
+    }
+}
+
+impl<const N: usize, const M: usize, R: RingElement> Sub<&Matrix<N, M, R>> for &Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    type Output = Matrix<N, M, R>;
+    fn sub(self, other: &Matrix<N, M, R>) -> Self::Output {
+        let mut out = Matrix::zero();
+        for r in 0..N {
+            for c in 0..M {
+                out[(r, c)] = &self[(r, c)] - &other[(r, c)]
             }
         }
         out

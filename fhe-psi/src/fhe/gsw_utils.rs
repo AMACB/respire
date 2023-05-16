@@ -44,6 +44,7 @@ pub fn gsw_encrypt_pk<
     mu: R,
 ) -> Matrix<N, M, R>
 where
+    R: RandUniformSampled,
     R: RandZeroOneSampled,
     R: RingElementDecomposable<G_BASE, G_LEN>,
     for<'a> &'a R: RingElementRef<R>,
@@ -54,29 +55,33 @@ where
     &(A * &R_mat) + &(&G * &mu)
 }
 
-// TODO: Secret key encryption
-// pub fn gsw_encrypt_sk<
-//         const N: usize,
-//     const M: usize,
-//     const P: u64,
-//     const Q: u64,
-//     const G_BASE: u64,
-//     const G_LEN: usize,
-//     R: RingElement,
-//     >(A: &Matrix<N, M, R>, mu: R) -> Matrix<N, M, R>
-// where
-//     R: RandZeroOneSampled,
-//     R: RingElementDecomposable<G_BASE, G_LEN>,
-// for<'a> &'a R: RingElementRef<R>
-// {
-//     let mut rng = ChaCha20Rng::from_entropy();
-//     let R_mat: Matrix<M, M, R> = Matrix::rand_zero_one(&mut rng);
+pub fn gsw_encrypt_sk<
+    const N_MINUS_1: usize,
+    const N: usize,
+    const M: usize,
+    const G_BASE: u64,
+    const G_LEN: usize,
+    R: RingElement,
+    const NOISE_WIDTH_MILLIONTHS: u64,
+    >(s_T: &Matrix<1, N, R>, mu: R) -> Matrix<N, M, R>
+where
+    R: RandUniformSampled,
+    R: RandDiscreteGaussianSampled,
+    R: RingElementDecomposable<G_BASE, G_LEN>,
+for<'a> &'a R: RingElementRef<R>
+{
+    let mut rng = ChaCha20Rng::from_entropy();
+    let a_bar: Matrix<N_MINUS_1, M, R> = Matrix::rand_uniform(&mut rng);
+    let e: Matrix<1, M, R> = Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+    let mut s_bar_T: Matrix<1, N_MINUS_1, R> = Matrix::zero();
+    s_bar_T.copy_into_with_len(s_T, 0, 0, 1, N_MINUS_1);
 
-//     let G = build_gadget::<R, N, M, Q, G_BASE, G_LEN>();
-
-//     let ct = &(A * &R_mat) + &(&G * &mu);
-//     ct
-// }
+    // TODO: is this correct?
+    let AR: Matrix<N, M, R> = Matrix::stack(&a_bar, &(&e - &(&s_bar_T * &a_bar)));
+    let G = build_gadget::<R, N, M, G_BASE, G_LEN>();
+    let ct = &AR + &(&G * &mu);
+    ct
+}
 
 // This does *not* do any rounding, hence half decrypt.
 pub fn gsw_half_decrypt<
