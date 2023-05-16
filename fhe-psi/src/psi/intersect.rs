@@ -143,6 +143,7 @@ where
         let mut powers_of_a: Vec<FHE::Ciphertext> = Vec::with_capacity(log_degree as usize);
         let mut curr_power_of_a: Z_N<P> = *a;
         for _ in 0..log_degree {
+            // powers_of_a.push(FHE::encrypt(&pk, curr_power_of_a));
             powers_of_a.push(FHE::encrypt_sk(&sk, curr_power_of_a));
             curr_power_of_a *= curr_power_of_a;
         }
