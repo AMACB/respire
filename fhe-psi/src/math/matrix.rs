@@ -39,7 +39,7 @@ where
         Matrix { data: vec }
     }
 
-    /// Copies `m` into `self`, starting at `(target_row, target_col)`, by cloning each element.
+    /// Copies all of `m` into `self`, starting at `(target_row, target_col)`, by cloning each element.
     pub fn copy_into<const N2: usize, const M2: usize>(
         &mut self,
         m: &Matrix<N2, M2, R>,
@@ -49,20 +49,27 @@ where
         self.copy_into_with_len(m, target_row, target_col, N2, M2);
     }
 
+    /// Copies the upper left `row_len` by `col_len` submatrix of `m` into `self`, starting at `(target_row, target_col)`, by cloning each element.
     pub fn copy_into_with_len<const N2: usize, const M2: usize>(
         &mut self,
         m: &Matrix<N2, M2, R>,
         target_row: usize,
         target_col: usize,
         row_len: usize,
-        col_len: usize
+        col_len: usize,
     ) {
-        debug_assert!(target_row < N, "copy out of bounds");
-        debug_assert!(target_col < M, "copy out of bounds");
-        debug_assert!(target_row + row_len <= N, "copy out of bounds");
-        debug_assert!(target_col + col_len <= M, "copy out of bounds");
-        debug_assert!(row_len <= N2, "copy out of bounds");
-        debug_assert!(col_len <= M2, "copy out of bounds");
+        debug_assert!(target_row < N, "target_row out of bounds");
+        debug_assert!(target_col < M, "target_col out of bounds");
+        debug_assert!(
+            target_row + row_len <= N,
+            "target_row + row_len out of bounds"
+        );
+        debug_assert!(
+            target_col + col_len <= M,
+            "target_col + col_len out of bounds"
+        );
+        debug_assert!(row_len <= N2, "row_len exceeds source matrix dimension");
+        debug_assert!(col_len <= M2, "col_len exceeds source matrix dimension");
         for r in 0..row_len {
             for c in 0..col_len {
                 self[(target_row + r, target_col + c)] = m[(r, c)].clone();
@@ -101,12 +108,15 @@ where
     }
 }
 
-/// Square matrix specific methods.
+/*
+ * Square matrix specific methods.
+ */
 
 impl<const N: usize, R: RingElement> Matrix<N, N, R>
 where
     for<'a> &'a R: RingElementRef<R>,
 {
+    /// Returns the identity matrix.
     pub fn identity() -> Self {
         let mut out = Matrix::zero();
         for i in 0..N {
@@ -116,7 +126,9 @@ where
     }
 }
 
-/// Indexing
+/*
+ * Indexing
+ */
 
 impl<const N: usize, const M: usize, R: RingElement> Index<(usize, usize)> for Matrix<N, M, R>
 where
@@ -138,11 +150,15 @@ where
 {
     /// Returns the `(row, col)` element of the matrix.
     fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
+        debug_assert!(index.0 < N, "index out of bounds");
+        debug_assert!(index.1 < M, "index out of bounds");
         &mut self.data[index.0 * M + index.1]
     }
 }
 
-/// Arithmetic operations
+/*
+ *  Arithmetic operations
+ */
 
 impl<const N: usize, const M: usize, R: RingElement> Mul<&R> for &Matrix<N, M, R>
 where
@@ -150,6 +166,7 @@ where
 {
     type Output = Matrix<N, M, R>;
 
+    /// Multiplies each element of the matrix by `other`.
     fn mul(self, other: &R) -> Self::Output {
         let mut out = Matrix::zero();
         for r in 0..N {
@@ -168,6 +185,7 @@ where
 {
     type Output = Matrix<N, K, R>;
 
+    /// Naive matrix multiplication.
     fn mul(self, other: &Matrix<M, K, R>) -> Self::Output {
         let mut out = Matrix::zero();
         for r in 0..N {
@@ -186,6 +204,8 @@ where
     for<'a> &'a R: RingElementRef<R>,
 {
     type Output = Matrix<N, M, R>;
+
+    /// Element-wise addition.
     fn add(self, other: &Matrix<N, M, R>) -> Self::Output {
         let mut out = Matrix::zero();
         for r in 0..N {
@@ -202,6 +222,8 @@ where
     for<'a> &'a R: RingElementRef<R>,
 {
     type Output = Matrix<N, M, R>;
+
+    /// Element-wise subtraction.
     fn sub(self, other: &Matrix<N, M, R>) -> Self::Output {
         let mut out = Matrix::zero();
         for r in 0..N {
@@ -218,6 +240,8 @@ where
     for<'a> &'a R: RingElementRef<R>,
 {
     type Output = Matrix<N, M, R>;
+
+    /// Element-wise negation.
     fn neg(self) -> Self::Output {
         let mut out = Matrix::zero();
         for r in 0..N {
@@ -229,13 +253,14 @@ where
     }
 }
 
-/// Random sampling implementations inherited from the base ring.
+// Random sampling implementations inherited from the base ring.
 
 impl<const N: usize, const M: usize, R: RingElement> RandUniformSampled for Matrix<N, M, R>
 where
     for<'a> &'a R: RingElementRef<R>,
     R: RandUniformSampled,
 {
+    /// Element-wise uniform random sampling.
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
         let mut result = Self::zero();
         for i in 0..N {
@@ -252,6 +277,7 @@ where
     for<'a> &'a R: RingElementRef<R>,
     R: RandZeroOneSampled,
 {
+    /// Element-wise random 0/1 sampling.
     fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
         let mut result = Self::zero();
         for i in 0..N {
@@ -268,6 +294,7 @@ where
     for<'a> &'a R: RingElementRef<R>,
     R: RandDiscreteGaussianSampled,
 {
+    /// Element-wise random discrete gaussian sampling.
     fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
         let mut result = Self::zero();
         for i in 0..N {

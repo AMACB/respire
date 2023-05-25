@@ -10,10 +10,15 @@ where
 {
 }
 
-/// A generic FHE scheme type that supports keygen, encrypt, decrypt, addition, multiplication, and
-/// scalar multiplication.
-/// TODO make message and scalar type generic
-/// TODO
+/// A generic FHE scheme type that supports the following:
+///  - Key generation
+///  - Public key and secret key encryption
+///  - Decryption
+///  - Ciphertext addition and multiplication
+///  - Scalar-ciphertext multiplication. Note that scalar-ciphertext addition is not required (yet).
+// TODO make message and scalar type generic
+// TODO: require scalar-ciphertext addition?
+
 pub trait FHEScheme<const P: u64>: Sized
 where
     for<'a> &'a <Self as FHEScheme<P>>::Ciphertext:
@@ -62,5 +67,3 @@ impl<const P: u64> FHEScheme<P> for FHEInsecure {
         *ct
     }
 }
-
-// TODO: Add trivial FHE scheme that tracks noise

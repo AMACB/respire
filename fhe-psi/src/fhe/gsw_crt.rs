@@ -1,13 +1,28 @@
 //! GSW, but with CRT.
 
 use crate::fhe::fhe::*;
-use crate::fhe::gadget::*;
 use crate::fhe::gsw_utils::*;
 use crate::math::matrix::Matrix;
 use crate::math::utils::{ceil_log, mod_inverse};
 use crate::math::z_n::Z_N;
 use crate::math::z_n_crt::Z_N_CRT;
 use std::ops::{Add, Mul};
+
+/*
+ * A GSW implementation using Chinese Remainder Theorem to achieve larger Q.
+ *
+ * Parameters:
+ *   - N_MINUS_1: N-1, since generics cannot be used in const expressions yet. Used only in key generation.
+ *   - N,M: matrix dimensions. It is assumed that `M = N log_{G_BASE} Q`.
+ *   - P: plaintext modulus.
+ *   - Q: ciphertext modulus, where `Q = Q1 * Q2`.
+ *   - Q1, Q2: factors of the ciphertext modulus, for Chinese Remainder Theorem.
+ *   - Q1_INV, Q2_INV: `Q1^{-1} mod Q2` and `Q2^{-1} mod Q1`, for combining factors via Chinese Remainder Theorem.
+ *   - G_BASE: base used for the gadget matrix.
+ *   - G_LEN: length of the `g` gadget vector, or alternatively `log_{G_BASE} Q`.
+ *   - NOISE_WIDTH_MILLIONTHS: noise width, expressed in millionths to allow for precision past the decimal point (since f64 is not a valid generic parameter).
+ *
+ */
 
 pub struct GSW_CRT<
     const N_MINUS_1: usize,
@@ -88,33 +103,49 @@ impl<
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > FHEScheme<P>
-    for GSW_CRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for GSW_CRT<
+        N_MINUS_1,
+        N,
+        M,
+        P,
+        Q,
+        Q1,
+        Q2,
+        Q1_INV,
+        Q2_INV,
+        G_BASE,
+        G_LEN,
+        NOISE_WIDTH_MILLIONTHS,
+    >
 {
     type Ciphertext = Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
     type PublicKey = PublicKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
     type SecretKey = SecretKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>, NOISE_WIDTH_MILLIONTHS>();
+        let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, _, NOISE_WIDTH_MILLIONTHS>();
         (PublicKey { A }, SecretKey { s_T })
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext {
         let mu = Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(mu));
-        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>>(&pk.A, mu);
+        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, _>(&pk.A, mu);
         Ciphertext { ct }
     }
+
     fn encrypt_sk(sk: &Self::SecretKey, mu: Z_N<P>) -> Self::Ciphertext {
         let mu = Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(mu));
-        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>, NOISE_WIDTH_MILLIONTHS>(&sk.s_T, mu);
+        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
+            &sk.s_T, mu,
+        );
         Ciphertext { ct }
     }
 
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
-        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>>(s_T, ct);
-        gsw_round::<P, Q, Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>>(pt)
+        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
+        gsw_round::<P, Q, _>(pt)
     }
 }
 
@@ -139,25 +170,27 @@ impl<
 {
 }
 
-// impl<
-//         const N: usize,
-//         const M: usize,
-//         const P: u64,
-//         const Q: u64,
-//         const Q1: u64,
-//         const Q2: u64,
-//         const G_BASE: u64,
-//         const G_LEN: usize,
-//     > Add<&Z_N<P>> for &Ciphertext<N, M, P, Q, Q1, Q2, G_BASE, G_LEN>
-// {
-//     type Output = Ciphertext<N, M, P, Q, Q1, Q2, G_BASE, G_LEN>;
-//     fn add(self, rhs: &Z_N<P>) -> Self::Output {
-//         let rhs_q = &Z_N::<Q>::from(u64::from(*rhs));
-//         Ciphertext {
-//             ct: &self.ct + &(&build_gadget::<N, M, Q, Q1, Q2, G_BASE, G_LEN>() * rhs_q),
-//         }
-//     }
-// }
+impl<
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const Q1: u64,
+        const Q2: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
+        const G_BASE: u64,
+        const G_LEN: usize,
+    > Add<&Z_N<P>> for &Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>
+{
+    type Output = Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
+    fn add(self, rhs: &Z_N<P>) -> Self::Output {
+        let rhs_q = &Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(*rhs));
+        Ciphertext {
+            ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs_q),
+        }
+    }
+}
 
 impl<
         'a,
@@ -177,10 +210,7 @@ impl<
     fn mul(self, rhs: Z_N<P>) -> Self::Output {
         let rhs_q = &Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(rhs));
         Ciphertext {
-            ct: &self.ct
-                * &gadget_inverse::<Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>, N, M, M, G_BASE, G_LEN>(
-                    &(&build_gadget::<Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>, N, M, G_BASE, G_LEN>() * rhs_q),
-                ),
+            ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs_q),
         }
     }
 }
@@ -202,7 +232,7 @@ impl<
     type Output = Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
     fn add(self, rhs: Self) -> Self::Output {
         Ciphertext {
-            ct: &self.ct + &rhs.ct,
+            ct: ciphertext_add::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs.ct),
         }
     }
 }
@@ -224,7 +254,7 @@ impl<
     type Output = Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
     fn mul(self, rhs: Self) -> Self::Output {
         Ciphertext {
-            ct: &self.ct * &gadget_inverse::<Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>, N, M, M, G_BASE, G_LEN>(&rhs.ct),
+            ct: ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs.ct),
         }
     }
 }

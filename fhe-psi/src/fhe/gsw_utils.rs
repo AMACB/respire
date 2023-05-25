@@ -8,6 +8,7 @@ use crate::math::z_n::Z_N;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
+/// Performs standard GSW key generation over arbitrary ring elements.
 pub fn gsw_keygen<
     const N_MINUS_1: usize,
     const N: usize,
@@ -33,6 +34,7 @@ where
     (A, s_T)
 }
 
+/// Performs standard GSW public key encryption over arbitrary ring elements.
 pub fn gsw_encrypt_pk<
     const N: usize,
     const M: usize,
@@ -55,6 +57,7 @@ where
     &(A * &R_mat) + &(&G * &mu)
 }
 
+/// Performs standard GSW secret key encryption over arbitrary ring elements.
 pub fn gsw_encrypt_sk<
     const N_MINUS_1: usize,
     const N: usize,
@@ -63,12 +66,15 @@ pub fn gsw_encrypt_sk<
     const G_LEN: usize,
     R: RingElement,
     const NOISE_WIDTH_MILLIONTHS: u64,
-    >(s_T: &Matrix<1, N, R>, mu: R) -> Matrix<N, M, R>
+>(
+    s_T: &Matrix<1, N, R>,
+    mu: R,
+) -> Matrix<N, M, R>
 where
     R: RandUniformSampled,
     R: RandDiscreteGaussianSampled,
     R: RingElementDecomposable<G_BASE, G_LEN>,
-for<'a> &'a R: RingElementRef<R>
+    for<'a> &'a R: RingElementRef<R>,
 {
     let mut rng = ChaCha20Rng::from_entropy();
     let a_bar: Matrix<N_MINUS_1, M, R> = Matrix::rand_uniform(&mut rng);
@@ -83,7 +89,8 @@ for<'a> &'a R: RingElementRef<R>
     ct
 }
 
-// This does *not* do any rounding, hence half decrypt.
+/// Performs standard GSW secret key encryption over arbitrary ring elements.
+/// This does *not* do any rounding, hence the name half decrypt.
 pub fn gsw_half_decrypt<
     const N: usize,
     const M: usize,
@@ -109,7 +116,80 @@ where
     (&(s_T * ct) * g_inv)[(0, N - 1)].clone()
 }
 
+/// Rounding function used to switch from the ciphertext ring `Z_Q` to the plaintext ring `Z_P`.
 pub fn gsw_round<const P: u64, const Q: u64, T: Into<u64>>(x: T) -> Z_N<P> {
     let floored = x.into() * P * 2 / Q;
     Z_N::from((floored + 1) / 2)
+}
+
+pub fn ciphertext_add<
+    const N: usize,
+    const M: usize,
+    const G_BASE: u64,
+    const G_LEN: usize,
+    R: RingElement,
+>(
+    left: &Matrix<N, M, R>,
+    right: &Matrix<N, M, R>,
+) -> Matrix<N, M, R>
+where
+    R: RandZeroOneSampled,
+    R: RingElementDecomposable<G_BASE, G_LEN>,
+    for<'a> &'a R: RingElementRef<R>,
+{
+    left + right
+}
+
+pub fn scalar_ciphertext_add<
+    const N: usize,
+    const M: usize,
+    const G_BASE: u64,
+    const G_LEN: usize,
+    R: RingElement,
+>(
+    ct: &Matrix<N, M, R>,
+    scalar: &R,
+) -> Matrix<N, M, R>
+where
+    R: RandZeroOneSampled,
+    R: RingElementDecomposable<G_BASE, G_LEN>,
+    for<'a> &'a R: RingElementRef<R>,
+{
+    ciphertext_add(ct, &(&build_gadget::<R, N, M, G_BASE, G_LEN>() * scalar))
+}
+
+pub fn ciphertext_mul<
+    const N: usize,
+    const M: usize,
+    const G_BASE: u64,
+    const G_LEN: usize,
+    R: RingElement,
+>(
+    left: &Matrix<N, M, R>,
+    right: &Matrix<N, M, R>,
+) -> Matrix<N, M, R>
+where
+    R: RandZeroOneSampled,
+    R: RingElementDecomposable<G_BASE, G_LEN>,
+    for<'a> &'a R: RingElementRef<R>,
+{
+    left * &gadget_inverse::<R, N, M, M, G_BASE, G_LEN>(right)
+}
+
+pub fn scalar_ciphertext_mul<
+    const N: usize,
+    const M: usize,
+    const G_BASE: u64,
+    const G_LEN: usize,
+    R: RingElement,
+>(
+    ct: &Matrix<N, M, R>,
+    scalar: &R,
+) -> Matrix<N, M, R>
+where
+    R: RandZeroOneSampled,
+    R: RingElementDecomposable<G_BASE, G_LEN>,
+    for<'a> &'a R: RingElementRef<R>,
+{
+    ciphertext_mul(ct, &(&build_gadget::<R, N, M, G_BASE, G_LEN>() * scalar))
 }

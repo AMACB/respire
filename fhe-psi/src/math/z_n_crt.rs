@@ -21,7 +21,9 @@ pub struct Z_N_CRT<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV
 
 /// Conversions
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<Z_N_CRT<N1, N2, N1_INV, N2_INV>> for u64 {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
+    From<Z_N_CRT<N1, N2, N1_INV, N2_INV>> for u64
+{
     /// Reconstructs the reduced form modulo `N`.
     fn from(a: Z_N_CRT<N1, N2, N1_INV, N2_INV>) -> Self {
         let a1: u128 = u64::from(a.a1) as u128;
@@ -34,16 +36,17 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<Z_
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<(Z_N<N1>, Z_N<N2>)> for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<(Z_N<N1>, Z_N<N2>)>
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn from(a: (Z_N<N1>, Z_N<N2>)) -> Self {
-        Z_N_CRT {
-            a1: a.0,
-            a2: a.1,
-        }
+        Z_N_CRT { a1: a.0, a2: a.1 }
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<u64> for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<u64>
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     /// Converts u64 to Z_N_CRT by modular reductions.
     fn from(a: u64) -> Self {
         Z_N_CRT {
@@ -53,7 +56,9 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<u6
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<i64> for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<i64>
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     /// Converts i64 to Z_N_CRT by modular reductions.
     fn from(a: i64) -> Self {
         if a < 0 {
@@ -66,7 +71,9 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<i6
 
 /// Math operations on owned `Z_N_CRT<N1, N2, N1_INV, N2_INV>`, including [`RingElement`] implementation.
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RingElement for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RingElement
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn zero() -> Self {
         0_u64.into()
     }
@@ -75,7 +82,9 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RingEle
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Add for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Add
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     type Output = Z_N_CRT<N1, N2, N1_INV, N2_INV>;
     fn add(self, rhs: Self) -> Self::Output {
         Z_N_CRT {
@@ -85,14 +94,18 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Add for
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> AddAssign for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> AddAssign
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn add_assign(&mut self, rhs: Self) {
         self.a1 += rhs.a1;
         self.a2 += rhs.a2;
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Mul for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Mul
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     type Output = Z_N_CRT<N1, N2, N1_INV, N2_INV>;
     fn mul(self, rhs: Self) -> Self::Output {
         Z_N_CRT {
@@ -102,28 +115,36 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Mul for
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> MulAssign for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> MulAssign
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn mul_assign(&mut self, rhs: Self) {
         self.a1 *= rhs.a1;
         self.a2 *= rhs.a2;
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Sub for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Sub
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     type Output = Z_N_CRT<N1, N2, N1_INV, N2_INV>;
     fn sub(self, rhs: Self) -> Self::Output {
         self + (-rhs)
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> SubAssign for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> SubAssign
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn sub_assign(&mut self, rhs: Self) {
         self.a1 -= rhs.a1;
         self.a2 -= rhs.a2;
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Neg for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Neg
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     type Output = Z_N_CRT<N1, N2, N1_INV, N2_INV>;
     fn neg(mut self) -> Self::Output {
         self.a1 = -self.a1;
@@ -132,8 +153,14 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Neg for
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const BASE: u64, const LEN: usize>
-    RingElementDecomposable<BASE, LEN> for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+impl<
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const BASE: u64,
+        const LEN: usize,
+    > RingElementDecomposable<BASE, LEN> for Z_N_CRT<N1, N2, N1_INV, N2_INV>
 {
     fn decompose_into_mat<const N: usize, const M: usize>(
         &self,
@@ -151,7 +178,9 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const B
 
 /// Formatting
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> fmt::Debug for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> fmt::Debug
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({:?}, {:?})", self.a1, self.a2)
     }
@@ -159,51 +188,68 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> fmt::De
 
 /// Math operations on borrows `&Z_N_CRT<N1, N2, N1_INV, N2_INV>`, including [`RingElementRef`] implementation.
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RingElementRef<Z_N_CRT<N1, N2, N1_INV, N2_INV>> for &Z_N_CRT<N1, N2, N1_INV, N2_INV> {}
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
+    RingElementRef<Z_N_CRT<N1, N2, N1_INV, N2_INV>> for &Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
+}
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Neg for &Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Neg
+    for &Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     type Output = Z_N_CRT<N1, N2, N1_INV, N2_INV>;
     fn neg(self) -> Self::Output {
         -self.clone()
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Add for &Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Add
+    for &Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     type Output = Z_N_CRT<N1, N2, N1_INV, N2_INV>;
     fn add(self, rhs: Self) -> Self::Output {
         self.clone() + rhs.clone()
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> AddAssign<&Z_N_CRT<N1, N2, N1_INV, N2_INV>> for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
+    AddAssign<&Z_N_CRT<N1, N2, N1_INV, N2_INV>> for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn add_assign(&mut self, rhs: &Self) {
         self.a1 += rhs.a1;
         self.a2 += rhs.a2;
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Sub for &Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Sub
+    for &Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     type Output = Z_N_CRT<N1, N2, N1_INV, N2_INV>;
     fn sub(self, rhs: Self) -> Self::Output {
         self.clone() - rhs.clone()
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> SubAssign<&Z_N_CRT<N1, N2, N1_INV, N2_INV>> for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
+    SubAssign<&Z_N_CRT<N1, N2, N1_INV, N2_INV>> for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn sub_assign(&mut self, rhs: &Self) {
         self.a1 -= rhs.a1;
         self.a2 -= rhs.a2;
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Mul for &Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Mul
+    for &Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     type Output = Z_N_CRT<N1, N2, N1_INV, N2_INV>;
     fn mul(self, rhs: Self) -> Self::Output {
         self.clone() * rhs.clone()
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> MulAssign<&Z_N_CRT<N1, N2, N1_INV, N2_INV>> for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
+    MulAssign<&Z_N_CRT<N1, N2, N1_INV, N2_INV>> for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn mul_assign(&mut self, rhs: &Self) {
         self.a1 *= rhs.a1;
         self.a2 *= rhs.a2;
@@ -212,7 +258,9 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> MulAssi
 
 /// Random sampling
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RandUniformSampled for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RandUniformSampled
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
         Z_N_CRT {
             a1: rng.gen_range(0..N1).into(),
@@ -221,20 +269,26 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RandUni
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RandZeroOneSampled for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RandZeroOneSampled
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
         rng.gen_range(0..2_u64).into()
     }
 }
 
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RandDiscreteGaussianSampled for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RandDiscreteGaussianSampled
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
         DiscreteGaussian::sample::<_, NOISE_WIDTH_MILLIONTHS>(rng).into()
     }
 }
 
 /// Other methods
-impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
+    Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     pub fn norm(&self) -> u64 {
         let pos: u64 = u64::from(*self);
         let neg: u64 = u64::from(-*self);

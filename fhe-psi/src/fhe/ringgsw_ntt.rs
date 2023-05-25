@@ -1,3 +1,5 @@
+//! Ring GSW, but polynomials are represented via their DFT. See `Z_N_CycloNTT`.
+
 use crate::fhe::fhe::*;
 use crate::fhe::gadget::*;
 use crate::fhe::gsw_utils::*;
@@ -82,32 +84,36 @@ impl<
     type SecretKey = SecretKey<N, M, P, Q, D, W, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        let (A, s_T) =
-            gsw_keygen::<N_MINUS_1, N, M, Z_N_CycloNTT<D, Q, W>, NOISE_WIDTH_MILLIONTHS>();
+        let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, _, NOISE_WIDTH_MILLIONTHS>();
         (PublicKey { A }, SecretKey { s_T })
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext {
         let mu = Z_N_CycloNTT::<D, Q, W>::from(u64::from(mu));
-        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, Z_N_CycloNTT<D, Q, W>>(&pk.A, mu);
+        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, _>(&pk.A, mu);
         CiphertextNTT { ct }
     }
 
     fn encrypt_sk(sk: &Self::SecretKey, mu: Z_N<P>) -> Self::Ciphertext {
         let mu = Z_N_CycloNTT::<D, Q, W>::from(u64::from(mu));
-        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, Z_N_CycloNTT<D, Q, W>, NOISE_WIDTH_MILLIONTHS>(&sk.s_T, mu);
+        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
+            &sk.s_T, mu,
+        );
         CiphertextNTT { ct }
     }
 
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
-        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, Z_N_CycloNTT<D, Q, W>>(s_T, ct);
-        // TODO support arbitrary messages, not just constants
+        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
         gsw_round::<P, Q, Z_N<Q>>(Z_N_CycloRaw::from(pt)[0])
     }
 }
 
+/*
+ * homomorphic addition / multiplication
+ */
+
 impl<
         'a,
         const N: usize,
@@ -118,19 +124,12 @@ impl<
         const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
-    > Add for &'a CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>
+    > CiphertextRef<P, CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>>
+    for &'a CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>
 {
-    type Output = CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        CiphertextNTT {
-            ct: &self.ct + &rhs.ct,
-        }
-    }
 }
 
 impl<
-        'a,
         const N: usize,
         const M: usize,
         const P: u64,
@@ -139,14 +138,26 @@ impl<
         const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
-    > Mul for &'a CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>
+    > Add<&Z_N<P>> for &CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>
 {
     type Output = CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
+    fn add(self, rhs: &Z_N<P>) -> Self::Output {
+        let rhs_q = Z_N::from(u64::from(*rhs));
+        let mut rhs: Matrix<N, M, Z_N_CycloRaw<D, Q>> =
+            build_gadget::<Z_N_CycloRaw<D, Q>, N, M, G_BASE, G_LEN>();
+        for i in 0..N {
+            for j in 0..M {
+                rhs[(i, j)] *= rhs_q;
+            }
+        }
+        let mut rhs_ntt: Matrix<N, M, Z_N_CycloNTT<D, Q, W>> = Matrix::zero();
+        for i in 0..N {
+            for j in 0..M {
+                rhs_ntt[(i, j)] = (&rhs[(i, j)]).into();
+            }
+        }
         CiphertextNTT {
-            ct: &self.ct
-                * &gadget_inverse::<Z_N_CycloNTT<D, Q, W>, N, M, M, G_BASE, G_LEN>(&rhs.ct),
+            ct: &self.ct + &rhs_ntt,
         }
     }
 }
@@ -201,9 +212,36 @@ impl<
         const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
-    > CiphertextRef<P, CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>>
-    for &'a CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>
+    > Add for &'a CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>
 {
+    type Output = CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        CiphertextNTT {
+            ct: ciphertext_add::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs.ct),
+        }
+    }
+}
+
+impl<
+        'a,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const D: usize,
+        const W: u64,
+        const G_BASE: u64,
+        const G_LEN: usize,
+    > Mul for &'a CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>
+{
+    type Output = CiphertextNTT<N, M, P, Q, D, W, G_BASE, G_LEN>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        CiphertextNTT {
+            ct: ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs.ct),
+        }
+    }
 }
 
 pub struct Params {

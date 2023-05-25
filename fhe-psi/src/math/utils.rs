@@ -38,7 +38,7 @@ pub const fn mod_inverse(x: u64, modulus: u64) -> u64 {
         let q = a / b;
 
         let t = b;
-        b = a%b;
+        b = a % b;
         a = t;
 
         let t = y;

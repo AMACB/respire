@@ -1,3 +1,5 @@
+//! RingGSW with both NTT and CRT. The only scheme that should be used in practice due to its efficiency and noise budget.
+
 use crate::fhe::fhe::*;
 use crate::fhe::gadget::*;
 use crate::fhe::gsw_utils::*;
@@ -5,6 +7,7 @@ use crate::math::matrix::Matrix;
 use crate::math::utils::{ceil_log, mod_inverse};
 use crate::math::z_n::Z_N;
 use crate::math::z_n_crt::Z_N_CRT;
+use crate::math::z_n_cyclo_crt::Z_N_CycloRaw_CRT;
 use crate::math::z_n_cyclo_crt_ntt::Z_N_CycloNTT_CRT;
 use std::ops::{Add, Mul};
 
@@ -83,8 +86,6 @@ pub struct SecretKey<
     s_T: Matrix<1, N, Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>>,
 }
 
-// TODO: Find a way to validate these params at compile time (static_assert / const_guards crate?)
-
 impl<
         const N_MINUS_1: usize,
         const N: usize,
@@ -93,8 +94,8 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
         const W1: u64,
         const W2: u64,
         const D: usize,
@@ -102,34 +103,52 @@ impl<
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > FHEScheme<P>
-    for RingGSW_NTT_CRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for RingGSW_NTT_CRT<
+        N_MINUS_1,
+        N,
+        M,
+        P,
+        Q,
+        Q1,
+        Q2,
+        Q1_INV,
+        Q2_INV,
+        W1,
+        W2,
+        D,
+        G_BASE,
+        G_LEN,
+        NOISE_WIDTH_MILLIONTHS,
+    >
 {
     type Ciphertext = Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
     type PublicKey = PublicKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
     type SecretKey = SecretKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>, NOISE_WIDTH_MILLIONTHS>();
+        let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, _, NOISE_WIDTH_MILLIONTHS>();
         (PublicKey { A }, SecretKey { s_T })
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext {
         let mu = Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(mu));
-        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>>(&pk.A, mu);
+        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, _>(&pk.A, mu);
         Ciphertext { ct }
     }
 
     fn encrypt_sk(sk: &Self::SecretKey, mu: Z_N<P>) -> Self::Ciphertext {
         let mu = Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(mu));
-        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>, NOISE_WIDTH_MILLIONTHS>(&sk.s_T, mu);
+        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
+            &sk.s_T, mu,
+        );
         Ciphertext { ct }
     }
 
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
-        let pt = (&gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>>(s_T, ct)).into();
-        gsw_round::<P, Q, Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>>(pt)
+        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
+        gsw_round::<P, Q, Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>>((&pt).into())
     }
 }
 
@@ -145,8 +164,8 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
         const W1: u64,
         const W2: u64,
         const D: usize,
@@ -157,30 +176,31 @@ impl<
 {
 }
 
-// impl<
-//         const N: usize,
-//         const M: usize,
-//         const P: u64,
-//         const Q: u64,
-//         const Q1: u64,
-//         const Q2: u64,
-    // const Q1_INV: u64,
-    // const Q2_INV: u64,
-//         const W1: u64,
-//         const W2: u64,
-//         const D: usize,
-//         const G_BASE: u64,
-//         const G_LEN: usize,
-//     > Add<&Z_N<P>> for &Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>
-// {
-//     type Output = Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
-//     fn add(self, rhs: &Z_N<P>) -> Self::Output {
-//         let rhs_q = &Z_N::<Q>::from(u64::from(*rhs));
-//         Ciphertext {
-//             ct: &self.ct + &(&build_gadget::<N, M, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>() * rhs_q),
-//         }
-//     }
-// }
+impl<
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const Q1: u64,
+        const Q2: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+        const D: usize,
+        const G_BASE: u64,
+        const G_LEN: usize,
+    > Add<&Z_N<P>> for &Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>
+{
+    type Output = Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
+    fn add(self, rhs: &Z_N<P>) -> Self::Output {
+        // TODO: see below, not fast
+        let rhs_q = &Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(*rhs));
+        Ciphertext {
+            ct: &self.ct + &(&build_gadget::<_, N, M, G_BASE, G_LEN>() * rhs_q),
+        }
+    }
+}
 
 impl<
         'a,
@@ -190,8 +210,8 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
         const W1: u64,
         const W2: u64,
         const D: usize,
@@ -204,10 +224,50 @@ impl<
         let rhs_q = &Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(rhs));
         Ciphertext {
             ct: &self.ct
-                * &gadget_inverse::<Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>, N, M, M, G_BASE, G_LEN>(
-                    &(&build_gadget::<Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>, N, M, G_BASE, G_LEN>() * rhs_q),
+                * &gadget_inverse::<_, N, M, M, G_BASE, G_LEN>(
+                    &(&build_gadget::<_, N, M, G_BASE, G_LEN>() * rhs_q),
                 ),
         }
+
+        // TODO: below is the faster way to do it, need to add arbitrary scalar * matrix mult
+        // let rhs_q = Z_N_CRT::from(u64::from(rhs));
+        // let mut G_rhs: Matrix<N, M, Z_N_CycloRaw_CRT<D, Q1, Q2, Q1_INV, Q2_INV>> =
+        //     build_gadget::<Z_N_CycloRaw_CRT<D, Q1, Q2, Q1_INV, Q2_INV>, N, M, G_BASE, G_LEN>();
+        // for i in 0..N {
+        //     for j in 0..M {
+        //         G_rhs[(i, j)] *= rhs_q;
+        //     }
+        // }
+
+        // let G_inv_G_rhs_raw: Matrix<M, M, Z_N_CycloRaw_CRT<D, Q1, Q2, Q1_INV, Q2_INV>> =
+        //     gadget_inverse::<Z_N_CycloRaw_CRT<D, Q1, Q2, Q1_INV, Q2_INV>, N, M, M, G_BASE, G_LEN>(&G_rhs);
+
+        // let mut G_inv_G_rhs_ntt: Matrix<M, M, Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>> = Matrix::zero();
+        // for i in 0..M {
+        //     for j in 0..M {
+        //         G_inv_G_rhs_ntt[(i, j)] = (&G_inv_G_rhs_raw[(i, j)]).into();
+        //     }
+        // }
+
+        // Ciphertext {
+        //     ct: &self.ct
+        //         * &gadget_inverse::<
+        //             Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>,
+        //             N,
+        //             M,
+        //             M,
+        //             G_BASE,
+        //             G_LEN,
+        //         >(
+        //             &(&build_gadget::<
+        //                 Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>,
+        //                 N,
+        //                 M,
+        //                 G_BASE,
+        //                 G_LEN,
+        //             >() * rhs_q),
+        //         ),
+        // }
     }
 }
 
@@ -219,8 +279,8 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
         const W1: u64,
         const W2: u64,
         const D: usize,
@@ -231,7 +291,7 @@ impl<
     type Output = Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
     fn add(self, rhs: Self) -> Self::Output {
         Ciphertext {
-            ct: &self.ct + &rhs.ct,
+            ct: ciphertext_add::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs.ct),
         }
     }
 }
@@ -244,8 +304,8 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
         const W1: u64,
         const W2: u64,
         const D: usize,
@@ -256,7 +316,7 @@ impl<
     type Output = Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
     fn mul(self, rhs: Self) -> Self::Output {
         Ciphertext {
-            ct: &self.ct * &gadget_inverse::<Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>, N, M, M, G_BASE, G_LEN>(&rhs.ct),
+            ct: ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs.ct),
         }
     }
 }
@@ -342,7 +402,8 @@ mod test {
 
     #[test]
     fn keygen_is_correct() {
-        let threshold = 4f64 * (RingGSW_NTT_CRT_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
+        let threshold =
+            4f64 * (RingGSW_NTT_CRT_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64);
         let (A, s_T) = RingGSW_NTT_CRTTest::keygen();
         let e = &s_T.s_T * &A.A;
 

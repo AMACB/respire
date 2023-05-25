@@ -1,7 +1,6 @@
 //! Plain GSW.
 
 use crate::fhe::fhe::*;
-use crate::fhe::gadget::*;
 use crate::fhe::gsw_utils::*;
 use crate::math::matrix::Matrix;
 use crate::math::utils::ceil_log;
@@ -13,13 +12,13 @@ use std::ops::{Add, Mul};
  *
  * Parameters:
  *   - N_MINUS_1: N-1, since generics cannot be used in const expressions yet. Used only in key generation.
- *   - N,M: matrix dimensions.
+ *   - N,M: matrix dimensions. It is assumed that `M = N log_{G_BASE} Q`.
  *   - P: plaintext modulus.
  *   - Q: ciphertext modulus.
  *   - G_BASE: base used for the gadget matrix.
- *   - G_LEN: length of the "g" gadget vector, or alternatively log q.
+ *   - G_LEN: length of the `g` gadget vector, or alternatively `log_{G_BASE} Q`.
  *   - NOISE_WIDTH_MILLIONTHS: noise width, expressed in millionths to allow for precision past the decimal point (since f64 is not a valid generic parameter).
- *   - NG_LEN: N * G_LEN, since generics cannot be used in const expressions yet. Used only in ciphertext multiplication.
+ *
  */
 
 pub struct GSW<
@@ -87,27 +86,29 @@ impl<
     type SecretKey = SecretKey<N, M, P, Q, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, Z_N<Q>, NOISE_WIDTH_MILLIONTHS>();
+        let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, _, NOISE_WIDTH_MILLIONTHS>();
         (PublicKey { A }, SecretKey { s_T })
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext {
         let mu = Z_N::<Q>::from(u64::from(mu));
-        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, Z_N<Q>>(&pk.A, mu);
+        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, _>(&pk.A, mu);
         Ciphertext { ct }
     }
 
     fn encrypt_sk(sk: &Self::SecretKey, mu: Z_N<P>) -> Self::Ciphertext {
         let mu = Z_N::<Q>::from(u64::from(mu));
-        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, Z_N<Q>, NOISE_WIDTH_MILLIONTHS>(&sk.s_T, mu);
+        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
+            &sk.s_T, mu,
+        );
         Ciphertext { ct }
     }
 
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
-        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, Z_N<Q>>(s_T, ct);
-        gsw_round::<P, Q, Z_N<Q>>(pt)
+        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
+        gsw_round::<P, Q, _>(pt)
     }
 }
 
@@ -128,23 +129,24 @@ impl<
 {
 }
 
-// impl<
-//         const N: usize,
-//         const M: usize,
-//         const P: u64,
-//         const Q: u64,
-//         const G_BASE: u64,
-//         const G_LEN: usize,
-//     > Add<&Z_N<P>> for &Ciphertext<N, M, P, Q, G_BASE, G_LEN>
-// {
-//     type Output = Ciphertext<N, M, P, Q, G_BASE, G_LEN>;
-//     fn add(self, rhs: &Z_N<P>) -> Self::Output {
-//         let rhs_q = &Z_N::<Q>::from(u64::from(*rhs));
-//         Ciphertext {
-//             ct: &self.ct + &(&build_gadget::<N, M, Q, G_BASE, G_LEN>() * rhs_q),
-//         }
-//     }
-// }
+impl<
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const G_BASE: u64,
+        const G_LEN: usize,
+    > Add<&Z_N<P>> for &Ciphertext<N, M, P, Q, G_BASE, G_LEN>
+{
+    type Output = Ciphertext<N, M, P, Q, G_BASE, G_LEN>;
+    // TODO: remove borrow (from all)
+    fn add(self, rhs: &Z_N<P>) -> Self::Output {
+        let rhs_q = &Z_N::<Q>::from(u64::from(*rhs));
+        Ciphertext {
+            ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs_q),
+        }
+    }
+}
 
 impl<
         'a,
@@ -160,10 +162,7 @@ impl<
     fn mul(self, rhs: Z_N<P>) -> Self::Output {
         let rhs_q = &Z_N::<Q>::from(u64::from(rhs));
         Ciphertext {
-            ct: &self.ct
-                * &gadget_inverse::<Z_N<Q>, N, M, M, G_BASE, G_LEN>(
-                    &(&build_gadget::<Z_N<Q>, N, M, G_BASE, G_LEN>() * rhs_q),
-                ),
+            ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs_q),
         }
     }
 }
@@ -181,7 +180,7 @@ impl<
     type Output = Ciphertext<N, M, P, Q, G_BASE, G_LEN>;
     fn add(self, rhs: Self) -> Self::Output {
         Ciphertext {
-            ct: &self.ct + &rhs.ct,
+            ct: ciphertext_add::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs.ct),
         }
     }
 }
@@ -199,7 +198,7 @@ impl<
     type Output = Ciphertext<N, M, P, Q, G_BASE, G_LEN>;
     fn mul(self, rhs: Self) -> Self::Output {
         Ciphertext {
-            ct: &self.ct * &gadget_inverse::<Z_N<Q>, N, M, M, G_BASE, G_LEN>(&rhs.ct),
+            ct: ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs.ct),
         }
     }
 }
@@ -288,7 +287,7 @@ mod test {
     }
 
     #[test]
-    fn homomorphism_is_correct() {
+    fn homomorphism_is_correcty() {
         let (A, s_T) = GSWTest::keygen();
         for i in 0_u64..10_u64 {
             for j in 0_u64..10_u64 {
@@ -338,7 +337,6 @@ mod test {
         // assert_eq!(pt31234, &(&(&(&mu1 * &mu2) * &mu3) * &mu4) * &mu3);
     }
 }
-
 // Old testing for valid parameters -- for future reference if we want to reimplement these as compile time checks
 
 // #[cfg(test)]
@@ -374,6 +372,8 @@ mod test {
 //         verify_int_params(TEST_PARAMS);
 //     }
 // }
+
+// Params struct from spiral
 
 // pub struct Params {
 //     pub poly_len: usize,

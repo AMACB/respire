@@ -17,32 +17,66 @@ use std::slice::Iter;
 // TODO: documentation
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Z_N_CycloNTT_CRT<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> {
+pub struct Z_N_CycloNTT_CRT<
+    const D: usize,
+    const N1: u64,
+    const N2: u64,
+    const N1_INV: u64,
+    const N2_INV: u64,
+    const W1: u64,
+    const W2: u64,
+> {
     p1: Z_N_CycloNTT<D, N1, W1>,
-    p2: Z_N_CycloNTT<D, N2, W2>
+    p2: Z_N_CycloNTT<D, N2, W2>,
 }
 
 /// Conversions
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> From<u64> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > From<u64> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     fn from(a: u64) -> Self {
         Self {
             p1: a.into(),
-            p2: a.into()
+            p2: a.into(),
         }
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> From<(Z_N_CycloNTT<D, N1, W1>, Z_N_CycloNTT<D, N2, W2>)> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > From<(Z_N_CycloNTT<D, N1, W1>, Z_N_CycloNTT<D, N2, W2>)>
+    for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     fn from(a: (Z_N_CycloNTT<D, N1, W1>, Z_N_CycloNTT<D, N2, W2>)) -> Self {
-        Z_N_CycloNTT_CRT {
-            p1: a.0,
-            p2: a.1,
-        }
+        Z_N_CycloNTT_CRT { p1: a.0, p2: a.1 }
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> From<&Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>> for Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > From<&Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>>
+    for Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV>
+{
     fn from(a: &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>) -> Self {
         let p1_raw: Z_N_CycloRaw<D, N1> = (&a.p1).into();
         let p2_raw: Z_N_CycloRaw<D, N2> = (&a.p2).into();
@@ -70,7 +104,16 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
 //     }
 // }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> From<Vec<u64>> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > From<Vec<u64>> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     fn from(coeff: Vec<u64>) -> Self {
         Z_N_CycloNTT_CRT {
             p1: Z_N_CycloNTT::from(PolynomialZ_N::from(coeff.clone())),
@@ -145,73 +188,149 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
 
 /// [`RingElementRef`] implementation
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> RingElementRef<Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>> for &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {}
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > RingElementRef<Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>>
+    for &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
+}
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> Add for &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > Add for &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     type Output = Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>;
     fn add(self, rhs: Self) -> Self::Output {
         Z_N_CycloNTT_CRT {
             p1: &self.p1 + &rhs.p1,
-            p2: &self.p2 + &rhs.p2
+            p2: &self.p2 + &rhs.p2,
         }
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> Sub for &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > Sub for &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     type Output = Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>;
     fn sub(self, rhs: Self) -> Self::Output {
         Z_N_CycloNTT_CRT {
             p1: &self.p1 - &rhs.p1,
-            p2: &self.p2 - &rhs.p2
+            p2: &self.p2 - &rhs.p2,
         }
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> Mul for &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > Mul for &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     type Output = Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>;
     fn mul(self, rhs: Self) -> Self::Output {
         Z_N_CycloNTT_CRT {
             p1: &self.p1 * &rhs.p1,
-            p2: &self.p2 * &rhs.p2
+            p2: &self.p2 * &rhs.p2,
         }
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> Neg for &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > Neg for &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     type Output = Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>;
     fn neg(self) -> Self::Output {
         Z_N_CycloNTT_CRT {
             p1: -&self.p1,
-            p2: -&self.p2
+            p2: -&self.p2,
         }
     }
 }
 
 /// [`RingElement`] implementation
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> RingElement for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > RingElement for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     fn zero() -> Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
         Z_N_CycloNTT_CRT {
             p1: Z_N_CycloNTT::zero(),
-            p2: Z_N_CycloNTT::zero()
+            p2: Z_N_CycloNTT::zero(),
         }
     }
     fn one() -> Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
         Z_N_CycloNTT_CRT {
             p1: Z_N_CycloNTT::one(),
-            p2: Z_N_CycloNTT::one()
+            p2: Z_N_CycloNTT::one(),
         }
     }
 }
 
-impl<'a, const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> AddAssign<&'a Self> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        'a,
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > AddAssign<&'a Self> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     fn add_assign(&mut self, rhs: &'a Self) {
         self.p1 += &rhs.p1;
         self.p2 += &rhs.p2;
     }
 }
 
-impl<'a, const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> SubAssign<&'a Self> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        'a,
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > SubAssign<&'a Self> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     fn sub_assign(&mut self, rhs: &'a Self) {
         self.p1 -= &rhs.p1;
         self.p2 -= &rhs.p2;
@@ -225,14 +344,33 @@ impl<'a, const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const 
 //     }
 // }
 
-impl<'a, const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> MulAssign<&'a Self> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        'a,
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > MulAssign<&'a Self> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     fn mul_assign(&mut self, _: &'a Self) {
         todo!()
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64, const BASE: u64, const LEN: usize>
-    RingElementDecomposable<BASE, LEN> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+        const BASE: u64,
+        const LEN: usize,
+    > RingElementDecomposable<BASE, LEN> for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
 {
     fn decompose_into_mat<const N: usize, const M: usize>(
         &self,
@@ -243,29 +381,56 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
         let mut m: Matrix<LEN, 1, Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV>> = Matrix::zero();
         <Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV> as RingElementDecomposable<BASE, LEN>>::decompose_into_mat::<LEN, 1>(&Z_N_CycloRaw_CRT::from(self), &mut m, 0, 0);
         for k in 0..LEN {
-            mat[(i+k, j)] = (&m[(k, 0)]).into();
+            mat[(i + k, j)] = (&m[(k, 0)]).into();
         }
     }
 }
 
 /// Random sampling
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> RandUniformSampled for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > RandUniformSampled for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
         Z_N_CycloNTT_CRT {
             p1: Z_N_CycloNTT::rand_uniform(rng),
-            p2: Z_N_CycloNTT::rand_uniform(rng)
+            p2: Z_N_CycloNTT::rand_uniform(rng),
         }
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> RandZeroOneSampled for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > RandZeroOneSampled for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
         (&Z_N_CycloRaw_CRT::rand_zero_one(rng)).into()
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> RandDiscreteGaussianSampled for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > RandDiscreteGaussianSampled for Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
         (&Z_N_CycloRaw_CRT::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(rng)).into()
     }
@@ -280,7 +445,16 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
 //     }
 // }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
     pub fn norm(&self) -> u64 {
         let p: Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV> = self.into();
         p.norm()
@@ -288,7 +462,17 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
 }
 
 // TODO: this should be a TryFrom
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> From<&Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>> for Z_N_CRT<N1, N2, N1_INV, N2_INV> {
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > From<&Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>>
+    for Z_N_CRT<N1, N2, N1_INV, N2_INV>
+{
     fn from(a: &Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2>) -> Self {
         let p: Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV> = a.into();
         (&p).into()
