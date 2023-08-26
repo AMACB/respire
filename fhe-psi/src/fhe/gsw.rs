@@ -9,7 +9,6 @@ use crate::math::utils::ceil_log;
 use crate::math::z_n::Z_N;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use std::ops::Mul;
 
 /*
  * A naive GSW implementation
@@ -171,23 +170,23 @@ impl<
 }
 
 impl<
-        'a,
-        const N: usize,
-        const M: usize,
-        const P: u64,
-        const Q: u64,
-        const G_BASE: u64,
-        const G_LEN: usize,
-    > Mul<Z_N<P>> for &'a GSWCiphertext<N, M, P, Q, G_BASE, G_LEN>
+    const N_MINUS_1: usize,
+    const N: usize,
+    const M: usize,
+    const P: u64,
+    const Q: u64,
+    const G_BASE: u64,
+    const G_LEN: usize,
+    const NOISE_WIDTH_MILLIONTHS: u64,
+> MulScalarEncryptionScheme<Z_N<P>> for GSW<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
-    type Output = GSWCiphertext<N, M, P, Q, G_BASE, G_LEN>;
-    fn mul(self, rhs: Z_N<P>) -> Self::Output {
-        let rhs_q = &Z_N::<Q>::from(u64::from(rhs));
-        GSWCiphertext {
-            ct: &self.ct
+    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
+        let rhs_q: Z_N<Q> = rhs.include_into();
+        Self::Ciphertext {
+            ct: &lhs.ct
                 * &gadget_inverse::<Z_N<Q>, N, M, M, G_BASE, G_LEN>(
-                    &(&build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>() * rhs_q),
-                ),
+                &(&build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>() * &rhs_q),
+            ),
         }
     }
 }
@@ -273,15 +272,14 @@ mod test {
                 let mu2 = Z_N::from(j);
                 let ct1 = GSWTest::encrypt(&A, &mu1);
                 let ct2 = GSWTest::encrypt(&A, &mu2);
-                // let pt_add = GSWTest::decrypt(&s_T, &(&ct1 + mu2));
-                let pt_mul = GSWTest::decrypt(&s_T, &(&ct1 * mu2));
+
                 let pt_add_ct = GSWTest::decrypt(&s_T, &(GSWTest::add_hom(&ct1, &ct2)));
                 let pt_mul_ct = GSWTest::decrypt(&s_T, &(GSWTest::mul_hom(&ct1, &ct2)));
-                // assert_eq!(pt_add, &mu1 + &mu2, "addition by scalar failed");
-                assert_eq!(pt_add_ct, &mu1 + &mu2, "ciphertext addition failed");
+                let pt_mul_scalar = GSWTest::decrypt(&s_T, &(GSWTest::mul_scalar(&ct1, &mu2)));
 
-                assert_eq!(pt_mul, &mu1 * &mu2, "multiplication by scalar failed");
-                assert_eq!(pt_mul_ct, &mu1 * &mu2, "ciphertext multiplication failed");
+                assert_eq!(pt_add_ct, mu1 + mu2, "ciphertext addition failed");
+                assert_eq!(pt_mul_ct, mu1 * mu2, "ciphertext multiplication failed");
+                assert_eq!(pt_mul_scalar, mu1 * mu2, "multiplication by scalar failed");
             }
         }
     }

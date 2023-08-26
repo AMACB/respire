@@ -34,10 +34,8 @@ pub trait MulHomEncryptionScheme: EncryptionScheme {
 
 pub trait FHEScheme: AddHomEncryptionScheme + MulHomEncryptionScheme {}
 
-pub trait ScalarMulEncryptionScheme<Scalar>: EncryptionScheme
-where
-    for<'a> &'a Self::Ciphertext: Mul<&'a Scalar, Output = Self::Ciphertext>,
-{
+pub trait MulScalarEncryptionScheme<Scalar>: EncryptionScheme {
+    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Scalar) -> Self::Ciphertext;
 }
 
 /// The trivial (insecure) FHE scheme where encryption does nothing, useful for testing.

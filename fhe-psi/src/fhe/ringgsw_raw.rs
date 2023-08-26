@@ -8,7 +8,6 @@ use crate::math::z_n::Z_N;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use std::ops::Mul;
 
 pub struct RingGSWRaw<
     const N_MINUS_1: usize,
@@ -175,25 +174,24 @@ impl<
 }
 
 impl<
-        'a,
-        const N: usize,
-        const M: usize,
-        const P: u64,
-        const Q: u64,
-        const D: usize,
-        const G_BASE: u64,
-        const G_LEN: usize,
-    > Mul<Z_N<P>> for &'a RingGSWRawCiphertext<N, M, P, Q, D, G_BASE, G_LEN>
-{
-    type Output = RingGSWRawCiphertext<N, M, P, Q, D, G_BASE, G_LEN>;
-
-    fn mul(self, rhs: Z_N<P>) -> Self::Output {
-        let rhs_q = &Z_N_CycloRaw::<D, Q>::from(u64::from(rhs));
+    const N_MINUS_1: usize,
+    const N: usize,
+    const M: usize,
+    const P: u64,
+    const Q: u64,
+    const D: usize,
+    const G_BASE: u64,
+    const G_LEN: usize,
+    const NOISE_WIDTH_MILLIONTHS: u64,
+> MulScalarEncryptionScheme<Z_N<P>>
+for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS> {
+    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
+        let rhs_q = &Z_N_CycloRaw::<D, Q>::from(u64::from(*rhs));
         RingGSWRawCiphertext {
-            ct: &self.ct
+            ct: &lhs.ct
                 * &gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, M, G_BASE, G_LEN>(
-                    &(&build_gadget::<Z_N_CycloRaw<D, Q>, N, M, Q, G_BASE, G_LEN>() * rhs_q),
-                ),
+                &(&build_gadget::<Z_N_CycloRaw<D, Q>, N, M, Q, G_BASE, G_LEN>() * rhs_q),
+            ),
         }
     }
 }
@@ -285,14 +283,12 @@ mod test {
                 let mu2 = j.into();
                 let ct1 = RingGSWRawTest::encrypt(&A, &mu1);
                 let ct2 = RingGSWRawTest::encrypt(&A, &mu2);
-                // let pt_add = GSWTest::decrypt(&s_T, &(&ct1 + mu2));
-                let pt_mul = RingGSWRawTest::decrypt(&s_T, &(&ct1 * j.into()));
                 let pt_add_ct = RingGSWRawTest::decrypt(&s_T, &RingGSWRawTest::add_hom(&ct1, &ct2));
                 let pt_mul_ct = RingGSWRawTest::decrypt(&s_T, &RingGSWRawTest::mul_hom(&ct1, &ct2));
+                let pt_mul_scalar = RingGSWRawTest::decrypt(&s_T, &RingGSWRawTest::mul_scalar(&ct1, &j.into()));
                 assert_eq!(pt_add_ct, &mu1 + &mu2, "ciphertext addition failed");
                 assert_eq!(pt_mul_ct, &mu1 * &mu2, "ciphertext multiplication failed");
-                // assert_eq!(pt_add, &mu1 + &mu2, "addition by scalar failed");
-                assert_eq!(pt_mul, &mu1 * &mu2, "multiplication by scalar failed");
+                assert_eq!(pt_mul_scalar, &mu1 * &mu2, "multiplication by scalar failed");
             }
         }
     }
