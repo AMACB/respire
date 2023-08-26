@@ -2,4 +2,5 @@
 
 pub mod fhe;
 pub mod math;
-pub mod psi;
+pub mod pir;
+// pub mod psi;

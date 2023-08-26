@@ -100,6 +100,18 @@ impl<const N: u64> From<i64> for Z_N<N> {
     }
 }
 
+impl<const N: u64> From<Z_N<N>> for i64 {
+    /// Converts from Z_N to the i64 of the smallest absolute value with the correct remainder. This
+    /// is useful for operations that want to round towards zero.
+    fn from(a: Z_N<N>) -> Self {
+        if a.a <= (N - 1) / 2 {
+            a.a as i64
+        } else {
+            -((N - a.a) as i64)
+        }
+    }
+}
+
 /// Math operations on owned `Z_N<N>`, including [`RingElement`] implementation.
 
 impl<const N: u64> RingElement for Z_N<N> {
@@ -189,6 +201,33 @@ impl<const NN: u64, const BASE: u64, const LEN: usize> RingElementDecomposable<B
             a /= BASE;
         }
     }
+}
+
+/// Misc
+
+impl<const N: u64> Z_N<N> {
+    /// Maps `Z_N` into `Z_M` by sending `0 <= a < N` to `a * floor(M / N)`. We require `N <= M`.
+    pub fn scale_up_into<const M: u64>(self) -> Z_N<M> {
+        assert!(N <= M);
+        let ratio = M / N;
+        (u64::from(self) * ratio).into()
+    }
+
+    /// Maps `Z_N` into `Z_M` by the inclusion map, i.e. `0 <= a < N` gets sent to `a`. We require
+    /// `N <= M`.
+    pub fn include_into<const M: u64>(self) -> Z_N<M> {
+        assert!(N <= M);
+        u64::from(self).into()
+    }
+
+    /// Maps `Z_N` into `Z_M` by rounding `0 <= a < N` to the nearest multiple of `N / M`, and
+    /// dividing. This function acts like an inverse of `scale_up_into`, with tolerance to additive noise. We require `N >= M`.
+    pub fn round_down_into<const M: u64>(self) -> Z_N<M> {
+        assert!(N >= M);
+        let ratio = N / M;
+        ((u64::from(self) + ratio / 2) / ratio).into()
+    }
+
 }
 
 /// Formatting
@@ -314,6 +353,24 @@ mod test {
 
         let a: Z_BIG = u64::MAX.into();
         assert_eq!(1_u64, a.into());
+
+        let a: i64 = Z_31::from(0_u64).into();
+        assert_eq!(0_i64, a);
+
+        let a: i64 = Z_31::from(15_u64).into();
+        assert_eq!(15_i64, a);
+
+        let a: i64 = Z_31::from(16_u64).into();
+        assert_eq!(-15_i64, a);
+
+        let a: i64 = Z_31::from(30_u64).into();
+        assert_eq!(-1_i64, a);
+
+        let half = (u64::MAX - 1) / 2;
+        let a: i64 = Z_BIG::from(half - 1).into();
+        assert_eq!((half - 1) as i64, a);
+        let a: i64 = Z_BIG::from(half).into();
+        assert_eq!(-(half as i64), a);
     }
 
     #[test]
@@ -374,6 +431,31 @@ mod test {
         assert_eq!(u64::MAX - 1 - 7872512, (a * b).into());
         a *= Z_BIG::from(3968_u64);
         assert_eq!(u64::MAX - 1 - 7872512, a.into());
+    }
+
+    #[test]
+    fn test_scale_round() {
+        type Z_31 = Z_N<31>;
+        type Z_1000 = Z_N<1000>;
+
+        const MAX_ERROR: i64 = ((1000 / 31) - 1) / 2;
+        assert_eq!(MAX_ERROR, 15);
+        for i in 0_u64..31 {
+            for e in -MAX_ERROR..=MAX_ERROR {
+                let orig: Z_31 = Z_31::from(i);
+                let scaled_with_error: Z_1000 = orig.scale_up_into() + e.into();
+                let recovered: Z_31 = scaled_with_error.round_down_into();
+                assert_eq!(
+                    orig,
+                    recovered,
+                    "orig = {}, error = {}, scaled = {}, recovered = {}",
+                    i,
+                    e,
+                    u64::from(scaled_with_error),
+                    u64::from(recovered)
+                );
+            }
+        }
     }
 
     #[test]
