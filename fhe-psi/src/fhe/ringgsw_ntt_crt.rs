@@ -197,26 +197,27 @@ impl<
         // TODO: see below, not fast
         let rhs_q = &Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(*rhs));
         Ciphertext {
-            ct: &self.ct + &(&build_gadget::<_, N, M, G_BASE, G_LEN>() * rhs_q),
+            // ct: &self.ct + &(&build_gadget::<Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>, N, M, G_BASE, G_LEN>() * rhs_q),
+            ct: &self.ct + &(&build_gadget::<Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>, N, M, G_BASE, G_LEN>() * rhs_q),
         }
     }
 }
 
 impl<
         'a,
-        const N: usize,
-        const M: usize,
-        const P: u64,
-        const Q: u64,
-        const Q1: u64,
-        const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
-        const W1: u64,
-        const W2: u64,
-        const D: usize,
-        const G_BASE: u64,
-        const G_LEN: usize,
+    const N: usize,
+    const M: usize,
+    const P: u64,
+    const Q: u64,
+    const Q1: u64,
+    const Q2: u64,
+    const Q1_INV: u64,
+    const Q2_INV: u64,
+    const W1: u64,
+    const W2: u64,
+    const D: usize,
+    const G_BASE: u64,
+    const G_LEN: usize,
     > Mul<Z_N<P>> for &'a Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>
 {
     type Output = Ciphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
@@ -225,7 +226,7 @@ impl<
         Ciphertext {
             ct: &self.ct
                 * &gadget_inverse::<_, N, M, M, G_BASE, G_LEN>(
-                    &(&build_gadget::<_, N, M, G_BASE, G_LEN>() * rhs_q),
+                    &(&build_gadget::<Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>, N, M, G_BASE, G_LEN>() * rhs_q),
                 ),
         }
 

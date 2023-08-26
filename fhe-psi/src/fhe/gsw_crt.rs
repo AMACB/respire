@@ -210,7 +210,7 @@ impl<
     fn mul(self, rhs: Z_N<P>) -> Self::Output {
         let rhs_q = &Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(rhs));
         Ciphertext {
-            ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs_q),
+            ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&self.ct, &rhs_q),
         }
     }
 }

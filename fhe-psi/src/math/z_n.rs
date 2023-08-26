@@ -191,6 +191,40 @@ impl<const NN: u64, const BASE: u64, const LEN: usize> RingElementDecomposable<B
     }
 }
 
+impl<const N: usize, const M: usize, R: RingElement, const P: u64> Mul<Z_N<P>> for &Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R> + Mul<Z_N<P>, Output=R>,
+{
+    type Output = Matrix<N, M, R>;
+
+    /// Multiplies each element of the matrix by `other`.
+    fn mul(self, other: Z_N<P>) -> Self::Output {
+        let mut out = Matrix::zero();
+        for r in 0..N {
+            for c in 0..M {
+                out[(r, c)] = &self[(r, c)] * other;
+            }
+        }
+        out
+    }
+}
+
+impl<const N: usize, const M: usize, R: RingElement, const P: u64> MulAssign<Z_N<P>> for Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+    R: MulAssign<Z_N<P>>,
+//     for<'a> &'a S: Mul<R, Output = R>
+{
+    /// Multiplies each element of the matrix by `other`.
+    fn mul_assign(&mut self, other: Z_N<P>) {
+        for r in 0..N {
+            for c in 0..M {
+                self[(r, c)] *= other;
+            }
+        }
+    }
+}
+
 /// Formatting
 
 impl<const N: u64> fmt::Debug for Z_N<N> {
