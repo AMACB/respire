@@ -170,23 +170,24 @@ impl<
 }
 
 impl<
-    const N_MINUS_1: usize,
-    const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const G_BASE: u64,
-    const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
-> MulScalarEncryptionScheme<Z_N<P>> for GSW<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+        const N_MINUS_1: usize,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
+    > MulScalarEncryptionScheme<Z_N<P>>
+    for GSW<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
         let rhs_q: Z_N<Q> = rhs.include_into();
         Self::Ciphertext {
             ct: &lhs.ct
                 * &gadget_inverse::<Z_N<Q>, N, M, M, G_BASE, G_LEN>(
-                &(&build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>() * &rhs_q),
-            ),
+                    &(&build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>() * &rhs_q),
+                ),
         }
     }
 }

@@ -227,7 +227,6 @@ impl<const N: u64> Z_N<N> {
         let ratio = N / M;
         ((u64::from(self) + ratio / 2) / ratio).into()
     }
-
 }
 
 /// Formatting

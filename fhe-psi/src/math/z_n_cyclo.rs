@@ -387,7 +387,8 @@ mod test {
         assert_eq!(MAX_ERROR, 15);
 
         let orig: R_31 = vec![5_u64, 30_u64, 11_u64, 0_u64].into();
-        let scaled_with_error: R_1000 = &orig.scale_up_into() + &vec![-MAX_ERROR, MAX_ERROR, MAX_ERROR/2, -MAX_ERROR].into();
+        let scaled_with_error: R_1000 =
+            &orig.scale_up_into() + &vec![-MAX_ERROR, MAX_ERROR, MAX_ERROR / 2, -MAX_ERROR].into();
         let recovered: R_31 = scaled_with_error.round_down_into();
         assert_eq!(orig, recovered);
     }
