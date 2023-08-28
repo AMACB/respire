@@ -40,3 +40,10 @@ where
     for<'a> &'a Owned: RingElementRef<Owned>,
 {
 }
+
+pub trait NormedRingElement: RingElement
+where
+    for<'a> &'a Self: RingElementRef<Self>,
+{
+    fn norm(&self) -> u64;
+}

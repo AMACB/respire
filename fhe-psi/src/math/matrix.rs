@@ -3,7 +3,8 @@
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use rand::Rng;
-use std::ops::{Add, Index, IndexMut, Mul, Neg};
+use std::cmp::max;
+use std::ops::{Add, Index, IndexMut, Mul, Neg, Sub};
 
 // TODO
 // * Implement as an array instead of as a `Vec`. The main sticking point is that to move a matrix
@@ -198,13 +199,28 @@ where
         let mut out = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                out[(r, c)] = &self[(r, c)] + &other[(r, c)]
+                out[(r, c)] = &self[(r, c)] + &other[(r, c)];
             }
         }
         out
     }
 }
 
+impl<const N: usize, const M: usize, R: RingElement> Sub<&Matrix<N, M, R>> for &Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    type Output = Matrix<N, M, R>;
+    fn sub(self, other: &Matrix<N, M, R>) -> Self::Output {
+        let mut out = Matrix::zero();
+        for r in 0..N {
+            for c in 0..M {
+                out[(r, c)] = &self[(r, c)] - &other[(r, c)];
+            }
+        }
+        out
+    }
+}
 impl<const N: usize, const M: usize, R: RingElement> Neg for &Matrix<N, M, R>
 where
     for<'a> &'a R: RingElementRef<R>,
@@ -218,6 +234,23 @@ where
             }
         }
         out
+    }
+}
+
+/// Norm
+impl<const N: usize, const M: usize, R: RingElement> Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+    R: NormedRingElement,
+{
+    pub fn norm(&self) -> u64 {
+        let mut worst: u64 = 0;
+        for r in 0..N {
+            for c in 0..M {
+                worst = max(worst, self[(r, c)].norm());
+            }
+        }
+        worst
     }
 }
 

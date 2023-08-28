@@ -249,6 +249,7 @@ pub type RingGSWRawTestMedium = ring_gsw_raw_from_params!(RING_GSW_RAW_TEST_MEDI
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::math::ring_elem::NormedRingElement;
 
     #[test]
     fn keygen_is_correct() {
