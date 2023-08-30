@@ -123,7 +123,7 @@ impl<
 
         let G = build_gadget::<Z_N_CycloRaw<D, Q>, N, M, Q, G_BASE, G_LEN>();
 
-        let ct = &(A * &R) + &(&G * &mu.include_into()).into_ring();
+        let ct = &(A * &R) + &(&G * &mu.include_into()).into_ring(|x| Z_N_CycloNTT::from(x));
         Self::Ciphertext { ct }
     }
 

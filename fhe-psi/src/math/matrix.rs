@@ -137,15 +137,14 @@ where
 {
     /// Converts a matrix over the ring `R` into a matrix over the ring `S`, given that `R` can be
     /// converted to `S`.
-    pub fn into_ring<S: RingElement>(self) -> Matrix<N, M, S>
+    pub fn into_ring<S: RingElement, F: Fn(&R) -> S>(&self, func: F) -> Matrix<N, M, S>
     where
         for<'a> &'a S: RingElementRef<S>,
-        for<'a> S: From<&'a R>,
     {
         let mut result: Matrix<N, M, S> = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                result[(r, c)] = S::from(&self[(r, c)]);
+                result[(r, c)] = func(&self[(r, c)]);
             }
         }
         result

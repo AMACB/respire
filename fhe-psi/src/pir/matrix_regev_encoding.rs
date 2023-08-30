@@ -3,7 +3,7 @@ use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
 use crate::pir::encoding::EncodingScheme;
-use crate::pir::gsw_encoding::GSWEncoding;
+use crate::pir::gsw_encoding::{GSWEncoding, GSWEncodingParams, GSWEncodingParamsRaw};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
@@ -14,6 +14,46 @@ pub struct MatrixRegevEncoding<
     const D: usize,
     const NOISE_WIDTH_MILLIONTHS: u64,
 > {}
+
+pub struct MatrixRegevEncodingParamsRaw {
+    pub N: usize,
+    pub Q: u64,
+    pub D: usize,
+    pub NOISE_WIDTH_MILLIONTHS: u64,
+}
+
+impl MatrixRegevEncodingParamsRaw {
+    pub const fn expand(&self) -> MatrixRegevEncodingParams {
+        MatrixRegevEncodingParams {
+            N: self.N,
+            N_PLUS_ONE: self.N + 1,
+            Q: self.Q,
+            D: self.D,
+            NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
+        }
+    }
+}
+
+pub struct MatrixRegevEncodingParams {
+    pub N: usize,
+    pub N_PLUS_ONE: usize,
+    pub Q: u64,
+    pub D: usize,
+    pub NOISE_WIDTH_MILLIONTHS: u64,
+}
+
+#[macro_export]
+macro_rules! matrix_regev_encoding {
+    ($params: expr) => {
+        MatrixRegevEncoding<
+            {$params.N},
+            {$params.N_PLUS_ONE},
+            {$params.Q},
+            {$params.D},
+            {$params.NOISE_WIDTH_MILLIONTHS},
+        >
+    }
+}
 
 impl<
         const N: usize,
@@ -81,92 +121,57 @@ impl<
     }
 }
 
-pub trait HybridEncodingParamsTypes {
-    const N: usize;
-    const N_PLUS_ONE: usize;
-    const M: usize;
-    const Q: u64;
-    const D: usize;
-    const G_LEN: usize;
-    const G_BASE: u64;
-    const NOISE_WIDTH_MILLIONTHS: u64;
-    type Regev;
-    type GSW;
+pub struct HybridEncodingParamsRaw {
+    pub N: usize,
+    pub Q: u64,
+    pub D: usize,
+    pub G_BASE: u64,
+    pub NOISE_WIDTH_MILLIONTHS: u64,
 }
 
-pub struct HybridEncodingParams<
-    const N: usize,
-    const Q: u64,
-    const D: usize,
-    const G_BASE: u64,
-    const NOISE_WIDTH_MILLIONTHS: u64,
-> {}
-
-struct HybridEncodingCreate {
-    N: usize,
-    Q: u64,
-    D: usize,
-    G_BASE: u64,
-    NOISE_WIDTH_MILLIONTHS: u64,
+pub struct HybridEncodingParams {
+    pub matrix_regev: MatrixRegevEncodingParams,
+    pub gsw: GSWEncodingParams,
 }
 
-#[macro_export]
-macro_rules! hybrid_encoding_create {
-    ($name: ident, $params: expr) => {
-        type $name = HybridEncodingParams<
-            { $params.N },
-            { $params.Q },
-            { $params.D },
-            { $params.G_BASE },
-            { $params.NOISE_WIDTH_MILLIONTHS },
-        >;
-        use crate::math::utils::floor_log;
-        impl HybridEncodingParamsTypes for $name {
-            const N: usize = $params.N;
-            const N_PLUS_ONE: usize = Self::N + 1;
-            const M: usize = (Self::N + 1) * Self::G_LEN;
-            const Q: u64 = $params.Q;
-            const D: usize = $params.D;
-            const G_LEN: usize = floor_log(Self::G_BASE, Self::Q) + 1;
-            const G_BASE: u64 = $params.G_BASE;
-            const NOISE_WIDTH_MILLIONTHS: u64 = $params.NOISE_WIDTH_MILLIONTHS;
-            type Regev = MatrixRegevEncoding<
-                { Self::N },
-                { Self::N_PLUS_ONE },
-                { Self::Q },
-                { Self::D },
-                { Self::NOISE_WIDTH_MILLIONTHS },
-            >;
-            type GSW = GSWEncoding<
-                { Self::N },
-                { Self::N_PLUS_ONE },
-                { Self::M },
-                { Self::Q },
-                { Self::D },
-                { Self::G_BASE },
-                { Self::G_LEN },
-                { Self::NOISE_WIDTH_MILLIONTHS },
-            >;
+impl HybridEncodingParamsRaw {
+    pub const fn expand(&self) -> HybridEncodingParams {
+        HybridEncodingParams {
+            matrix_regev: MatrixRegevEncodingParamsRaw {
+                N: self.N,
+                Q: self.Q,
+                D: self.D,
+                NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
+            }
+            .expand(),
+            gsw: GSWEncodingParamsRaw {
+                N: self.N,
+                Q: self.Q,
+                D: self.D,
+                G_BASE: self.G_BASE,
+                NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
+            }
+            .expand(),
         }
-    };
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::{gsw_encoding, matrix_regev_encoding};
 
-    hybrid_encoding_create!(
-        TestParams,
-        HybridEncodingCreate {
-            N: 2,
-            Q: 268369921,
-            D: 4,
-            G_BASE: 2,
-            NOISE_WIDTH_MILLIONTHS: 1_000_000
-        }
-    );
-    type TestRegev = <TestParams as HybridEncodingParamsTypes>::Regev;
-    type TestGSW = <TestParams as HybridEncodingParamsTypes>::GSW;
+    const TEST_HYBRID_PARAMS: HybridEncodingParams = HybridEncodingParamsRaw {
+        N: 2,
+        Q: 268369921,
+        D: 4,
+        G_BASE: 2,
+        NOISE_WIDTH_MILLIONTHS: 1_000_000,
+    }
+    .expand();
+
+    type TestRegev = matrix_regev_encoding!(TEST_HYBRID_PARAMS.matrix_regev);
+    type TestGSW = gsw_encoding!(TEST_HYBRID_PARAMS.gsw);
 
     #[test]
     fn test_encode_decode() {
@@ -219,9 +224,9 @@ mod test {
         let ct1 = TestRegev::encode(&sk, &msg1);
         let ct2 = TestGSW::encode(&sk, &msg2);
         let ct1_mul_ct2 = TestRegev::mul_hom_gsw::<
-            { TestParams::M },
-            { TestParams::G_BASE },
-            { TestParams::G_LEN },
+            { TEST_HYBRID_PARAMS.gsw.M },
+            { TEST_HYBRID_PARAMS.gsw.G_BASE },
+            { TEST_HYBRID_PARAMS.gsw.G_LEN },
         >(&ct2, &ct1);
         let diff = &TestRegev::decode(&sk, &ct1_mul_ct2) - &(&msg1 * &msg2);
         assert!(diff.norm() <= 368, "{:?} too big", &diff); // d * |msg2| * |E_msg1| + m * d * |E_msg2| * z / 2 = 4 * 1 * 8 + 84 * 4 * 1
