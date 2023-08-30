@@ -99,6 +99,13 @@ impl<
         lhs + rhs
     }
 
+    pub fn sub_hom(
+        lhs: &<Self as EncodingScheme>::Ciphertext,
+        rhs: &<Self as EncodingScheme>::Ciphertext,
+    ) -> <Self as EncodingScheme>::Ciphertext {
+        lhs - rhs
+    }
+
     pub fn mul_scalar(
         lhs: &<Self as EncodingScheme>::Ciphertext,
         rhs: &<Self as EncodingScheme>::Plaintext,

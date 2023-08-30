@@ -251,17 +251,16 @@ impl SPIRAL {
             let curr_size = 1 << (ETA2 - r - 1);
             curr.reserve(curr_size);
             for j in 0..curr_size {
+                let C0 = &prev[j];
+                let C1 = &prev[curr_size + j];
+                let C1_sub_C0 = Regev::sub_hom(C1, C0);
                 curr.push(Regev::add_hom(
                     &Regev::mul_hom_gsw::<
                         { HYBRID_PARAMS.gsw.M },
                         { HYBRID_PARAMS.gsw.G_BASE },
                         { HYBRID_PARAMS.gsw.G_LEN },
-                    >(&GSW::complement(&q.1[r]), &prev[j]),
-                    &Regev::mul_hom_gsw::<
-                        { HYBRID_PARAMS.gsw.M },
-                        { HYBRID_PARAMS.gsw.G_BASE },
-                        { HYBRID_PARAMS.gsw.G_LEN },
-                    >(&q.1[r], &prev[curr_size + j]),
+                    >(&q.1[r], &C1_sub_C0),
+                    &C0,
                 ));
             }
             prev = curr;
