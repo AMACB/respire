@@ -2,11 +2,11 @@ use crate::fhe::gadget::gadget_inverse;
 use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
+use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 use crate::pir::encoding::EncodingScheme;
 use crate::pir::gsw_encoding::{GSWEncoding, GSWEncodingParams, GSWEncodingParamsRaw};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 
 pub struct MatrixRegevEncoding<
     const N: usize,
@@ -85,8 +85,10 @@ impl<
         let a_T: Matrix<1, N, Z_N_CycloNTT<D, Q, W>> = Matrix::rand_uniform(&mut rng);
         let E: Matrix<N, N, Z_N_CycloNTT<D, Q, W>> =
             Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-        let C: Matrix<N_PLUS_ONE, N, Z_N_CycloNTT<D, Q, W>> =
-            Matrix::stack(&a_T, &(&(&(s * &a_T) + &E) + &mu.into_ring(|x| {Z_N_CycloNTT::from(x)})));
+        let C: Matrix<N_PLUS_ONE, N, Z_N_CycloNTT<D, Q, W>> = Matrix::stack(
+            &a_T,
+            &(&(&(s * &a_T) + &E) + &mu.into_ring(|x| Z_N_CycloNTT::from(x))),
+        );
         C
     }
 }
@@ -118,7 +120,7 @@ impl<
         lhs: &<Self as EncodingScheme>::Ciphertext,
         rhs: &<Self as EncodingScheme>::Plaintext,
     ) -> <Self as EncodingScheme>::Ciphertext {
-        lhs * &rhs.into_ring(|x| {Z_N_CycloNTT::from(x)})
+        lhs * &rhs.into_ring(|x| Z_N_CycloNTT::from(x))
     }
 
     pub fn mul_hom_gsw<const M: usize, const G_BASE: u64, const G_LEN: usize>(
@@ -132,7 +134,8 @@ impl<
         s: &<Self as EncodingScheme>::SecretKey,
         c: &<Self as EncodingScheme>::Ciphertext,
     ) -> <Self as EncodingScheme>::Plaintext {
-        (&Matrix::append(&-s, &Matrix::<N, N, _>::identity()) * c).into_ring(|x| {Z_N_CycloRaw::from(x)})
+        (&Matrix::append(&-s, &Matrix::<N, N, _>::identity()) * c)
+            .into_ring(|x| Z_N_CycloRaw::from(x))
     }
 }
 

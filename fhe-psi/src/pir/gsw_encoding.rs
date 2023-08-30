@@ -3,10 +3,10 @@ use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::utils::floor_log;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
+use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 use crate::pir::encoding::EncodingScheme;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 
 pub struct GSWEncoding<
     const N: usize,
@@ -105,7 +105,8 @@ impl<
             Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
         let C: Matrix<N_PLUS_ONE, M, Z_N_CycloNTT<D, Q, W>> =
             &Matrix::stack(&a_T, &(&(s * &a_T) + &E))
-                + &(&build_gadget::<Z_N_CycloNTT<D, Q, W>, N_PLUS_ONE, M, Q, G_BASE, G_LEN>() * &Z_N_CycloNTT::from(mu));
+                + &(&build_gadget::<Z_N_CycloNTT<D, Q, W>, N_PLUS_ONE, M, Q, G_BASE, G_LEN>()
+                    * &Z_N_CycloNTT::from(mu));
         C
     }
 }
