@@ -1,8 +1,3 @@
-// use crate::math::matrix::Matrix;
-// use crate::math::z_n_cyclo::Z_N_CycloRaw;
-// use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
-// use crate::pir::matrix_regev_encoding::{HybridEncodingParams, HybridEncodingParamsRaw};
-//
 // pub trait PIRScheme {
 //     type Database;
 //     type Index;
@@ -97,13 +92,6 @@
 //     }
 // }
 //
-// trait SPIRALTypes {
-//     type GSW;
-//     type MatrixRegev;
-//     type PlaintextRing;
-//     type CiphertextRing;
-// }
-//
 // impl<
 //     const N: usize,
 //     const N_PLUS_ONE: usize,
@@ -118,36 +106,7 @@
 //     const Q2: u64,
 //     const ETA1: usize,
 //     const ETA2: usize
-// > PIRScheme for SPIRAL<N, N_PLUS_ONE, M, Q, D, G_LEN, G_BASE, NOISE_WIDTH_MILLIONTHS, P, Q1, Q2, ETA1, ETA2> {
-//     type Database = Vec<Self::Record>;
-//     type Index = (Vec<Self::GSW::Ciphertext>, Vec<Self::MatrixRegev::Ciphertext>);
-//     type Record = Matrix<N, N, Self::PlaintextRing>;
-//     type PublicParams = ();
-//     type QueryKey = ();
-//     type State = ();
-//     type Query = ();
-//     type Response = ();
-//
-//     fn setup() -> (Self::PublicParams, Self::QueryKey) {
-//         todo!()
-//     }
-//
-//     fn query(qk: &Self::QueryKey, idx: &Self::Index) -> (Self::State, Self::Query) {
-//         todo!()
-//     }
-//
-//     fn answer(
-//         pp: &Self::PublicParams,
-//         database: &Self::Database,
-//         q: &Self::Query,
-//     ) -> Self::Response {
-//         todo!()
-//     }
-//
-//     fn extract(qk: &Self::QueryKey, st: &Self::State, r: &Self::Response) -> Self::Record {
-//         todo!()
-//     }
-// }
+// > PIRScheme for SPIRAL<N, N_PLUS_ONE, M, Q, D, G_LEN, G_BASE, NOISE_WIDTH_MILLIONTHS, P, Q1, Q2, ETA1, ETA2> {}
 
 use crate::math::matrix::Matrix;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
@@ -163,8 +122,9 @@ struct SPIRAL {}
 const N: usize = 2;
 const Q: u64 = 268369921;
 const D: usize = 4;
+const W: u64 = 185593570;
 const G_BASE: u64 = 2;
-const NOISE_WIDTH_MILLIONTHS: u64 = 1_000_000;
+const NOISE_WIDTH_MILLIONTHS: u64 = 6_400_000;
 
 const P: u64 = 1 << 8;
 // const Q1: u64 = 1 << 10;
@@ -180,6 +140,7 @@ const HYBRID_PARAMS: HybridEncodingParams = HybridEncodingParamsRaw {
     N,
     Q,
     D,
+    W,
     G_BASE,
     NOISE_WIDTH_MILLIONTHS,
 }

@@ -6,12 +6,14 @@ use crate::pir::encoding::EncodingScheme;
 use crate::pir::gsw_encoding::{GSWEncoding, GSWEncodingParams, GSWEncodingParamsRaw};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 
 pub struct MatrixRegevEncoding<
     const N: usize,
     const N_PLUS_ONE: usize,
     const Q: u64,
     const D: usize,
+    const W: u64,
     const NOISE_WIDTH_MILLIONTHS: u64,
 > {}
 
@@ -19,6 +21,7 @@ pub struct MatrixRegevEncodingParamsRaw {
     pub N: usize,
     pub Q: u64,
     pub D: usize,
+    pub W: u64,
     pub NOISE_WIDTH_MILLIONTHS: u64,
 }
 
@@ -29,6 +32,7 @@ impl MatrixRegevEncodingParamsRaw {
             N_PLUS_ONE: self.N + 1,
             Q: self.Q,
             D: self.D,
+            W: self.W,
             NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
         }
     }
@@ -39,6 +43,7 @@ pub struct MatrixRegevEncodingParams {
     pub N_PLUS_ONE: usize,
     pub Q: u64,
     pub D: usize,
+    pub W: u64,
     pub NOISE_WIDTH_MILLIONTHS: u64,
 }
 
@@ -50,6 +55,7 @@ macro_rules! matrix_regev_encoding {
             {$params.N_PLUS_ONE},
             {$params.Q},
             {$params.D},
+            {$params.W},
             {$params.NOISE_WIDTH_MILLIONTHS},
         >
     }
@@ -60,26 +66,27 @@ impl<
         const N_PLUS_ONE: usize,
         const Q: u64,
         const D: usize,
+        const W: u64,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > EncodingScheme for MatrixRegevEncoding<N, N_PLUS_ONE, Q, D, NOISE_WIDTH_MILLIONTHS>
+    > EncodingScheme for MatrixRegevEncoding<N, N_PLUS_ONE, Q, D, W, NOISE_WIDTH_MILLIONTHS>
 {
     type Plaintext = Matrix<N, N, Z_N_CycloRaw<D, Q>>;
-    type Ciphertext = Matrix<N_PLUS_ONE, N, Z_N_CycloRaw<D, Q>>;
-    type SecretKey = Matrix<N, 1, Z_N_CycloRaw<D, Q>>;
+    type Ciphertext = Matrix<N_PLUS_ONE, N, Z_N_CycloNTT<D, Q, W>>;
+    type SecretKey = Matrix<N, 1, Z_N_CycloNTT<D, Q, W>>;
 
     fn keygen() -> Self::SecretKey {
         let mut rng = ChaCha20Rng::from_entropy();
-        let s: Matrix<N, 1, Z_N_CycloRaw<D, Q>> = Matrix::rand_uniform(&mut rng);
+        let s: Matrix<N, 1, Z_N_CycloNTT<D, Q, W>> = Matrix::rand_uniform(&mut rng);
         s
     }
 
     fn encode(s: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
         let mut rng = ChaCha20Rng::from_entropy();
-        let a_T: Matrix<1, N, Z_N_CycloRaw<D, Q>> = Matrix::rand_uniform(&mut rng);
-        let E: Matrix<N, N, Z_N_CycloRaw<D, Q>> =
+        let a_T: Matrix<1, N, Z_N_CycloNTT<D, Q, W>> = Matrix::rand_uniform(&mut rng);
+        let E: Matrix<N, N, Z_N_CycloNTT<D, Q, W>> =
             Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-        let C: Matrix<N_PLUS_ONE, N, Z_N_CycloRaw<D, Q>> =
-            Matrix::stack(&a_T, &(&(&(s * &a_T) + &E) + mu));
+        let C: Matrix<N_PLUS_ONE, N, Z_N_CycloNTT<D, Q, W>> =
+            Matrix::stack(&a_T, &(&(&(s * &a_T) + &E) + &mu.into_ring(|x| {Z_N_CycloNTT::from(x)})));
         C
     }
 }
@@ -89,8 +96,9 @@ impl<
         const N_PLUS_ONE: usize,
         const Q: u64,
         const D: usize,
+        const W: u64,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > MatrixRegevEncoding<N, N_PLUS_ONE, Q, D, NOISE_WIDTH_MILLIONTHS>
+    > MatrixRegevEncoding<N, N_PLUS_ONE, Q, D, W, NOISE_WIDTH_MILLIONTHS>
 {
     pub fn add_hom(
         lhs: &<Self as EncodingScheme>::Ciphertext,
@@ -110,21 +118,21 @@ impl<
         lhs: &<Self as EncodingScheme>::Ciphertext,
         rhs: &<Self as EncodingScheme>::Plaintext,
     ) -> <Self as EncodingScheme>::Ciphertext {
-        lhs * rhs
+        lhs * &rhs.into_ring(|x| {Z_N_CycloNTT::from(x)})
     }
 
     pub fn mul_hom_gsw<const M: usize, const G_BASE: u64, const G_LEN: usize>(
-        lhs: &<GSWEncoding<N, N_PLUS_ONE, M, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS> as EncodingScheme>::Ciphertext,
+        lhs: &<GSWEncoding<N, N_PLUS_ONE, M, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS> as EncodingScheme>::Ciphertext,
         rhs: &<Self as EncodingScheme>::Ciphertext,
     ) -> <Self as EncodingScheme>::Ciphertext {
-        lhs * &gadget_inverse::<Z_N_CycloRaw<D, Q>, N_PLUS_ONE, M, N, G_BASE, G_LEN>(rhs)
+        lhs * &gadget_inverse::<Z_N_CycloNTT<D, Q, W>, N_PLUS_ONE, M, N, G_BASE, G_LEN>(rhs)
     }
 
     pub fn decode(
         s: &<Self as EncodingScheme>::SecretKey,
         c: &<Self as EncodingScheme>::Ciphertext,
     ) -> <Self as EncodingScheme>::Plaintext {
-        &Matrix::append(&-s, &Matrix::<N, N, _>::identity()) * c
+        (&Matrix::append(&-s, &Matrix::<N, N, _>::identity()) * c).into_ring(|x| {Z_N_CycloRaw::from(x)})
     }
 }
 
@@ -132,6 +140,7 @@ pub struct HybridEncodingParamsRaw {
     pub N: usize,
     pub Q: u64,
     pub D: usize,
+    pub W: u64,
     pub G_BASE: u64,
     pub NOISE_WIDTH_MILLIONTHS: u64,
 }
@@ -148,6 +157,7 @@ impl HybridEncodingParamsRaw {
                 N: self.N,
                 Q: self.Q,
                 D: self.D,
+                W: self.W,
                 NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
             }
             .expand(),
@@ -155,6 +165,7 @@ impl HybridEncodingParamsRaw {
                 N: self.N,
                 Q: self.Q,
                 D: self.D,
+                W: self.W,
                 G_BASE: self.G_BASE,
                 NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
             }
@@ -172,6 +183,7 @@ mod test {
         N: 2,
         Q: 268369921,
         D: 4,
+        W: 185593570,
         G_BASE: 2,
         NOISE_WIDTH_MILLIONTHS: 1_000_000,
     }
