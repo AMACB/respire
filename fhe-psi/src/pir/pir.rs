@@ -110,6 +110,7 @@
 
 use crate::math::matrix::Matrix;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
+use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 use crate::pir::encoding::EncodingScheme;
 use crate::pir::gsw_encoding::GSWEncoding;
 use crate::pir::matrix_regev_encoding::{
@@ -132,6 +133,7 @@ const P: u64 = 1 << 8;
 
 const ETA1: usize = 9;
 const ETA2: usize = 6;
+const DB_SIZE: usize = 1 << (ETA1 + ETA2);
 
 const ETA1_MASK: usize = (1 << ETA1) - 1;
 const ETA2_MASK: usize = (1 << ETA2) - 1;
@@ -157,7 +159,9 @@ type Query = (Vec<RegevCT>, Vec<GSWCT>);
 type Response = RegevCT;
 
 type Record = Matrix<N, N, Z_N_CycloRaw<D, P>>;
+type RecordPreprocessed = Matrix<N, N, Z_N_CycloNTT<D, Q, W>>;
 type Database = Vec<Record>;
+type DatabasePreprocessed = Vec<RecordPreprocessed>;
 
 impl SPIRAL {
     fn setup() -> QueryKey {
@@ -192,17 +196,16 @@ impl SPIRAL {
         (regevs, gsws)
     }
 
-    fn answer(d: &Database, q: &Query) -> Response {
-        let d_at = |i: usize, j: usize| {
-            let record_p = &d[(i << ETA2) + j];
-            record_p.into_ring(|x| x.include_into())
-        };
+    fn answer(d: &DatabasePreprocessed, q: &Query) -> Response {
+        let d_at = |i: usize, j: usize| &d[(i << ETA2) + j];
         let mut prev: Vec<RegevCT> = vec![];
         prev.reserve(1 << ETA2);
         for j in 0..(1 << ETA2) {
-            let mut sum = Regev::mul_scalar(&q.0[0], &d_at(0, j));
+            // Regev scalar mul
+            let mut sum = &q.0[0] * d_at(0, j);
             for i in 1..(1 << ETA1) {
-                sum = Regev::add_hom(&sum, &Regev::mul_scalar(&q.0[i], &d_at(i, j)));
+                // Regev hom add, Regev scalar mul
+                sum += &(&q.0[i] * d_at(i, j));
             }
             prev.push(sum);
         }
@@ -212,17 +215,17 @@ impl SPIRAL {
             let curr_size = 1 << (ETA2 - r - 1);
             curr.reserve(curr_size);
             for j in 0..curr_size {
+                let b = &q.1[r];
                 let C0 = &prev[j];
                 let C1 = &prev[curr_size + j];
                 let C1_sub_C0 = Regev::sub_hom(C1, C0);
-                curr.push(Regev::add_hom(
-                    &Regev::mul_hom_gsw::<
-                        { HYBRID_PARAMS.gsw.M },
-                        { HYBRID_PARAMS.gsw.G_BASE },
-                        { HYBRID_PARAMS.gsw.G_LEN },
-                    >(&q.1[r], &C1_sub_C0),
-                    &C0,
-                ));
+                let mut result = Regev::mul_hom_gsw::<
+                    { HYBRID_PARAMS.gsw.M },
+                    { HYBRID_PARAMS.gsw.G_BASE },
+                    { HYBRID_PARAMS.gsw.G_LEN },
+                >(b, &C1_sub_C0);
+                result += C0;
+                curr.push(result);
             }
             prev = curr;
         }
@@ -237,12 +240,13 @@ impl SPIRAL {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::time::Instant;
 
     #[test]
     fn test_spiral() {
         let mut db: Database = vec![];
-        db.reserve(1 << (ETA1 + ETA2));
-        for i in 0_u64..(1 << (ETA1 + ETA2)) {
+        db.reserve(DB_SIZE);
+        for i in 0..DB_SIZE as u64 {
             let mut record: Record = Matrix::zero();
             record[(0, 0)] = vec![
                 i % 100,
@@ -256,14 +260,28 @@ mod test {
             db.push(record);
         }
 
+        let start = Instant::now();
+        let mut db_pre: DatabasePreprocessed = vec![];
+        db_pre.reserve(DB_SIZE);
+        for i in 0..DB_SIZE {
+            db_pre.push(db[i].into_ring(|x| Z_N_CycloNTT::from(x.include_into())));
+        }
+        let end = Instant::now();
+        eprintln!("{:?} to preprocess", end - start);
+
         let qk = SPIRAL::setup();
         let check = |idx: usize| {
             let cts = SPIRAL::query(&qk, idx);
-            let result = SPIRAL::answer(&db, &cts);
+            let result = SPIRAL::answer(&db_pre, &cts);
             let extracted = SPIRAL::extract(&qk, &result);
             assert_eq!(&extracted, &db[idx])
         };
 
-        check(11111);
+        for i in 0..DB_SIZE {
+            let start = Instant::now();
+            check(i);
+            let end = Instant::now();
+            eprintln!("{:?} for query {}", end - start, i);
+        }
     }
 }

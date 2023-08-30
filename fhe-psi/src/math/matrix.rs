@@ -4,7 +4,7 @@ use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use rand::Rng;
 use std::cmp::max;
-use std::ops::{Add, Index, IndexMut, Mul, Neg, Sub};
+use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub};
 
 // TODO
 // * Implement as an array instead of as a `Vec`. The main sticking point is that to move a matrix
@@ -202,6 +202,19 @@ where
             }
         }
         out
+    }
+}
+
+impl<const N: usize, const M: usize, R: RingElement> AddAssign<&Matrix<N, M, R>> for Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    fn add_assign(&mut self, rhs: &Matrix<N, M, R>) {
+        for r in 0..N {
+            for c in 0..M {
+                self[(r, c)] += &rhs[(r, c)];
+            }
+        }
     }
 }
 
