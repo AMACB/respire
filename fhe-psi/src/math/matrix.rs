@@ -181,11 +181,26 @@ where
         for r in 0..N {
             for c in 0..K {
                 for i in 0..M {
-                    out[(r, c)] += &(&self[(r, i)] * &other[(i, c)]);
+                    out[(r, c)].add_eq_mul(&self[(r, i)], &other[(i, c)]);
                 }
             }
         }
         out
+    }
+}
+
+impl<const N: usize, const K: usize, R: RingElement> Matrix<N, K, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    pub fn add_eq_mul<const M: usize>(&mut self, a: &Matrix<N, M, R>, b: &Matrix<M, K, R>) {
+        for r in 0..N {
+            for c in 0..K {
+                for i in 0..M {
+                    self[(r, c)].add_eq_mul(&a[(r, i)], &b[(i, c)]);
+                }
+            }
+        }
     }
 }
 

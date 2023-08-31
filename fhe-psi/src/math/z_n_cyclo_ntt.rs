@@ -173,6 +173,11 @@ impl<const D: usize, const N: u64, const W: u64> RingElement for Z_N_CycloNTT<D,
     fn one() -> Z_N_CycloNTT<D, N, W> {
         [1_u64.into(); D].into()
     }
+    fn add_eq_mul(&mut self, a: &Self, b: &Self) {
+        for i in 0..D {
+            self.points[i] += a.points[i] * b.points[i];
+        }
+    }
 }
 
 impl<'a, const D: usize, const N: u64, const W: u64> AddAssign<&'a Self> for Z_N_CycloNTT<D, N, W> {

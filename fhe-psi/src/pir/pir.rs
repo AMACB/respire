@@ -172,8 +172,7 @@ impl SPIRAL {
         let idx_i = (idx >> ETA2) & ETA1_MASK;
         let idx_j = idx & ETA2_MASK;
 
-        let mut regevs: Vec<RegevCT> = vec![];
-        regevs.reserve(1 << ETA1);
+        let mut regevs: Vec<RegevCT> = Vec::with_capacity(1 << ETA1);
         for i in 0..(1 << ETA1) {
             regevs.push(if i == idx_i {
                 let ident = Matrix::<N, N, Z_N_CycloRaw<D, P>>::identity();
@@ -183,8 +182,7 @@ impl SPIRAL {
             });
         }
 
-        let mut gsws: Vec<GSWCT> = vec![];
-        gsws.reserve(ETA2);
+        let mut gsws: Vec<GSWCT> = Vec::with_capacity(ETA2);
         for j in 0..ETA2 {
             gsws.push(if (idx_j >> (ETA2 - j - 1)) & 1 != 0 {
                 GSW::encode(&qk, &1_u64.into())
@@ -198,22 +196,20 @@ impl SPIRAL {
 
     fn answer(d: &DatabasePreprocessed, q: &Query) -> Response {
         let d_at = |i: usize, j: usize| &d[(i << ETA2) + j];
-        let mut prev: Vec<RegevCT> = vec![];
-        prev.reserve(1 << ETA2);
+        let mut prev: Vec<RegevCT> = Vec::with_capacity(1 << ETA2);
         for j in 0..(1 << ETA2) {
             // Regev scalar mul
             let mut sum = &q.0[0] * d_at(0, j);
             for i in 1..(1 << ETA1) {
                 // Regev hom add, Regev scalar mul
-                sum += &(&q.0[i] * d_at(i, j));
+                sum.add_eq_mul(&q.0[i], d_at(i, j));
             }
             prev.push(sum);
         }
 
         for r in 0..ETA2 {
-            let mut curr: Vec<RegevCT> = vec![];
             let curr_size = 1 << (ETA2 - r - 1);
-            curr.reserve(curr_size);
+            let mut curr: Vec<RegevCT> = Vec::with_capacity(curr_size);
             for j in 0..curr_size {
                 let b = &q.1[r];
                 let C0 = &prev[j];
@@ -244,8 +240,7 @@ mod test {
 
     #[test]
     fn test_spiral() {
-        let mut db: Database = vec![];
-        db.reserve(DB_SIZE);
+        let mut db: Database = Vec::with_capacity(DB_SIZE);
         for i in 0..DB_SIZE as u64 {
             let mut record: Record = Matrix::zero();
             record[(0, 0)] = vec![
@@ -261,8 +256,7 @@ mod test {
         }
 
         let start = Instant::now();
-        let mut db_pre: DatabasePreprocessed = vec![];
-        db_pre.reserve(DB_SIZE);
+        let mut db_pre: DatabasePreprocessed = Vec::with_capacity(DB_SIZE);
         for i in 0..DB_SIZE {
             db_pre.push(db[i].into_ring(|x| Z_N_CycloNTT::from(x.include_into())));
         }
