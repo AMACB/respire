@@ -174,9 +174,9 @@ mod test {
 
     #[test]
     fn test_from_deg() {
-        let p = PolynomialZ_N::<P>::from(vec![42u64, 6, 1, 0, 0, 0]);
-        let q = PolynomialZ_N::<P>::from(vec![42u64, 6, 1, 0]);
-        let r = PolynomialZ_N::<P>::from(vec![42u64, 6, 1]);
+        let p = PolynomialZ_N::<P>::from(vec![42_u64, 6, 1, 0, 0, 0]);
+        let q = PolynomialZ_N::<P>::from(vec![42_u64, 6, 1, 0]);
+        let r = PolynomialZ_N::<P>::from(vec![42_u64, 6, 1]);
         assert_eq!(p, q);
         assert_eq!(p, r);
         assert_eq!(q, r);
@@ -184,8 +184,8 @@ mod test {
         assert_eq!(q.deg(), 2);
         assert_eq!(r.deg(), 2);
 
-        let t = PolynomialZ_N::<P>::from(vec![0u64, 0]);
-        let u = PolynomialZ_N::<P>::from(vec![0u64]);
+        let t = PolynomialZ_N::<P>::from(vec![0_u64, 0]);
+        let u = PolynomialZ_N::<P>::from(vec![0_u64]);
         let v = PolynomialZ_N::<P>::from(vec![0_u64; 0]);
         assert_eq!(t, u);
         assert_eq!(t, v);
@@ -210,7 +210,7 @@ mod test {
         assert_eq!(x.eval(10_u64.into()), 10_u64.into());
         assert_eq!(x.eval(31_u64.into()), 31_u64.into());
 
-        let p = PolynomialZ_N::<P>::from(vec![5u64, 3, 1]);
+        let p = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
 
         assert_eq!(p.eval((P - 3).into()), 5_u64.into());
         assert_eq!(p.eval((P - 2).into()), 3_u64.into());
@@ -223,22 +223,22 @@ mod test {
 
     #[test]
     fn test_add() {
-        let p1 = PolynomialZ_N::<P>::from(vec![5u64, 3, 1]);
-        let q1 = PolynomialZ_N::<P>::from(vec![5u64, 3]);
-        assert_eq!(&p1 + &q1, vec![10u64, 6, 1].into());
-        assert_eq!(&q1 + &p1, vec![10u64, 6, 1].into());
+        let p1 = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
+        let q1 = PolynomialZ_N::<P>::from(vec![5_u64, 3]);
+        assert_eq!(&p1 + &q1, vec![10_u64, 6, 1].into());
+        assert_eq!(&q1 + &p1, vec![10_u64, 6, 1].into());
 
-        let p2 = PolynomialZ_N::<P>::from(vec![5u64, 3, 1]);
-        let q2 = PolynomialZ_N::<P>::from(vec![5, 3, P - 1]);
-        assert_eq!(&p2 + &q2, vec![10u64, 6].into());
-        assert_eq!(&q2 + &p2, vec![10u64, 6].into());
+        let p2 = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
+        let q2 = PolynomialZ_N::<P>::from(vec![5_u64, 3, P - 1]);
+        assert_eq!(&p2 + &q2, vec![10_u64, 6].into());
+        assert_eq!(&q2 + &p2, vec![10_u64, 6].into());
     }
 
     #[test]
     fn test_mul() {
-        let p = PolynomialZ_N::<P>::from(vec![5u64, 3, 1]);
-        let q = PolynomialZ_N::<P>::from(vec![P - 4, 2, 1]);
-        let r = PolynomialZ_N::<P>::from(vec![P - 20, P - 2, 7, 5, 1]);
+        let p = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
+        let q = PolynomialZ_N::<P>::from(vec![-4_i64, 2, 1]);
+        let r = PolynomialZ_N::<P>::from(vec![-20_i64, -2, 7, 5, 1]);
         assert_eq!(&p * &q, r.clone());
 
         let zero = PolynomialZ_N::<P>::zero();

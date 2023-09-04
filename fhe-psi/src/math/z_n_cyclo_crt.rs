@@ -6,15 +6,14 @@ use crate::math::matrix::Matrix;
 use crate::math::polynomial::PolynomialZ_N;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
-use crate::math::z_n::{NoReduce, Z_N};
+use crate::math::z_n::Z_N;
 use crate::math::z_n_crt::Z_N_CRT;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
 use crate::math::z_n_cyclo_crt_ntt::Z_N_CycloNTT_CRT;
 use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 use rand::Rng;
 use std::cmp::max;
-use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
-use std::slice::Iter;
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 // TODO: documentation
 

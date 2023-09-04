@@ -292,8 +292,8 @@ mod test {
 
     #[test]
     fn test_ops() {
-        let p = Z_N_CycloRaw::<D, P>::from(vec![1u64, 2, 3, 4]);
-        let q = Z_N_CycloRaw::<D, P>::from(vec![5u64, 6, 7, 8]);
+        let p = Z_N_CycloRaw::<D, P>::from(vec![1_u64, 2, 3, 4]);
+        let q = Z_N_CycloRaw::<D, P>::from(vec![5_u64, 6, 7, 8]);
 
         let p_ntt: Z_N_CycloNTT<D, P, W> = p.clone().into();
         let q_ntt: Z_N_CycloNTT<D, P, W> = q.clone().into();
@@ -306,65 +306,65 @@ mod test {
     #[test]
     fn test_matrix() {
         let mut M: Matrix<2, 2, Z_N_CycloNTT<D, P, W>> = Matrix::zero();
-        M[(0, 0)] = Z_N_CycloRaw::<D, P>::from(vec![0u64, 0, 0, 1]).into();
-        M[(0, 1)] = Z_N_CycloRaw::<D, P>::from(vec![0u64, 0, 1, 0]).into();
-        M[(1, 0)] = Z_N_CycloRaw::<D, P>::from(vec![0u64, 1, 0, 0]).into();
-        M[(1, 1)] = Z_N_CycloRaw::<D, P>::from(vec![1u64, 0, 0, 0]).into();
+        M[(0, 0)] = Z_N_CycloRaw::<D, P>::from(vec![0_i64, 0, 0, 1]).into();
+        M[(0, 1)] = Z_N_CycloRaw::<D, P>::from(vec![0_i64, 0, 1, 0]).into();
+        M[(1, 0)] = Z_N_CycloRaw::<D, P>::from(vec![0_i64, 1, 0, 0]).into();
+        M[(1, 1)] = Z_N_CycloRaw::<D, P>::from(vec![1_i64, 0, 0, 0]).into();
         // M =
         // [ x^3 x^2 ]
         // [ x   1   ]
         let M_square = &M * &M;
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_square[(0, 0)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![0, 0, P - 1, 1])
+            Z_N_CycloRaw::<D, P>::from(vec![0_i64, 0, -1, 1])
         ); // x^3 + x^6
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_square[(0, 1)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![0, P - 1, 1, 0])
+            Z_N_CycloRaw::<D, P>::from(vec![0_i64, -1, 1, 0])
         ); // x^2 + x^5
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_square[(1, 0)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![P - 1, 1, 0, 0])
+            Z_N_CycloRaw::<D, P>::from(vec![-1_i64, 1, 0, 0])
         ); // x + x^4
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_square[(1, 1)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![1u64, 0, 0, 1])
+            Z_N_CycloRaw::<D, P>::from(vec![1_i64, 0, 0, 1])
         ); // 1 + x^3
 
         let M_double = &M + &M;
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_double[(0, 0)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![0u64, 0, 0, 2])
+            Z_N_CycloRaw::<D, P>::from(vec![0_i64, 0, 0, 2])
         );
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_double[(0, 1)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![0u64, 0, 2, 0])
+            Z_N_CycloRaw::<D, P>::from(vec![0_i64, 0, 2, 0])
         );
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_double[(1, 0)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![0u64, 2, 0, 0])
+            Z_N_CycloRaw::<D, P>::from(vec![0_i64, 2, 0, 0])
         );
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_double[(1, 1)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![2u64, 0, 0, 0])
+            Z_N_CycloRaw::<D, P>::from(vec![2_i64, 0, 0, 0])
         );
 
         let M_neg = -&M;
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_neg[(0, 0)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![0, 0, 0, P - 1])
+            Z_N_CycloRaw::<D, P>::from(vec![0_i64, 0, 0, -1])
         );
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_neg[(0, 1)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![0, 0, P - 1, 0])
+            Z_N_CycloRaw::<D, P>::from(vec![0_i64, 0, -1, 0])
         );
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_neg[(1, 0)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![0, P - 1, 0, 0])
+            Z_N_CycloRaw::<D, P>::from(vec![0_i64, -1, 0, 0])
         );
         assert_eq!(
             Z_N_CycloRaw::<D, P>::from(M_neg[(1, 1)].clone()),
-            Z_N_CycloRaw::<D, P>::from(vec![P - 1, 0, 0, 0])
+            Z_N_CycloRaw::<D, P>::from(vec![-1_i64, 0, 0, 0])
         );
     }
 }

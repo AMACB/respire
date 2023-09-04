@@ -1,7 +1,6 @@
 //! The trivial (insecure) FHE scheme, but additionally tracks noise for GSW schemes.
 use crate::fhe::fhe::*;
 use crate::math::z_n::Z_N;
-use std::ops::{Add, Mul};
 
 /// `M` refers to the implicit width of each matrix.
 /// For standard GSW, this is just the lattice parameter `m`.
@@ -10,63 +9,14 @@ use std::ops::{Add, Mul};
 pub struct GSWNoiseTracker<const P: u64, const Q: u64, const M: u64> {}
 
 #[derive(Clone, Debug)]
-pub struct Ciphertext<const P: u64, const Q: u64, const M: u64> {
+pub struct NoiseCiphertext<const P: u64, const Q: u64, const M: u64> {
     x: Z_N<P>,
     noise: u64,
 }
 
-impl<'a, const P: u64, const Q: u64, const M: u64> CiphertextRef<P, Ciphertext<P, Q, M>>
-    for &'a Ciphertext<P, Q, M>
-{
-}
-
-impl<'a, const P: u64, const Q: u64, const M: u64> Add for &'a Ciphertext<P, Q, M> {
-    type Output = Ciphertext<P, Q, M>;
-    fn add(self, rhs: &Ciphertext<P, Q, M>) -> Self::Output {
-        let new_noise = self.noise + rhs.noise;
-        assert!(
-            new_noise < Q / P,
-            "ciphertext has become too noisy to decrypt correctly"
-        );
-        Ciphertext {
-            x: self.x * rhs.x,
-            noise: new_noise,
-        }
-    }
-}
-
-impl<'a, const P: u64, const Q: u64, const M: u64> Mul for &'a Ciphertext<P, Q, M> {
-    type Output = Ciphertext<P, Q, M>;
-    fn mul(self, rhs: &Ciphertext<P, Q, M>) -> Self::Output {
-        let new_noise = self.noise * M + rhs.noise;
-        assert!(
-            new_noise < Q / P,
-            "ciphertext has become too noisy to decrypt correctly"
-        );
-        Ciphertext {
-            x: self.x * rhs.x,
-            noise: new_noise,
-        }
-    }
-}
-
-impl<'a, const P: u64, const Q: u64, const M: u64> Mul<Z_N<P>> for &'a Ciphertext<P, Q, M> {
-    type Output = Ciphertext<P, Q, M>;
-    fn mul(self, rhs: Z_N<P>) -> Self::Output {
-        let new_noise = self.noise * M + M;
-        assert!(
-            new_noise < Q / P,
-            "ciphertext has become too noisy to decrypt correctly"
-        );
-        Ciphertext {
-            x: self.x * rhs,
-            noise: new_noise,
-        }
-    }
-}
-
-impl<const P: u64, const Q: u64, const M: u64> FHEScheme<P> for GSWNoiseTracker<P, Q, M> {
-    type Ciphertext = Ciphertext<P, Q, M>;
+impl<const P: u64, const Q: u64, const M: u64> EncryptionScheme for GSWNoiseTracker<P, Q, M> {
+    type Plaintext = Z_N<P>;
+    type Ciphertext = NoiseCiphertext<P, Q, M>;
     type PublicKey = ();
     type SecretKey = ();
 
@@ -74,16 +24,47 @@ impl<const P: u64, const Q: u64, const M: u64> FHEScheme<P> for GSWNoiseTracker<
         ((), ())
     }
 
-    fn encrypt(_: &Self::PublicKey, mu: Z_N<P>) -> Self::Ciphertext {
-        Ciphertext { x: mu, noise: M }
+    fn encrypt(_: &Self::PublicKey, mu: &Self::Plaintext) -> Self::Ciphertext {
+        Self::Ciphertext { x: *mu, noise: M }
     }
 
-    fn encrypt_sk(_: &Self::SecretKey, mu: Z_N<P>) -> Self::Ciphertext {
-        Ciphertext { x: mu, noise: 1 }
+    fn encrypt_sk(_: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
+        Self::Ciphertext { x: *mu, noise: 1 }
     }
 
     fn decrypt(_: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         ct.x
+    }
+}
+
+impl<const P: u64, const Q: u64, const M: u64> FHEScheme for GSWNoiseTracker<P, Q, M> {
+}
+
+impl<const P: u64, const Q: u64, const M: u64> AddHomEncryptionScheme for GSWNoiseTracker<P, Q, M> {
+    fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
+        let new_noise = lhs.noise * M + P * rhs.noise;
+        assert!(
+            new_noise < Q / P,
+            "ciphertext has become too noisy to decrypt correctly"
+        );
+        Self::Ciphertext {
+            x: lhs.x * rhs.x,
+            noise: new_noise,
+        }
+    }
+}
+
+impl<const P: u64, const Q: u64, const M: u64> MulHomEncryptionScheme for GSWNoiseTracker<P, Q, M> {
+    fn mul_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
+        let new_noise = lhs.noise + rhs.noise;
+        assert!(
+            new_noise < Q / P,
+            "ciphertext has become too noisy to decrypt correctly"
+        );
+        Self::Ciphertext {
+            x: lhs.x * rhs.x,
+            noise: new_noise,
+        }
     }
 }
 
