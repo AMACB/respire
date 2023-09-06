@@ -119,7 +119,7 @@ impl<
     fn encrypt_sk(sk: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
         let mu = Z_N_CycloRaw::from(u64::from(mu.clone()));
         let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
-            &sk.s_T, mu
+            &sk.s_T, mu,
         );
         Self::Ciphertext { ct }
     }
@@ -139,15 +139,16 @@ impl<
 
 impl<
         const N_MINUS_1: usize,
-    const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const D: usize,
-    const G_BASE: u64,
-    const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
-    > AddHomEncryptionScheme for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const D: usize,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
+    > AddHomEncryptionScheme
+    for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -158,15 +159,16 @@ impl<
 
 impl<
         const N_MINUS_1: usize,
-    const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const D: usize,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > MulHomEncryptionScheme for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    > MulHomEncryptionScheme
+    for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -181,7 +183,7 @@ impl<
         const M: usize,
         const P: u64,
         const Q: u64,
-    const D: usize,
+        const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
@@ -202,7 +204,7 @@ impl<
         const M: usize,
         const P: u64,
         const Q: u64,
-    const D: usize,
+        const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,

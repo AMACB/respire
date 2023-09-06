@@ -205,7 +205,7 @@ impl<const NN: u64, const BASE: u64, const LEN: usize> RingElementDecomposable<B
 
 impl<const N: usize, const M: usize, R: RingElement, const P: u64> Mul<Z_N<P>> for &Matrix<N, M, R>
 where
-    for<'a> &'a R: RingElementRef<R> + Mul<Z_N<P>, Output=R>,
+    for<'a> &'a R: RingElementRef<R> + Mul<Z_N<P>, Output = R>,
 {
     type Output = Matrix<N, M, R>;
 
@@ -221,7 +221,8 @@ where
     }
 }
 
-impl<const N: usize, const M: usize, R: RingElement, const P: u64> MulAssign<Z_N<P>> for Matrix<N, M, R>
+impl<const N: usize, const M: usize, R: RingElement, const P: u64> MulAssign<Z_N<P>>
+    for Matrix<N, M, R>
 where
     for<'a> &'a R: RingElementRef<R>,
     R: MulAssign<Z_N<P>>,

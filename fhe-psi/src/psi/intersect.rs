@@ -162,10 +162,13 @@ mod test {
     use crate::fhe::fhe::FHEInsecure;
     use crate::fhe::gsw::GSWTest;
     use crate::fhe::gsw_crt::GSWCRTTest;
-    use crate::fhe::ringgsw_raw::{RingGSWRawTest, RingGSWRawTestMedium, RING_GSW_RAW_TEST_PARAMS, RING_GSW_RAW_TEST_MEDIUM_PARAMS};
     use crate::fhe::ringgsw_crt::RingGSWCRTTest;
     use crate::fhe::ringgsw_ntt::{RingGSWNTTTest, RingGSWNTTTestMedium};
     use crate::fhe::ringgsw_ntt_crt::{RingGSWNTTCRTTest, RingGSWNTTCRTTestMedium};
+    use crate::fhe::ringgsw_raw::{
+        RingGSWRawTest, RingGSWRawTestMedium, RING_GSW_RAW_TEST_MEDIUM_PARAMS,
+        RING_GSW_RAW_TEST_PARAMS,
+    };
     use std::collections::HashSet;
 
     const TEST_D: usize = RING_GSW_RAW_TEST_PARAMS.D;
@@ -178,9 +181,7 @@ mod test {
 
     type IntersectFHEInsecure<const P: u64> = FHEInsecure<Z_N<P>>;
 
-    impl<const P: u64> MulScalarEncryptionScheme<Z_N<P>>
-        for IntersectFHEInsecure<P>
-    {
+    impl<const P: u64> MulScalarEncryptionScheme<Z_N<P>> for IntersectFHEInsecure<P> {
         fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
             lhs * &u64::from(*rhs).into()
         }
@@ -307,10 +308,7 @@ mod test {
         );
     }
 
-    fn do_intersect_log_multiplicative<
-        const P: u64,
-        FHE: IntersectFHEScheme<P>,
-    >() {
+    fn do_intersect_log_multiplicative<const P: u64, FHE: IntersectFHEScheme<P>>() {
         let client_set: Vec<Z_N<P>> = vec![4_u64, 6, 7, 15].into_iter().map(Z_N::from).collect();
         let server_set: Vec<Z_N<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
             .into_iter()

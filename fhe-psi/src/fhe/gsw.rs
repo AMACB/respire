@@ -70,27 +70,27 @@ pub struct GSWSecretKey<
 // TODO: Find a way to validate these params at compile time (static_assert / const_guards crate?)
 
 impl<
-    const N_MINUS_1: usize,
-    const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const G_BASE: u64,
-    const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
+        const N_MINUS_1: usize,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
     > FHEScheme for GSW<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
 }
 
 impl<
-    const N_MINUS_1: usize,
-    const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const G_BASE: u64,
-    const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
+        const N_MINUS_1: usize,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
     > EncryptionScheme for GSW<N_MINUS_1, N, M, P, Q, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     type Plaintext = Z_N<P>;
@@ -110,7 +110,8 @@ impl<
 
     fn encrypt_sk(sk: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
         let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
-            &sk.s_T, mu.include_into(),
+            &sk.s_T,
+            mu.include_into(),
         );
         Self::Ciphertext { ct }
     }

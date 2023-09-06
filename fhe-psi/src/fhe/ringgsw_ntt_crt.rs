@@ -85,59 +85,23 @@ pub struct RingGSWNTTCRTSecretKey<
 
 impl<
         const N_MINUS_1: usize,
-    const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const Q1: u64,
-    const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
-    const W1: u64,
-    const W2: u64,
-    const D: usize,
-    const G_BASE: u64,
-    const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const Q1: u64,
+        const Q2: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+        const D: usize,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
     > FHEScheme
     for RingGSWNTTCRT<
         N_MINUS_1,
-    N,
-    M,
-    P,
-    Q,
-    Q1,
-    Q2,
-    Q1_INV,
-    Q2_INV,
-    W1,
-    W2,
-    D,
-    G_BASE,
-    G_LEN,
-    NOISE_WIDTH_MILLIONTHS,
-    > {
-}
-
-impl<
-        const N_MINUS_1: usize,
-    const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const Q1: u64,
-    const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
-    const W1: u64,
-    const W2: u64,
-    const D: usize,
-    const G_BASE: u64,
-    const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
-    > EncryptionScheme
-    for RingGSWNTTCRT<
-            N_MINUS_1,
         N,
         M,
         P,
@@ -152,12 +116,52 @@ impl<
         G_BASE,
         G_LEN,
         NOISE_WIDTH_MILLIONTHS,
-        >
+    >
+{
+}
+
+impl<
+        const N_MINUS_1: usize,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const Q1: u64,
+        const Q2: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+        const D: usize,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
+    > EncryptionScheme
+    for RingGSWNTTCRT<
+        N_MINUS_1,
+        N,
+        M,
+        P,
+        Q,
+        Q1,
+        Q2,
+        Q1_INV,
+        Q2_INV,
+        W1,
+        W2,
+        D,
+        G_BASE,
+        G_LEN,
+        NOISE_WIDTH_MILLIONTHS,
+    >
 {
     type Plaintext = Z_N<P>;
-    type Ciphertext = RingGSWNTTCRTCiphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
-    type PublicKey = RingGSWNTTCRTPublicKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
-    type SecretKey = RingGSWNTTCRTSecretKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
+    type Ciphertext =
+        RingGSWNTTCRTCiphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
+    type PublicKey =
+        RingGSWNTTCRTPublicKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
+    type SecretKey =
+        RingGSWNTTCRTSecretKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
         let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, _, NOISE_WIDTH_MILLIONTHS>();
@@ -192,64 +196,23 @@ impl<
 
 impl<
         const N_MINUS_1: usize,
-    const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const Q1: u64,
-    const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
-    const W1: u64,
-    const W2: u64,
-    const D: usize,
-    const G_BASE: u64,
-    const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const Q1: u64,
+        const Q2: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+        const D: usize,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
     > AddHomEncryptionScheme
     for RingGSWNTTCRT<
         N_MINUS_1,
-    N,
-    M,
-    P,
-    Q,
-    Q1,
-    Q2,
-    Q1_INV,
-    Q2_INV,
-    W1,
-    W2,
-    D,
-    G_BASE,
-    G_LEN,
-        NOISE_WIDTH_MILLIONTHS,>
-{
-    fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
-        Self::Ciphertext {
-            ct: ciphertext_add::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs.ct),
-        }
-    }
-}
-
-impl<
-        const N_MINUS_1: usize,
-    const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const Q1: u64,
-    const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
-    const W1: u64,
-    const W2: u64,
-    const D: usize,
-    const G_BASE: u64,
-    const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
-    > MulHomEncryptionScheme 
-    for RingGSWNTTCRT<
-            N_MINUS_1,
         N,
         M,
         P,
@@ -263,7 +226,50 @@ impl<
         D,
         G_BASE,
         G_LEN,
-        NOISE_WIDTH_MILLIONTHS,>
+        NOISE_WIDTH_MILLIONTHS,
+    >
+{
+    fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
+        Self::Ciphertext {
+            ct: ciphertext_add::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs.ct),
+        }
+    }
+}
+
+impl<
+        const N_MINUS_1: usize,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const Q1: u64,
+        const Q2: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+        const D: usize,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
+    > MulHomEncryptionScheme
+    for RingGSWNTTCRT<
+        N_MINUS_1,
+        N,
+        M,
+        P,
+        Q,
+        Q1,
+        Q2,
+        Q1_INV,
+        Q2_INV,
+        W1,
+        W2,
+        D,
+        G_BASE,
+        G_LEN,
+        NOISE_WIDTH_MILLIONTHS,
+    >
 {
     fn mul_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -275,36 +281,37 @@ impl<
 impl<
         const N_MINUS_1: usize,
         const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const Q1: u64,
-    const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
-    const W1: u64,
-    const W2: u64,
-    const D: usize,
-    const G_BASE: u64,
-    const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const Q1: u64,
+        const Q2: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+        const D: usize,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
     > AddScalarEncryptionScheme<Z_N<P>>
     for RingGSWNTTCRT<
         N_MINUS_1,
-    N,
-    M,
-    P,
-    Q,
-    Q1,
-    Q2,
-    Q1_INV,
-    Q2_INV,
-    W1,
-    W2,
-    D,
-    G_BASE,
-    G_LEN,
-    NOISE_WIDTH_MILLIONTHS,>
+        N,
+        M,
+        P,
+        Q,
+        Q1,
+        Q2,
+        Q1_INV,
+        Q2_INV,
+        W1,
+        W2,
+        D,
+        G_BASE,
+        G_LEN,
+        NOISE_WIDTH_MILLIONTHS,
+    >
 {
     fn add_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
         let rhs_q = Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(*rhs));
@@ -334,24 +341,25 @@ impl<
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
+        const NOISE_WIDTH_MILLIONTHS: u64,
     > MulScalarEncryptionScheme<Z_N<P>>
     for RingGSWNTTCRT<
         N_MINUS_1,
-    N,
-    M,
-    P,
-    Q,
-    Q1,
-    Q2,
-    Q1_INV,
-    Q2_INV,
-    W1,
-    W2,
-    D,
-    G_BASE,
-    G_LEN,
-    NOISE_WIDTH_MILLIONTHS,>
+        N,
+        M,
+        P,
+        Q,
+        Q1,
+        Q2,
+        Q1_INV,
+        Q2_INV,
+        W1,
+        W2,
+        D,
+        G_BASE,
+        G_LEN,
+        NOISE_WIDTH_MILLIONTHS,
+    >
 {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
         let rhs_q = Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(*rhs));
@@ -523,9 +531,12 @@ mod test {
                 let ct1 = RingGSWNTTCRTTest::encrypt(&A, &mu1);
                 let ct2 = RingGSWNTTCRTTest::encrypt(&A, &mu2);
 
-                let pt_add_ct = RingGSWNTTCRTTest::decrypt(&s_T, &(RingGSWNTTCRTTest::add_hom(&ct1, &ct2)));
-                let pt_mul_ct = RingGSWNTTCRTTest::decrypt(&s_T, &(RingGSWNTTCRTTest::mul_hom(&ct1, &ct2)));
-                let pt_mul_scalar = RingGSWNTTCRTTest::decrypt(&s_T, &(RingGSWNTTCRTTest::mul_scalar(&ct1, &mu2)));
+                let pt_add_ct =
+                    RingGSWNTTCRTTest::decrypt(&s_T, &(RingGSWNTTCRTTest::add_hom(&ct1, &ct2)));
+                let pt_mul_ct =
+                    RingGSWNTTCRTTest::decrypt(&s_T, &(RingGSWNTTCRTTest::mul_hom(&ct1, &ct2)));
+                let pt_mul_scalar =
+                    RingGSWNTTCRTTest::decrypt(&s_T, &(RingGSWNTTCRTTest::mul_scalar(&ct1, &mu2)));
 
                 assert_eq!(pt_add_ct, mu1 + mu2, "ciphertext addition failed");
                 assert_eq!(pt_mul_ct, mu1 * mu2, "ciphertext multiplication failed");

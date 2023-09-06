@@ -105,7 +105,8 @@ impl<
         G_LEN,
         NOISE_WIDTH_MILLIONTHS,
     >
-{}
+{
+}
 
 impl<
         const N_MINUS_1: usize,
@@ -187,10 +188,10 @@ impl<
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
+        const NOISE_WIDTH_MILLIONTHS: u64,
     > AddHomEncryptionScheme
     for RingGSWCRT<
-            N_MINUS_1,
+        N_MINUS_1,
         N,
         M,
         P,
@@ -203,7 +204,7 @@ impl<
         G_BASE,
         G_LEN,
         NOISE_WIDTH_MILLIONTHS,
-        >
+    >
 {
     fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -214,18 +215,18 @@ impl<
 
 impl<
         const N_MINUS_1: usize,
-    const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const Q1: u64,
-    const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
-    const D: usize,
-    const G_BASE: u64,
-    const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const Q1: u64,
+        const Q2: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
+        const D: usize,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
     > MulHomEncryptionScheme
     for RingGSWCRT<
         N_MINUS_1,
@@ -251,7 +252,7 @@ impl<
 }
 
 impl<
-    const N_MINUS_1: usize,
+        const N_MINUS_1: usize,
         const N: usize,
         const M: usize,
         const P: u64,
@@ -263,7 +264,7 @@ impl<
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
+        const NOISE_WIDTH_MILLIONTHS: u64,
     > AddScalarEncryptionScheme<Z_N<P>>
     for RingGSWCRT<
         N_MINUS_1,
@@ -290,20 +291,20 @@ impl<
 }
 
 impl<
-    const N_MINUS_1: usize,
+        const N_MINUS_1: usize,
         const N: usize,
-    const M: usize,
-    const P: u64,
-    const Q: u64,
-    const Q1: u64,
-    const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
-    const D: usize,
-    const G_BASE: u64,
-    const G_LEN: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
-        > MulScalarEncryptionScheme<Z_N<P>>
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const Q1: u64,
+        const Q2: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
+        const D: usize,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
+    > MulScalarEncryptionScheme<Z_N<P>>
     for RingGSWCRT<
         N_MINUS_1,
         N,
@@ -319,14 +320,14 @@ impl<
         G_LEN,
         NOISE_WIDTH_MILLIONTHS,
     >
-    {
-        fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
-            let rhs_q = Z_N_CycloRaw_CRT::<D, Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(*rhs));
-            Self::Ciphertext {
-                ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q),
-            }
+{
+    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
+        let rhs_q = Z_N_CycloRaw_CRT::<D, Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(*rhs));
+        Self::Ciphertext {
+            ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q),
         }
     }
+}
 /*
  * RingGSWCRT params
  */
@@ -419,9 +420,12 @@ mod test {
                 let ct1 = RingGSWCRTTest::encrypt(&A, &mu1);
                 let ct2 = RingGSWCRTTest::encrypt(&A, &mu2);
 
-                let pt_add_ct = RingGSWCRTTest::decrypt(&s_T, &(RingGSWCRTTest::add_hom(&ct1, &ct2)));
-                let pt_mul_ct = RingGSWCRTTest::decrypt(&s_T, &(RingGSWCRTTest::mul_hom(&ct1, &ct2)));
-                let pt_mul_scalar = RingGSWCRTTest::decrypt(&s_T, &(RingGSWCRTTest::mul_scalar(&ct1, &mu2)));
+                let pt_add_ct =
+                    RingGSWCRTTest::decrypt(&s_T, &(RingGSWCRTTest::add_hom(&ct1, &ct2)));
+                let pt_mul_ct =
+                    RingGSWCRTTest::decrypt(&s_T, &(RingGSWCRTTest::mul_hom(&ct1, &ct2)));
+                let pt_mul_scalar =
+                    RingGSWCRTTest::decrypt(&s_T, &(RingGSWCRTTest::mul_scalar(&ct1, &mu2)));
 
                 assert_eq!(pt_add_ct, mu1 + mu2, "ciphertext addition failed");
                 assert_eq!(pt_mul_ct, mu1 * mu2, "ciphertext multiplication failed");

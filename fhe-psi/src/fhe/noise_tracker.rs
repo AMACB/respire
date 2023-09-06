@@ -37,8 +37,7 @@ impl<const P: u64, const Q: u64, const M: u64> EncryptionScheme for GSWNoiseTrac
     }
 }
 
-impl<const P: u64, const Q: u64, const M: u64> FHEScheme for GSWNoiseTracker<P, Q, M> {
-}
+impl<const P: u64, const Q: u64, const M: u64> FHEScheme for GSWNoiseTracker<P, Q, M> {}
 
 impl<const P: u64, const Q: u64, const M: u64> AddHomEncryptionScheme for GSWNoiseTracker<P, Q, M> {
     fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {

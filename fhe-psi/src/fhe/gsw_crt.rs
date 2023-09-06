@@ -102,20 +102,7 @@ impl<
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > FHEScheme
-    for GSWCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
 }
 
@@ -132,20 +119,7 @@ impl<
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > GSWCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    > GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
 }
 
@@ -163,20 +137,7 @@ impl<
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > EncryptionScheme
-    for GSWCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     type Plaintext = Z_N<P>;
     type Ciphertext = GSWCRTCiphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
@@ -197,7 +158,7 @@ impl<
     fn encrypt_sk(sk: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
         let mu = Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(mu.clone()));
         let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
-            &sk.s_T, mu
+            &sk.s_T, mu,
         );
         Self::Ciphertext { ct }
     }
@@ -228,20 +189,7 @@ impl<
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > AddHomEncryptionScheme
-    for GSWCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -263,20 +211,7 @@ impl<
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > MulHomEncryptionScheme
-    for GSWCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -299,20 +234,7 @@ impl<
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > AddScalarEncryptionScheme<Z_N<P>>
-    for GSWCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn add_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
         let rhs = Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(*rhs));
@@ -336,20 +258,7 @@ impl<
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > MulScalarEncryptionScheme<Z_N<P>>
-    for GSWCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
         let rhs = Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(*rhs));
@@ -449,7 +358,8 @@ mod test {
 
                 let pt_add_ct = GSWCRTTest::decrypt(&s_T, &(GSWCRTTest::add_hom(&ct1, &ct2)));
                 let pt_mul_ct = GSWCRTTest::decrypt(&s_T, &(GSWCRTTest::mul_hom(&ct1, &ct2)));
-                let pt_mul_scalar = GSWCRTTest::decrypt(&s_T, &(GSWCRTTest::mul_scalar(&ct1, &mu2)));
+                let pt_mul_scalar =
+                    GSWCRTTest::decrypt(&s_T, &(GSWCRTTest::mul_scalar(&ct1, &mu2)));
 
                 assert_eq!(pt_add_ct, mu1 + mu2, "ciphertext addition failed");
                 assert_eq!(pt_mul_ct, mu1 * mu2, "ciphertext multiplication failed");
