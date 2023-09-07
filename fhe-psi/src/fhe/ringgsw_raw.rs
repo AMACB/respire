@@ -1,13 +1,26 @@
+//! Standard GSW over a ring of polynomials.
+
 use crate::fhe::fhe::*;
-use crate::fhe::gadget::*;
+use crate::fhe::gsw_utils::*;
 use crate::math::matrix::Matrix;
-use crate::math::rand_sampled::*;
-use crate::math::ring_elem::RingElement;
 use crate::math::utils::ceil_log;
 use crate::math::z_n::Z_N;
 use crate::math::z_n_cyclo::Z_N_CycloRaw;
-use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
+
+/*
+ * A Ring GSW implementation
+ *
+ * Parameters:
+ *   - N_MINUS_1: N-1, since generics cannot be used in const expressions yet. Used only in key generation.
+ *   - N,M: matrix dimensions. It is assumed that `M = N log_{G_BASE} Q`.
+ *   - P: plaintext modulus.
+ *   - Q: ciphertext modulus.
+ *   - D: degree of polynomials. See `Z_N_CycloRaw`.
+ *   - G_BASE: base used for the gadget matrix.
+ *   - G_LEN: length of the `g` gadget vector, or alternatively `log_{G_BASE} Q`.
+ *   - NOISE_WIDTH_MILLIONTHS: noise width, expressed in millionths to allow for precision past the decimal point (since f64 is not a valid generic parameter).
+ *
+ */
 
 pub struct RingGSWRaw<
     const N_MINUS_1: usize,
@@ -87,51 +100,42 @@ impl<
     > EncryptionScheme
     for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
-    type Plaintext = Z_N_CycloRaw<D, P>;
+    type Plaintext = Z_N<P>;
     type Ciphertext = RingGSWRawCiphertext<N, M, P, Q, D, G_BASE, G_LEN>;
     type PublicKey = RingGSWRawPublicKey<N, M, P, Q, D, G_BASE, G_LEN>;
     type SecretKey = RingGSWRawSecretKey<N, M, P, Q, D, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
-        let mut rng = ChaCha20Rng::from_entropy();
-
-        let a_bar: Matrix<N_MINUS_1, M, Z_N_CycloRaw<D, Q>> = Matrix::rand_uniform(&mut rng);
-        let s_bar_T: Matrix<1, N_MINUS_1, Z_N_CycloRaw<D, Q>> = Matrix::rand_uniform(&mut rng);
-        let e: Matrix<1, M, Z_N_CycloRaw<D, Q>> =
-            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-
-        let A: Matrix<N, M, Z_N_CycloRaw<D, Q>> =
-            Matrix::stack(&a_bar, &(&(&s_bar_T * &a_bar) + &e));
-        let mut s_T: Matrix<1, N, Z_N_CycloRaw<D, Q>> = Matrix::zero();
-        s_T.copy_into(&(-&s_bar_T), 0, 0);
-        s_T[(0, N - 1)] = Z_N_CycloRaw::one();
+        let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, _, NOISE_WIDTH_MILLIONTHS>();
         (Self::PublicKey { A }, Self::SecretKey { s_T })
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: &Self::Plaintext) -> Self::Ciphertext {
-        let A = &pk.A;
-
-        let mut rng = ChaCha20Rng::from_entropy();
-        let R: Matrix<M, M, Z_N_CycloRaw<D, Q>> = Matrix::rand_zero_one(&mut rng);
-
-        let G = build_gadget::<Z_N_CycloRaw<D, Q>, N, M, Q, G_BASE, G_LEN>();
-
-        let ct = &(A * &R) + &(&G * &mu.include_into());
+        let mu = Z_N_CycloRaw::from(u64::from(mu.clone()));
+        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, _>(&pk.A, mu);
         Self::Ciphertext { ct }
     }
 
-    fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Self::Plaintext {
+    fn encrypt_sk(sk: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
+        let mu = Z_N_CycloRaw::from(u64::from(mu.clone()));
+        let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
+            &sk.s_T, mu,
+        );
+        Self::Ciphertext { ct }
+    }
+
+    fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
-        let q_over_p = Z_N_CycloRaw::from(Q / P);
-        let g_inv = &gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, N, G_BASE, G_LEN>(
-            &(&Matrix::<N, N, Z_N_CycloRaw<D, Q>>::identity() * &q_over_p),
-        );
-
-        let pt = &(&(s_T * ct) * g_inv)[(0, N - 1)];
-        pt.round_down_into()
+        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
+        // TODO support arbitrary messages, not just constants
+        pt[0].round_down_into()
     }
 }
+
+/*
+ * GSW homomorphic addition / multiplication
+ */
 
 impl<
         const N_MINUS_1: usize,
@@ -147,8 +151,8 @@ impl<
     for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
-        RingGSWRawCiphertext {
-            ct: &lhs.ct + &rhs.ct,
+        Self::Ciphertext {
+            ct: ciphertext_add::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs.ct),
         }
     }
 }
@@ -167,8 +171,29 @@ impl<
     for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
-        RingGSWRawCiphertext {
-            ct: &lhs.ct * &gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, M, G_BASE, G_LEN>(&rhs.ct),
+        Self::Ciphertext {
+            ct: ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs.ct),
+        }
+    }
+}
+
+impl<
+        const N_MINUS_1: usize,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const D: usize,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
+    > AddScalarEncryptionScheme<Z_N<P>>
+    for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+{
+    fn add_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
+        let rhs_q = Z_N_CycloRaw::<D, Q>::from(u64::from(*rhs));
+        Self::Ciphertext {
+            ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q),
         }
     }
 }
@@ -187,12 +212,9 @@ impl<
     for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
-        let rhs_q = &Z_N_CycloRaw::<D, Q>::from(u64::from(*rhs));
-        RingGSWRawCiphertext {
-            ct: &lhs.ct
-                * &gadget_inverse::<Z_N_CycloRaw<D, Q>, N, M, M, G_BASE, G_LEN>(
-                    &(&build_gadget::<Z_N_CycloRaw<D, Q>, N, M, Q, G_BASE, G_LEN>() * rhs_q),
-                ),
+        let rhs_q = Z_N_CycloRaw::<D, Q>::from(u64::from(*rhs));
+        Self::Ciphertext {
+            ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q),
         }
     }
 }
@@ -302,10 +324,10 @@ mod test {
     #[test]
     fn homomorphism_mul_multiple_correct() {
         let (A, s_T) = RingGSWRawTest::keygen();
-        let mu1 = Z_N_CycloRaw::from(5_u64);
-        let mu2 = Z_N_CycloRaw::from(12_u64);
-        let mu3 = Z_N_CycloRaw::from(6_u64);
-        let mu4 = Z_N_CycloRaw::from(18_u64);
+        let mu1 = Z_N::from(5_u64);
+        let mu2 = Z_N::from(12_u64);
+        let mu3 = Z_N::from(6_u64);
+        let mu4 = Z_N::from(18_u64);
 
         let ct1 = RingGSWRawTest::encrypt(&A, &mu1);
         let ct2 = RingGSWRawTest::encrypt(&A, &mu2);

@@ -28,6 +28,27 @@ pub const fn floor_log(base: u64, mut x: u64) -> usize {
     e
 }
 
+pub const fn mod_inverse(x: u64, modulus: u64) -> u64 {
+    let modulus = modulus as i64;
+    let mut a = x as i64;
+    let mut b = modulus;
+    let mut x = 1;
+    let mut y = 0;
+    while a > 1 {
+        let q = a / b;
+
+        let t = b;
+        b = a % b;
+        a = t;
+
+        let t = y;
+        y = (x - (q * y)) % modulus;
+        x = t;
+    }
+
+    (x + (x < (0 as i64)) as i64 * (modulus as i64)) as u64
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -75,5 +96,12 @@ mod test {
 
         assert_eq!(floor_log(354, 44361863), 2);
         assert_eq!(floor_log(354, 44361864), 3);
+    }
+
+    #[test]
+    fn test_mod_inverse() {
+        for i in 1..17 {
+            assert_eq!(mod_inverse(i, 17) * i % 17, 1);
+        }
     }
 }

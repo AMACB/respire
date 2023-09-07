@@ -278,12 +278,12 @@ mod test {
         assert_eq!(p, q);
         assert_eq!(Z_N_CycloRaw::<D, P>::from(p), Z_N_CycloRaw::<D, P>::from(q));
 
-        let root = W.into();
+        let root: Z_N<P> = W.into();
         p = Z_N_CycloNTT::<D, P, W>::from([
-            pow(root, 1u64),
-            pow(root, 3u64),
-            pow(root, 5u64),
-            pow(root, 7u64),
+            root.pow(1u64),
+            root.pow(3u64),
+            root.pow(5u64),
+            root.pow(7u64),
         ]);
         q = Z_N_CycloNTT::<D, P, W>::from(Z_N_CycloRaw::from(vec![0u64, 1u64]));
         assert_eq!(p, q);

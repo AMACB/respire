@@ -51,13 +51,14 @@ impl<const D: usize, const N: u64> From<PolynomialZ_N<N>> for Z_N_CycloRaw<D, N>
     }
 }
 
-impl<const D: usize, const N: u64> From<Vec<i64>> for Z_N_CycloRaw<D, N> {
-    fn from(coeff: Vec<i64>) -> Self {
+impl<const D: usize, const N: u64> From<Vec<u64>> for Z_N_CycloRaw<D, N> {
+    fn from(coeff: Vec<u64>) -> Self {
         Z_N_CycloRaw::from(PolynomialZ_N::from(coeff))
     }
 }
-impl<const D: usize, const N: u64> From<Vec<u64>> for Z_N_CycloRaw<D, N> {
-    fn from(coeff: Vec<u64>) -> Self {
+
+impl<const D: usize, const N: u64> From<Vec<i64>> for Z_N_CycloRaw<D, N> {
+    fn from(coeff: Vec<i64>) -> Self {
         Z_N_CycloRaw::from(PolynomialZ_N::from(coeff))
     }
 }
@@ -101,7 +102,7 @@ impl<const D: usize, const N: u64, const W: u64> From<&Z_N_CycloNTT<D, N, W>>
         }
         assert_eq!(1 << log_d, D);
 
-        let root = W.into();
+        let root: Z_N<N> = W.into();
 
         let mut coeff: [Z_N<N>; D] = [0_u64.into(); D];
         for (i, x) in z_n_cyclo_ntt.points_iter().enumerate() {
@@ -109,11 +110,11 @@ impl<const D: usize, const N: u64, const W: u64> From<&Z_N_CycloNTT<D, N, W>>
         }
 
         bit_reverse_order(&mut coeff, log_d);
-        ntt(&mut coeff, inverse(root * root), log_d);
+        ntt(&mut coeff, (root * root).inverse(), log_d);
 
         let mut inv_root_pow: Z_N<N> = 1u64.into();
-        let inv_root = inverse(root);
-        let inv_D = inverse((D as u64).into());
+        let inv_root = root.inverse();
+        let inv_D = Z_N::<N>::from(D as u64).inverse();
         for i in 0..D {
             // divide by degree
             coeff[i] *= inv_D;

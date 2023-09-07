@@ -10,7 +10,6 @@ pub fn build_gadget<
     R: RingElementDecomposable<G_BASE, G_LEN>,
     const N: usize,
     const M: usize,
-    const Q: u64,
     const G_BASE: u64,
     const G_LEN: usize,
 >() -> Matrix<N, M, R>
@@ -25,7 +24,7 @@ where
     for j in 0..M {
         gadget[(i, j)] = x.into();
         x *= G_BASE;
-        if x > Q {
+        if j % G_LEN == G_LEN - 1 {
             i += 1;
             x = 1;
         }
@@ -85,7 +84,7 @@ mod test {
 
     #[test]
     fn gadget_is_correct() {
-        let G = build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>();
+        let G = build_gadget::<Z_N<Q>, N, M, G_BASE, G_LEN>();
 
         let mut expected_G: Matrix<N, M, Z_N<Q>> = Matrix::zero();
         expected_G[(0, 0)] = 1_u64.into();
@@ -111,7 +110,7 @@ mod test {
             }
         }
 
-        let G = build_gadget::<Z_N<Q>, N, M, Q, G_BASE, G_LEN>();
+        let G = build_gadget::<Z_N<Q>, N, M, G_BASE, G_LEN>();
         let R_inv = gadget_inverse::<Z_N<Q>, N, M, M, G_BASE, G_LEN>(&R);
         let R_hopefully = &G * &R_inv;
         assert_eq!(R, R_hopefully, "gadget inverse was not correct");

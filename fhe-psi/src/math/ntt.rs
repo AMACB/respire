@@ -4,24 +4,6 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-// TODO: this should go somewhere else probably
-pub fn pow<const N: u64>(mut val: Z_N<N>, mut e: u64) -> Z_N<N> {
-    let mut res = Z_N::one();
-    while e > 0 {
-        if (e & 1) == 1 {
-            res *= val;
-        }
-        e >>= 1;
-        val *= val;
-    }
-    return res;
-}
-
-// TODO: this should also go somewhere else, aslo this is not efficient
-pub fn inverse<const N: u64>(val: Z_N<N>) -> Z_N<N> {
-    return pow(val, N - 2);
-}
-
 /// Memoization table for discrete gaussian sampling.
 /// Each key is (root, degree, modulus), which is likely overdescriptive.
 
@@ -91,15 +73,15 @@ mod test {
         let mut coeff: [Z_N<P>; 4] = [1u64.into(), 2u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
 
         let coeff_orig = coeff.clone();
-        let root = pow(W.into(), 1 << 14);
+        let root = Z_N::<P>::from(W).pow(1 << 14);
 
         bit_reverse_order(&mut coeff, LOG_D);
         ntt(&mut coeff, root, LOG_D);
         bit_reverse_order(&mut coeff, LOG_D);
-        ntt(&mut coeff, inverse(root), LOG_D);
+        ntt(&mut coeff, root.inverse(), LOG_D);
 
         for i in 0..coeff.len() {
-            coeff[i] *= inverse((D as u64).into());
+            coeff[i] *= Z_N::<P>::from(D as u64).inverse();
         }
 
         assert_eq!(coeff, coeff_orig);
@@ -109,7 +91,7 @@ mod test {
     fn forward_ntt() {
         let mut coeff: [Z_N<P>; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
 
-        let root = pow(W.into(), 1 << 14);
+        let root = Z_N::<P>::from(W).pow(1 << 14);
 
         bit_reverse_order(&mut coeff, LOG_D);
         ntt(&mut coeff, root, LOG_D);
@@ -127,7 +109,7 @@ mod test {
 
     #[test]
     fn backward_ntt() {
-        let root = pow(W.into(), 1 << 14);
+        let root = Z_N::<P>::from(W).pow(1 << 14);
         let one = Z_N::one();
 
         let mut evaluated = [
@@ -138,10 +120,10 @@ mod test {
         ];
 
         bit_reverse_order(&mut evaluated, LOG_D);
-        ntt(&mut evaluated, inverse(root), LOG_D);
+        ntt(&mut evaluated, root.inverse(), LOG_D);
 
         for i in 0..evaluated.len() {
-            evaluated[i] *= inverse((D as u64).into());
+            evaluated[i] *= Z_N::<P>::from(D as u64).inverse();
         }
 
         let coeff: [Z_N<P>; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
@@ -155,11 +137,11 @@ mod test {
         let mut coeff2: [Z_N<P>; D] = [1u64.into(), 1u64.into(), 1u64.into(), 1u64.into()];
         let ans: [Z_N<P>; D] = [(P - 8).into(), (P - 4).into(), 2u64.into(), 10u64.into()];
 
-        let root = pow(W.into(), 1 << 13);
+        let root = Z_N::<P>::from(W).pow(1 << 13);
 
         for i in 0..coeff1.len() {
-            coeff1[i] *= pow(root, i as u64);
-            coeff2[i] *= pow(root, i as u64);
+            coeff1[i] *= root.pow(i as u64);
+            coeff2[i] *= root.pow(i as u64);
         }
 
         bit_reverse_order(&mut coeff1, LOG_D);
@@ -173,11 +155,11 @@ mod test {
         }
 
         bit_reverse_order(&mut coeff3, LOG_D);
-        ntt(&mut coeff3, inverse(root * root), LOG_D);
+        ntt(&mut coeff3, (root * root).inverse(), LOG_D);
 
         for i in 0..coeff3.len() {
-            coeff3[i] *= inverse((D as u64).into());
-            coeff3[i] *= inverse(pow(root, i as u64));
+            coeff3[i] *= Z_N::<P>::from(D as u64).inverse();
+            coeff3[i] *= root.pow(i as u64).inverse();
         }
         assert_eq!(coeff3, ans);
     }

@@ -21,6 +21,7 @@ pub trait EncryptionScheme {
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey);
     fn encrypt(pk: &Self::PublicKey, mu: &Self::Plaintext) -> Self::Ciphertext;
+    fn encrypt_sk(sk: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext;
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Self::Plaintext;
 }
 
@@ -33,6 +34,10 @@ pub trait MulHomEncryptionScheme: EncryptionScheme {
 }
 
 pub trait FHEScheme: AddHomEncryptionScheme + MulHomEncryptionScheme {}
+
+pub trait AddScalarEncryptionScheme<Scalar>: EncryptionScheme {
+    fn add_scalar(lhs: &Self::Ciphertext, rhs: &Scalar) -> Self::Ciphertext;
+}
 
 pub trait MulScalarEncryptionScheme<Scalar>: EncryptionScheme {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Scalar) -> Self::Ciphertext;
@@ -83,9 +88,11 @@ where
         mu.clone()
     }
 
+    fn encrypt_sk(_: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
+        mu.clone()
+    }
+
     fn decrypt(_: &Self::SecretKey, ct: &Self::Ciphertext) -> Self::Plaintext {
         ct.clone()
     }
 }
-
-// TODO: Add trivial FHE scheme that tracks noise

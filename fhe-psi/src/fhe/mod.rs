@@ -3,7 +3,12 @@ pub mod discrete_gaussian;
 pub mod fhe;
 pub mod gadget;
 pub mod gsw;
+pub mod gsw_crt;
+pub mod gsw_utils;
+pub mod noise_tracker;
+pub mod ringgsw_crt;
 pub mod ringgsw_ntt;
+pub mod ringgsw_ntt_crt;
 pub mod ringgsw_raw;
 
 // TODO
