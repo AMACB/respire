@@ -1,12 +1,16 @@
 //! Generic FHE scheme traits.
 
+use crate::math::int_mod::IntMod;
 use crate::math::ring_elem::{RingElement, RingElementRef};
-use crate::math::z_n::Z_N;
 use std::marker::PhantomData;
 use std::ops::{Add, Mul};
 
 pub trait CiphertextRef<const P: u64, Owned>:
-    Sized + Clone + Add<Self, Output = Owned> + Mul<Self, Output = Owned> + Mul<Z_N<P>, Output = Owned>
+    Sized
+    + Clone
+    + Add<Self, Output = Owned>
+    + Mul<Self, Output = Owned>
+    + Mul<IntMod<P>, Output = Owned>
 where
     for<'a> &'a Owned: CiphertextRef<P, Owned>,
 {
@@ -21,6 +25,7 @@ pub trait EncryptionScheme {
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey);
     fn encrypt(pk: &Self::PublicKey, mu: &Self::Plaintext) -> Self::Ciphertext;
+    fn encrypt_sk(sk: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext;
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Self::Plaintext;
 }
 
@@ -33,6 +38,10 @@ pub trait MulHomEncryptionScheme: EncryptionScheme {
 }
 
 pub trait FHEScheme: AddHomEncryptionScheme + MulHomEncryptionScheme {}
+
+pub trait AddScalarEncryptionScheme<Scalar>: EncryptionScheme {
+    fn add_scalar(lhs: &Self::Ciphertext, rhs: &Scalar) -> Self::Ciphertext;
+}
 
 pub trait MulScalarEncryptionScheme<Scalar>: EncryptionScheme {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Scalar) -> Self::Ciphertext;
@@ -83,9 +92,11 @@ where
         mu.clone()
     }
 
+    fn encrypt_sk(_: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
+        mu.clone()
+    }
+
     fn decrypt(_: &Self::SecretKey, ct: &Self::Ciphertext) -> Self::Plaintext {
         ct.clone()
     }
 }
-
-// TODO: Add trivial FHE scheme that tracks noise

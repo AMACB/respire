@@ -1,7 +1,7 @@
 //! Polynomials over `Z_n`.
 
+use crate::math::int_mod::IntMod;
 use crate::math::ring_elem::*;
-use crate::math::z_n::Z_N;
 use std::iter;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::slice::Iter;
@@ -12,34 +12,34 @@ use std::slice::Iter;
 /// implement [`RingElement`], [`RingElementRef`], it is not intended for use if high efficiency is
 /// required.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PolynomialZ_N<const N: u64> {
-    coeff: Vec<Z_N<N>>,
+pub struct IntModPoly<const N: u64> {
+    coeff: Vec<IntMod<N>>,
 }
 
 /// Conversions
 
-impl<const N: u64> From<u64> for PolynomialZ_N<N> {
+impl<const N: u64> From<u64> for IntModPoly<N> {
     fn from(a: u64) -> Self {
         vec![a].into()
     }
 }
 
-impl<const N: u64> From<Vec<i64>> for PolynomialZ_N<N> {
+impl<const N: u64> From<Vec<i64>> for IntModPoly<N> {
     fn from(coeff: Vec<i64>) -> Self {
-        let v: Vec<Z_N<N>> = coeff.iter().map(|x| (*x).into()).collect();
-        PolynomialZ_N::from(v)
+        let v: Vec<IntMod<N>> = coeff.iter().map(|x| (*x).into()).collect();
+        IntModPoly::from(v)
     }
 }
 
-impl<const N: u64> From<Vec<u64>> for PolynomialZ_N<N> {
+impl<const N: u64> From<Vec<u64>> for IntModPoly<N> {
     fn from(coeff: Vec<u64>) -> Self {
-        let v: Vec<Z_N<N>> = coeff.iter().map(|x| (*x).into()).collect();
-        PolynomialZ_N::from(v)
+        let v: Vec<IntMod<N>> = coeff.iter().map(|x| (*x).into()).collect();
+        IntModPoly::from(v)
     }
 }
 
-impl<const N: u64> From<Vec<Z_N<N>>> for PolynomialZ_N<N> {
-    fn from(mut coeff: Vec<Z_N<N>>) -> Self {
+impl<const N: u64> From<Vec<IntMod<N>>> for IntModPoly<N> {
+    fn from(mut coeff: Vec<IntMod<N>>) -> Self {
         let mut idx = coeff.len();
         loop {
             if idx == 0 || coeff[idx - 1] != 0_u64.into() {
@@ -48,23 +48,23 @@ impl<const N: u64> From<Vec<Z_N<N>>> for PolynomialZ_N<N> {
             idx -= 1;
         }
         coeff.resize(idx, 0_u64.into());
-        PolynomialZ_N { coeff }
+        IntModPoly { coeff }
     }
 }
 
 /// RingElementRef implementation
 
-impl<const N: u64> RingElementRef<PolynomialZ_N<N>> for &PolynomialZ_N<N> {}
+impl<const N: u64> RingElementRef<IntModPoly<N>> for &IntModPoly<N> {}
 
-impl<const N: u64> Add for &PolynomialZ_N<N> {
-    type Output = PolynomialZ_N<N>;
+impl<const N: u64> Add for &IntModPoly<N> {
+    type Output = IntModPoly<N>;
     fn add(self, rhs: Self) -> Self::Output {
         if self.coeff.len() < rhs.coeff.len() {
             return rhs + self;
         }
 
-        let mut result_coeff: Vec<Z_N<N>> = vec![];
-        let zero: Z_N<N> = 0_u64.into();
+        let mut result_coeff: Vec<IntMod<N>> = vec![];
+        let zero: IntMod<N> = 0_u64.into();
         result_coeff.resize(self.coeff.len(), zero);
         let self_iter = self.coeff.iter();
         let rhs_iter = rhs.coeff.iter().chain(iter::repeat(&zero));
@@ -75,17 +75,17 @@ impl<const N: u64> Add for &PolynomialZ_N<N> {
     }
 }
 
-impl<const N: u64> Sub for &PolynomialZ_N<N> {
-    type Output = PolynomialZ_N<N>;
+impl<const N: u64> Sub for &IntModPoly<N> {
+    type Output = IntModPoly<N>;
     fn sub(self, _: Self) -> Self::Output {
         todo!()
     }
 }
 
-impl<const N: u64> Mul for &PolynomialZ_N<N> {
-    type Output = PolynomialZ_N<N>;
+impl<const N: u64> Mul for &IntModPoly<N> {
+    type Output = IntModPoly<N>;
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut result_coeff: Vec<Z_N<N>> = vec![];
+        let mut result_coeff: Vec<IntMod<N>> = vec![];
         result_coeff.resize(self.coeff.len() + rhs.coeff.len(), 0_u64.into());
         for (i, a) in self.coeff.iter().enumerate() {
             for (j, b) in rhs.coeff.iter().enumerate() {
@@ -96,40 +96,40 @@ impl<const N: u64> Mul for &PolynomialZ_N<N> {
     }
 }
 
-impl<const N: u64> Neg for &PolynomialZ_N<N> {
-    type Output = PolynomialZ_N<N>;
+impl<const N: u64> Neg for &IntModPoly<N> {
+    type Output = IntModPoly<N>;
     fn neg(self) -> Self::Output {
-        let result_coeff: Vec<Z_N<N>> = self.coeff.iter().map(|x| -x).collect();
+        let result_coeff: Vec<IntMod<N>> = self.coeff.iter().map(|x| -x).collect();
         result_coeff.into()
     }
 }
 
 /// RingElement implementation
 
-impl<const N: u64> RingElement for PolynomialZ_N<N> {
-    fn zero() -> PolynomialZ_N<N> {
+impl<const N: u64> RingElement for IntModPoly<N> {
+    fn zero() -> IntModPoly<N> {
         vec![0_u64].into()
     }
-    fn one() -> PolynomialZ_N<N> {
+    fn one() -> IntModPoly<N> {
         vec![1_u64].into()
     }
 }
 
-impl<'a, const N: u64> AddAssign<&'a Self> for PolynomialZ_N<N> {
+impl<'a, const N: u64> AddAssign<&'a Self> for IntModPoly<N> {
     fn add_assign(&mut self, rhs: &'a Self) {
         let result = &(*self) + rhs;
         self.coeff = result.coeff
     }
 }
 
-impl<'a, const N: u64> SubAssign<&'a Self> for PolynomialZ_N<N> {
+impl<'a, const N: u64> SubAssign<&'a Self> for IntModPoly<N> {
     fn sub_assign(&mut self, rhs: &'a Self) {
         let result = &(*self) - rhs;
         self.coeff = result.coeff
     }
 }
 
-impl<'a, const N: u64> MulAssign<&'a Self> for PolynomialZ_N<N> {
+impl<'a, const N: u64> MulAssign<&'a Self> for IntModPoly<N> {
     fn mul_assign(&mut self, rhs: &'a Self) {
         let result = &(*self) * rhs;
         self.coeff = result.coeff;
@@ -138,16 +138,16 @@ impl<'a, const N: u64> MulAssign<&'a Self> for PolynomialZ_N<N> {
 
 /// Other polynomial-specific operations.
 
-impl<const N: u64> PolynomialZ_N<N> {
+impl<const N: u64> IntModPoly<N> {
     /// Constructs the polynomial `x`.
-    pub fn x() -> PolynomialZ_N<N> {
+    pub fn x() -> IntModPoly<N> {
         vec![0_u64, 1_u64].into()
     }
 
     /// Evaluates the polynomial at the given point.
-    pub fn eval(&self, x: Z_N<N>) -> Z_N<N> {
-        let mut result: Z_N<N> = 0_u64.into();
-        let mut current_pow: Z_N<N> = 1_u64.into();
+    pub fn eval(&self, x: IntMod<N>) -> IntMod<N> {
+        let mut result: IntMod<N> = 0_u64.into();
+        let mut current_pow: IntMod<N> = 1_u64.into();
         for a in &self.coeff {
             result += current_pow * *a;
             current_pow *= x;
@@ -161,7 +161,7 @@ impl<const N: u64> PolynomialZ_N<N> {
     }
 
     /// Iterator over the coefficients in order of increasing power (`x^0`, `x^1`, ...)
-    pub fn coeff_iter(&self) -> Iter<'_, Z_N<{ N }>> {
+    pub fn coeff_iter(&self) -> Iter<'_, IntMod<{ N }>> {
         self.coeff.iter()
     }
 }
@@ -174,9 +174,9 @@ mod test {
 
     #[test]
     fn test_from_deg() {
-        let p = PolynomialZ_N::<P>::from(vec![42_u64, 6, 1, 0, 0, 0]);
-        let q = PolynomialZ_N::<P>::from(vec![42_u64, 6, 1, 0]);
-        let r = PolynomialZ_N::<P>::from(vec![42_u64, 6, 1]);
+        let p = IntModPoly::<P>::from(vec![42_u64, 6, 1, 0, 0, 0]);
+        let q = IntModPoly::<P>::from(vec![42_u64, 6, 1, 0]);
+        let r = IntModPoly::<P>::from(vec![42_u64, 6, 1]);
         assert_eq!(p, q);
         assert_eq!(p, r);
         assert_eq!(q, r);
@@ -184,9 +184,9 @@ mod test {
         assert_eq!(q.deg(), 2);
         assert_eq!(r.deg(), 2);
 
-        let t = PolynomialZ_N::<P>::from(vec![0_u64, 0]);
-        let u = PolynomialZ_N::<P>::from(vec![0_u64]);
-        let v = PolynomialZ_N::<P>::from(vec![0_u64; 0]);
+        let t = IntModPoly::<P>::from(vec![0_u64, 0]);
+        let u = IntModPoly::<P>::from(vec![0_u64]);
+        let v = IntModPoly::<P>::from(vec![0_u64; 0]);
         assert_eq!(t, u);
         assert_eq!(t, v);
         assert_eq!(u, v);
@@ -197,9 +197,9 @@ mod test {
 
     #[test]
     fn test_eval() {
-        let zero = PolynomialZ_N::<P>::zero();
-        let one = PolynomialZ_N::<P>::one();
-        let x = PolynomialZ_N::<P>::x();
+        let zero = IntModPoly::<P>::zero();
+        let one = IntModPoly::<P>::one();
+        let x = IntModPoly::<P>::x();
         assert_eq!(zero.eval(0_u64.into()), 0_u64.into());
         assert_eq!(zero.eval(10_u64.into()), 0_u64.into());
         assert_eq!(zero.eval(31_u64.into()), 0_u64.into());
@@ -210,7 +210,7 @@ mod test {
         assert_eq!(x.eval(10_u64.into()), 10_u64.into());
         assert_eq!(x.eval(31_u64.into()), 31_u64.into());
 
-        let p = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
+        let p = IntModPoly::<P>::from(vec![5_u64, 3, 1]);
 
         assert_eq!(p.eval((P - 3).into()), 5_u64.into());
         assert_eq!(p.eval((P - 2).into()), 3_u64.into());
@@ -223,26 +223,26 @@ mod test {
 
     #[test]
     fn test_add() {
-        let p1 = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
-        let q1 = PolynomialZ_N::<P>::from(vec![5_u64, 3]);
+        let p1 = IntModPoly::<P>::from(vec![5_u64, 3, 1]);
+        let q1 = IntModPoly::<P>::from(vec![5_u64, 3]);
         assert_eq!(&p1 + &q1, vec![10_u64, 6, 1].into());
         assert_eq!(&q1 + &p1, vec![10_u64, 6, 1].into());
 
-        let p2 = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
-        let q2 = PolynomialZ_N::<P>::from(vec![5_u64, 3, P - 1]);
+        let p2 = IntModPoly::<P>::from(vec![5_u64, 3, 1]);
+        let q2 = IntModPoly::<P>::from(vec![5_u64, 3, P - 1]);
         assert_eq!(&p2 + &q2, vec![10_u64, 6].into());
         assert_eq!(&q2 + &p2, vec![10_u64, 6].into());
     }
 
     #[test]
     fn test_mul() {
-        let p = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
-        let q = PolynomialZ_N::<P>::from(vec![-4_i64, 2, 1]);
-        let r = PolynomialZ_N::<P>::from(vec![-20_i64, -2, 7, 5, 1]);
+        let p = IntModPoly::<P>::from(vec![5_u64, 3, 1]);
+        let q = IntModPoly::<P>::from(vec![-4_i64, 2, 1]);
+        let r = IntModPoly::<P>::from(vec![-20_i64, -2, 7, 5, 1]);
         assert_eq!(&p * &q, r.clone());
 
-        let zero = PolynomialZ_N::<P>::zero();
-        let one = PolynomialZ_N::<P>::one();
+        let zero = IntModPoly::<P>::zero();
+        let one = IntModPoly::<P>::one();
         assert_eq!(&p * &zero, zero.clone());
         assert_eq!(&q * &zero, zero.clone());
         assert_eq!(&r * &zero, zero.clone());

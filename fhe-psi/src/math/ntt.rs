@@ -1,26 +1,8 @@
+use crate::math::int_mod::IntMod;
 use crate::math::ring_elem::*;
-use crate::math::z_n::Z_N;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::RwLock;
-
-// TODO: this should go somewhere else probably
-pub fn pow<const N: u64>(mut val: Z_N<N>, mut e: u64) -> Z_N<N> {
-    let mut res = Z_N::one();
-    while e > 0 {
-        if (e & 1) == 1 {
-            res *= val;
-        }
-        e >>= 1;
-        val *= val;
-    }
-    return res;
-}
-
-// TODO: this should also go somewhere else, aslo this is not efficient
-pub fn inverse<const N: u64>(val: Z_N<N>) -> Z_N<N> {
-    return pow(val, N - 2);
-}
 
 /// Memoization table for discrete gaussian sampling.
 /// Each key is (root, degree, modulus), which is likely overdescriptive.
@@ -29,13 +11,17 @@ pub fn inverse<const N: u64>(val: Z_N<N>) -> Z_N<N> {
 static ROOT_TABLES: Lazy<RwLock<HashMap<(u64, u64, usize), Vec<u64>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
-pub fn ntt<const D: usize, const N: u64>(values: &mut [Z_N<N>; D], root: Z_N<N>, log_d: usize) {
+pub fn ntt<const D: usize, const N: u64>(
+    values: &mut [IntMod<N>; D],
+    root: IntMod<N>,
+    log_d: usize,
+) {
     // compute root table, if necessary
     // TODO: see above. This unnecessarily recomputes the reverse table.
     let key = (root.into(), N, D);
     if ROOT_TABLES.read().unwrap().get(&key) == None {
         let mut table = vec![0; D];
-        let mut cur = Z_N::one();
+        let mut cur = IntMod::one();
         for i in 0..D {
             table[i] = cur.into();
             cur *= root;
@@ -54,7 +40,7 @@ pub fn ntt<const D: usize, const N: u64>(values: &mut [Z_N<N>; D], root: Z_N<N>,
 
         for block_start in (0..D).step_by(prev_block_size * 2) {
             for i in 0..prev_block_size {
-                let w: Z_N<N> = table[s * i].into();
+                let w: IntMod<N> = table[s * i].into();
                 let x = values[block_start + i];
                 let y = w * (values[block_start + i + prev_block_size]);
                 values[block_start + i] = x + y;
@@ -64,7 +50,7 @@ pub fn ntt<const D: usize, const N: u64>(values: &mut [Z_N<N>; D], root: Z_N<N>,
     }
 }
 
-pub fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [Z_N<N>; D], log_d: usize) {
+pub fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [IntMod<N>; D], log_d: usize) {
     for i in 0..D {
         let mut ri = i.reverse_bits();
         ri >>= (usize::BITS as usize) - log_d;
@@ -88,18 +74,18 @@ mod test {
     // TODO: add more tests.
     #[test]
     fn ntt_self_inverse() {
-        let mut coeff: [Z_N<P>; 4] = [1u64.into(), 2u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
+        let mut coeff: [IntMod<P>; 4] = [1u64.into(), 2u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
 
         let coeff_orig = coeff.clone();
-        let root = pow(W.into(), 1 << 14);
+        let root = IntMod::<P>::from(W).pow(1 << 14);
 
         bit_reverse_order(&mut coeff, LOG_D);
         ntt(&mut coeff, root, LOG_D);
         bit_reverse_order(&mut coeff, LOG_D);
-        ntt(&mut coeff, inverse(root), LOG_D);
+        ntt(&mut coeff, root.inverse(), LOG_D);
 
         for i in 0..coeff.len() {
-            coeff[i] *= inverse((D as u64).into());
+            coeff[i] *= IntMod::<P>::from(D as u64).inverse();
         }
 
         assert_eq!(coeff, coeff_orig);
@@ -107,14 +93,14 @@ mod test {
 
     #[test]
     fn forward_ntt() {
-        let mut coeff: [Z_N<P>; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
+        let mut coeff: [IntMod<P>; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
 
-        let root = pow(W.into(), 1 << 14);
+        let root = IntMod::<P>::from(W).pow(1 << 14);
 
         bit_reverse_order(&mut coeff, LOG_D);
         ntt(&mut coeff, root, LOG_D);
 
-        let one = Z_N::one();
+        let one = IntMod::one();
         let evaluated = [
             one + one,
             root + one,
@@ -127,8 +113,8 @@ mod test {
 
     #[test]
     fn backward_ntt() {
-        let root = pow(W.into(), 1 << 14);
-        let one = Z_N::one();
+        let root = IntMod::<P>::from(W).pow(1 << 14);
+        let one = IntMod::one();
 
         let mut evaluated = [
             one + one,
@@ -138,28 +124,28 @@ mod test {
         ];
 
         bit_reverse_order(&mut evaluated, LOG_D);
-        ntt(&mut evaluated, inverse(root), LOG_D);
+        ntt(&mut evaluated, root.inverse(), LOG_D);
 
         for i in 0..evaluated.len() {
-            evaluated[i] *= inverse((D as u64).into());
+            evaluated[i] *= IntMod::<P>::from(D as u64).inverse();
         }
 
-        let coeff: [Z_N<P>; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
+        let coeff: [IntMod<P>; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
 
         assert_eq!(coeff, evaluated);
     }
 
     #[test]
     fn test_fancy_ntt() {
-        let mut coeff1: [Z_N<P>; D] = [1u64.into(), 2u64.into(), 3u64.into(), 4u64.into()];
-        let mut coeff2: [Z_N<P>; D] = [1u64.into(), 1u64.into(), 1u64.into(), 1u64.into()];
-        let ans: [Z_N<P>; D] = [(P - 8).into(), (P - 4).into(), 2u64.into(), 10u64.into()];
+        let mut coeff1: [IntMod<P>; D] = [1u64.into(), 2u64.into(), 3u64.into(), 4u64.into()];
+        let mut coeff2: [IntMod<P>; D] = [1u64.into(), 1u64.into(), 1u64.into(), 1u64.into()];
+        let ans: [IntMod<P>; D] = [(P - 8).into(), (P - 4).into(), 2u64.into(), 10u64.into()];
 
-        let root = pow(W.into(), 1 << 13);
+        let root = IntMod::<P>::from(W).pow(1 << 13);
 
         for i in 0..coeff1.len() {
-            coeff1[i] *= pow(root, i as u64);
-            coeff2[i] *= pow(root, i as u64);
+            coeff1[i] *= root.pow(i as u64);
+            coeff2[i] *= root.pow(i as u64);
         }
 
         bit_reverse_order(&mut coeff1, LOG_D);
@@ -173,11 +159,11 @@ mod test {
         }
 
         bit_reverse_order(&mut coeff3, LOG_D);
-        ntt(&mut coeff3, inverse(root * root), LOG_D);
+        ntt(&mut coeff3, (root * root).inverse(), LOG_D);
 
         for i in 0..coeff3.len() {
-            coeff3[i] *= inverse((D as u64).into());
-            coeff3[i] *= inverse(pow(root, i as u64));
+            coeff3[i] *= IntMod::<P>::from(D as u64).inverse();
+            coeff3[i] *= root.pow(i as u64).inverse();
         }
         assert_eq!(coeff3, ans);
     }

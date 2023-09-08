@@ -1,17 +1,16 @@
 use crate::fhe::fhe::{FHEScheme, MulScalarEncryptionScheme};
 
-use crate::math::polynomial::PolynomialZ_N;
+use crate::math::int_mod::IntMod;
+use crate::math::int_mod_poly::IntModPoly;
 use crate::math::ring_elem::RingElement;
 use crate::math::utils::floor_log;
-use crate::math::z_n::Z_N;
-use crate::math::z_n_cyclo::Z_N_CycloRaw;
 
 // pub trait IntersectionStrategy {}
 
 pub fn intersect_naive<const P: u64>(
-    client_set: &Vec<Z_N<P>>,
-    server_set: &Vec<Z_N<P>>,
-) -> Vec<Z_N<P>> {
+    client_set: &Vec<IntMod<P>>,
+    server_set: &Vec<IntMod<P>>,
+) -> Vec<IntMod<P>> {
     let mut result_set = vec![];
     for i in server_set {
         if client_set.contains(&i) {
@@ -21,24 +20,24 @@ pub fn intersect_naive<const P: u64>(
     result_set
 }
 
-pub trait IntersectFHEScheme<const D: usize, const P: u64>:
-    FHEScheme<Plaintext = Z_N_CycloRaw<D, P>> + MulScalarEncryptionScheme<Z_N<P>>
+pub trait IntersectFHEScheme<const P: u64>:
+    FHEScheme<Plaintext = IntMod<P>> + MulScalarEncryptionScheme<IntMod<P>>
 {
 }
 
 /// Computes a PSI completely additively. For every client element `a`, the client computes and
 /// sends encryptions of `a^i` for `i = 0..|B|`.
-pub fn intersect_additive<const D: usize, const P: u64, FHE: IntersectFHEScheme<D, P>>(
-    client_set: &Vec<Z_N<P>>,
-    server_set: &Vec<Z_N<P>>,
-) -> Vec<Z_N<P>> {
+pub fn intersect_additive<const P: u64, FHE: IntersectFHEScheme<P>>(
+    client_set: &Vec<IntMod<P>>,
+    server_set: &Vec<IntMod<P>>,
+) -> Vec<IntMod<P>> {
     let (pk, sk) = FHE::keygen();
 
     /* Server computes its polynomial and sets up interface for client */
-    let mut server_polynomial = PolynomialZ_N::<P>::one();
+    let mut server_polynomial = IntModPoly::<P>::one();
     for b in server_set {
         // Monomial x - b
-        let monomial = vec![-*b, Z_N::one()].into();
+        let monomial = vec![-*b, IntMod::one()].into();
         server_polynomial *= &monomial;
     }
 
@@ -64,16 +63,16 @@ pub fn intersect_additive<const D: usize, const P: u64, FHE: IntersectFHEScheme<
     for a in client_set {
         let mut powers_of_a: Vec<FHE::Ciphertext> =
             Vec::with_capacity(server_polynomial_deg as usize);
-        let mut curr_power_of_a: Z_N<P> = 1_u64.into();
+        let mut curr_power_of_a: IntMod<P> = 1_u64.into();
         // TODO check: this should send 1? Off by one?
         for _ in 0..server_polynomial_deg {
             curr_power_of_a *= a;
-            powers_of_a.push(FHE::encrypt(&pk, &u64::from(curr_power_of_a).into()));
+            powers_of_a.push(FHE::encrypt_sk(&sk, &curr_power_of_a));
         }
 
         let result = server_interface(&pk, &powers_of_a);
         let result = FHE::decrypt(&sk, &result);
-        if result == Z_N_CycloRaw::<D, P>::zero() {
+        if result == IntMod::<P>::zero() {
             result_set.push(*a);
         }
     }
@@ -83,17 +82,17 @@ pub fn intersect_additive<const D: usize, const P: u64, FHE: IntersectFHEScheme<
 
 /// Computes a PSI with log-depth multiplications. For every client element `a`, the client computes
 /// and sends encryptions of `a^(2^i)` for `i = 0..floor(log2(|B|))`.
-pub fn intersect_log_multiplicative<const D: usize, const P: u64, FHE: IntersectFHEScheme<D, P>>(
-    client_set: &Vec<Z_N<P>>,
-    server_set: &Vec<Z_N<P>>,
-) -> Vec<Z_N<P>> {
+pub fn intersect_log_multiplicative<const P: u64, FHE: IntersectFHEScheme<P>>(
+    client_set: &Vec<IntMod<P>>,
+    server_set: &Vec<IntMod<P>>,
+) -> Vec<IntMod<P>> {
     let (pk, sk) = FHE::keygen();
 
     /* Server computes its polynomial and sets up interface for client */
-    let mut server_polynomial = PolynomialZ_N::<P>::one();
+    let mut server_polynomial = IntModPoly::<P>::one();
     for b in server_set {
         // Monomial x - b
-        let monomial = vec![-*b, Z_N::one()].into();
+        let monomial = vec![-*b, IntMod::one()].into();
         server_polynomial *= &monomial;
     }
 
@@ -141,15 +140,16 @@ pub fn intersect_log_multiplicative<const D: usize, const P: u64, FHE: Intersect
     for a in client_set {
         let log_degree: u64 = floor_log(2, server_polynomial_deg as u64) as u64 + 1;
         let mut powers_of_a: Vec<FHE::Ciphertext> = Vec::with_capacity(log_degree as usize);
-        let mut curr_power_of_a: Z_N<P> = *a;
+        let mut curr_power_of_a: IntMod<P> = *a;
         for _ in 0..log_degree {
-            powers_of_a.push(FHE::encrypt(&pk, &u64::from(curr_power_of_a).into()));
+            // powers_of_a.push(FHE::encrypt(&pk, curr_power_of_a));
+            powers_of_a.push(FHE::encrypt_sk(&sk, &curr_power_of_a));
             curr_power_of_a *= curr_power_of_a;
         }
 
         let result = server_interface(&pk, &powers_of_a);
         let result = FHE::decrypt(&sk, &result);
-        if result == Z_N_CycloRaw::<D, P>::zero() {
+        if result == IntMod::<P>::zero() {
             result_set.push(*a);
         }
     }
@@ -160,55 +160,63 @@ pub fn intersect_log_multiplicative<const D: usize, const P: u64, FHE: Intersect
 #[cfg(test)]
 mod test {
     use crate::fhe::fhe::FHEInsecure;
+    use crate::fhe::gsw::GSWTest;
+    use crate::fhe::gsw_crt::GSWCRTTest;
+    use crate::fhe::ringgsw_crt::RingGSWCRTTest;
     use crate::fhe::ringgsw_ntt::{RingGSWNTTTest, RingGSWNTTTestMedium};
+    use crate::fhe::ringgsw_ntt_crt::{RingGSWNTTCRTTest, RingGSWNTTCRTTestMedium};
     use crate::fhe::ringgsw_raw::{
         RingGSWRawTest, RingGSWRawTestMedium, RING_GSW_RAW_TEST_MEDIUM_PARAMS,
         RING_GSW_RAW_TEST_PARAMS,
     };
     use std::collections::HashSet;
 
-    const TEST_D: usize = RING_GSW_RAW_TEST_PARAMS.D;
     const TEST_P: u64 = RING_GSW_RAW_TEST_PARAMS.P;
 
-    const TEST_MEDIUM_D: usize = RING_GSW_RAW_TEST_MEDIUM_PARAMS.D;
     const TEST_MEDIUM_P: u64 = RING_GSW_RAW_TEST_MEDIUM_PARAMS.P;
 
     // Naive insecure scheme for testing
 
-    type IntersectFHEInsecure<const D: usize, const P: u64> = FHEInsecure<Z_N_CycloRaw<D, P>>;
+    type IntersectFHEInsecure<const P: u64> = FHEInsecure<IntMod<P>>;
 
-    impl<const D: usize, const P: u64> MulScalarEncryptionScheme<Z_N<P>>
-        for IntersectFHEInsecure<D, P>
-    {
-        fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
+    impl<const P: u64> MulScalarEncryptionScheme<IntMod<P>> for IntersectFHEInsecure<P> {
+        fn mul_scalar(lhs: &Self::Ciphertext, rhs: &IntMod<P>) -> Self::Ciphertext {
             lhs * &u64::from(*rhs).into()
         }
     }
 
-    impl<const D: usize, const P: u64> IntersectFHEScheme<D, P> for IntersectFHEInsecure<D, P> {}
+    impl<const P: u64> IntersectFHEScheme<P> for IntersectFHEInsecure<P> {}
 
     // Actual schemes
 
-    impl IntersectFHEScheme<TEST_D, TEST_P> for RingGSWRawTest {}
-    impl IntersectFHEScheme<TEST_D, TEST_P> for RingGSWNTTTest {}
-    impl IntersectFHEScheme<TEST_MEDIUM_D, TEST_MEDIUM_P> for RingGSWRawTestMedium {}
-    impl IntersectFHEScheme<TEST_MEDIUM_D, TEST_MEDIUM_P> for RingGSWNTTTestMedium {}
+    impl IntersectFHEScheme<TEST_P> for GSWTest {}
+    impl IntersectFHEScheme<TEST_P> for GSWCRTTest {}
+    impl IntersectFHEScheme<TEST_P> for RingGSWRawTest {}
+    impl IntersectFHEScheme<TEST_P> for RingGSWCRTTest {}
+    impl IntersectFHEScheme<TEST_P> for RingGSWNTTTest {}
+    impl IntersectFHEScheme<TEST_P> for RingGSWNTTCRTTest {}
+    impl IntersectFHEScheme<TEST_MEDIUM_P> for RingGSWRawTestMedium {}
+    impl IntersectFHEScheme<TEST_MEDIUM_P> for RingGSWNTTTestMedium {}
+    impl IntersectFHEScheme<TEST_MEDIUM_P> for RingGSWNTTCRTTestMedium {}
 
     use super::*;
 
     #[test]
     fn test_intersect_naive() {
         const P: u64 = TEST_P;
-        let client_set: Vec<Z_N<P>> = vec![4_u64, 6, 7, 15].into_iter().map(Z_N::from).collect();
-        let server_set: Vec<Z_N<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
+        let client_set: Vec<IntMod<P>> = vec![4_u64, 6, 7, 15]
             .into_iter()
-            .map(Z_N::from)
+            .map(IntMod::from)
             .collect();
-        let expected: Vec<Z_N<P>> = vec![4_u64, 7].into_iter().map(Z_N::from).collect();
+        let server_set: Vec<IntMod<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
+            .into_iter()
+            .map(IntMod::from)
+            .collect();
+        let expected: Vec<IntMod<P>> = vec![4_u64, 7].into_iter().map(IntMod::from).collect();
 
         assert_eq!(
-            HashSet::<Z_N<P>>::from_iter(intersect_naive(&client_set, &server_set)),
-            HashSet::<Z_N<P>>::from_iter(expected)
+            HashSet::<IntMod<P>>::from_iter(intersect_naive(&client_set, &server_set)),
+            HashSet::<IntMod<P>>::from_iter(expected)
         );
     }
 
@@ -216,83 +224,111 @@ mod test {
 
     #[test]
     fn test_intersect_additive_insecure() {
-        do_intersect_additive::<TEST_D, TEST_P, IntersectFHEInsecure<TEST_D, TEST_P>>();
+        do_intersect_additive::<TEST_P, IntersectFHEInsecure<TEST_P>>();
+    }
+
+    #[test]
+    fn test_intersect_additive_gsw() {
+        do_intersect_additive::<TEST_P, GSWTest>();
+    }
+
+    #[test]
+    fn test_intersect_additive_gsw_crt() {
+        do_intersect_additive::<TEST_P, GSWCRTTest>();
     }
 
     #[test]
     fn test_intersect_additive_ringgsw_raw() {
-        do_intersect_additive::<TEST_D, TEST_P, RingGSWRawTest>();
+        do_intersect_additive::<TEST_P, RingGSWRawTest>();
     }
 
     #[test]
     fn test_intersect_additive_ringgsw_ntt() {
-        do_intersect_additive::<TEST_D, TEST_P, RingGSWNTTTest>();
+        do_intersect_additive::<TEST_P, RingGSWNTTTest>();
     }
 
     // Multiplicative-log-depth tests
 
     #[test]
     fn test_intersect_log_multiplicative_insecure() {
-        do_intersect_log_multiplicative::<TEST_D, TEST_P, IntersectFHEInsecure<TEST_D, TEST_P>>();
+        do_intersect_log_multiplicative::<TEST_P, IntersectFHEInsecure<TEST_P>>();
     }
 
     #[test]
     fn test_intersect_log_multiplicative_ringgsw_raw() {
-        do_intersect_log_multiplicative::<TEST_D, TEST_P, RingGSWRawTest>();
+        do_intersect_log_multiplicative::<TEST_P, RingGSWRawTest>();
     }
 
     #[test]
     fn test_intersect_log_multiplicative_ringgsw_ntt() {
-        do_intersect_log_multiplicative::<TEST_D, TEST_P, RingGSWNTTTest>();
+        do_intersect_log_multiplicative::<TEST_P, RingGSWNTTTest>();
+    }
+
+    #[test]
+    fn test_intersect_log_multiplicative_ringgsw_crt() {
+        do_intersect_log_multiplicative::<TEST_P, RingGSWCRTTest>();
+    }
+
+    #[test]
+    fn test_intersect_log_multiplicative_ringgsw_crt_ntt() {
+        do_intersect_log_multiplicative::<TEST_P, RingGSWNTTCRTTest>();
     }
 
     #[ignore]
     #[test]
     fn test_intersect_log_multiplicative_ringgsw_raw_medium() {
-        do_intersect_log_multiplicative::<TEST_MEDIUM_D, TEST_MEDIUM_P, RingGSWRawTestMedium>();
+        do_intersect_log_multiplicative::<TEST_MEDIUM_P, RingGSWRawTestMedium>();
     }
 
     #[ignore]
     #[test]
     fn test_intersect_log_multiplicative_ringgsw_ntt_medium() {
-        do_intersect_log_multiplicative::<TEST_MEDIUM_D, TEST_MEDIUM_P, RingGSWNTTTestMedium>();
+        do_intersect_log_multiplicative::<TEST_MEDIUM_P, RingGSWNTTTestMedium>();
+    }
+
+    #[ignore]
+    #[test]
+    fn test_intersect_log_multiplicative_ringgsw_ntt_crt_medium() {
+        do_intersect_log_multiplicative::<TEST_MEDIUM_P, RingGSWNTTCRTTestMedium>();
     }
 
     // TODO: make these generic over intersection functions
     // TODO: make general test function that takes client_set, server_set, expected_set & generic intersection function
 
-    fn do_intersect_additive<const D: usize, const P: u64, FHE: IntersectFHEScheme<D, P>>() {
-        let client_set: Vec<Z_N<P>> = vec![4_u64, 6, 7, 15].into_iter().map(Z_N::from).collect();
-        let server_set: Vec<Z_N<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
+    fn do_intersect_additive<const P: u64, FHE: IntersectFHEScheme<P>>() {
+        let client_set: Vec<IntMod<P>> = vec![4_u64, 6, 7, 15]
             .into_iter()
-            .map(Z_N::from)
+            .map(IntMod::from)
             .collect();
-        let expected: Vec<Z_N<P>> = vec![4_u64, 7].into_iter().map(Z_N::from).collect();
+        let server_set: Vec<IntMod<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
+            .into_iter()
+            .map(IntMod::from)
+            .collect();
+        let expected: Vec<IntMod<P>> = vec![4_u64, 7].into_iter().map(IntMod::from).collect();
 
         assert_eq!(
-            HashSet::<Z_N<P>>::from_iter(intersect_additive::<D, P, FHE>(&client_set, &server_set)),
-            HashSet::<Z_N<P>>::from_iter(expected)
+            HashSet::<IntMod<P>>::from_iter(intersect_additive::<P, FHE>(&client_set, &server_set)),
+            HashSet::<IntMod<P>>::from_iter(expected)
         );
     }
 
-    fn do_intersect_log_multiplicative<
-        const D: usize,
-        const P: u64,
-        FHE: IntersectFHEScheme<D, P>,
-    >() {
-        let client_set: Vec<Z_N<P>> = vec![4_u64, 6, 7, 15].into_iter().map(Z_N::from).collect();
-        let server_set: Vec<Z_N<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
+    fn do_intersect_log_multiplicative<const P: u64, FHE: IntersectFHEScheme<P>>() {
+        let client_set: Vec<IntMod<P>> = vec![4_u64, 6, 7, 15]
             .into_iter()
-            .map(Z_N::from)
+            .map(IntMod::from)
             .collect();
-        let expected: Vec<Z_N<P>> = vec![4_u64, 7].into_iter().map(Z_N::from).collect();
+        let server_set: Vec<IntMod<P>> = vec![1_u64, 3, 4, 5, 7, 10, 12, 20]
+            .into_iter()
+            .map(IntMod::from)
+            .collect();
+        let expected: Vec<IntMod<P>> = vec![4_u64, 7].into_iter().map(IntMod::from).collect();
 
         assert_eq!(
-            HashSet::<Z_N<P>>::from_iter(intersect_log_multiplicative::<D, P, FHE>(
+            HashSet::<IntMod<P>>::from_iter(intersect_log_multiplicative::<P, FHE>(
                 &client_set,
                 &server_set
             )),
-            HashSet::<Z_N<P>>::from_iter(expected)
+            HashSet::<IntMod<P>>::from_iter(expected)
         );
     }
 
