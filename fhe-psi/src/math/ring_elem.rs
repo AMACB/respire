@@ -25,6 +25,12 @@ where
     fn zero() -> Self;
     /// Constructs the one element (multiplicative identity) of the ring.
     fn one() -> Self;
+
+    /// Add `a * b` to `self` in-place. This method is used for matrix multiplication, so optimizing
+    /// it may be desirable.
+    fn add_eq_mul(&mut self, a: &Self, b: &Self) {
+        *self += &(a * b);
+    }
 }
 
 /// A reference to a RingElement that supports non-inplace ring operations. This is required for
@@ -39,4 +45,11 @@ pub trait RingElementRef<Owned: RingElement>:
 where
     for<'a> &'a Owned: RingElementRef<Owned>,
 {
+}
+
+pub trait NormedRingElement: RingElement
+where
+    for<'a> &'a Self: RingElementRef<Self>,
+{
+    fn norm(&self) -> u64;
 }

@@ -9,7 +9,7 @@ use crate::math::ntt::*;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use rand::Rng;
-use std::cmp::{max, min};
+use std::cmp::max;
 use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::slice::Iter;
 
@@ -25,6 +25,14 @@ pub struct IntModCyclo<const D: usize, const N: u64> {
 
 impl<const D: usize, const N: u64> From<u64> for IntModCyclo<D, N> {
     fn from(a: u64) -> Self {
+        let mut result = Self::zero();
+        result.coeff[0] = a.into();
+        result
+    }
+}
+
+impl<const D: usize, const N: u64> From<i64> for IntModCyclo<D, N> {
+    fn from(a: i64) -> Self {
         let mut result = Self::zero();
         result.coeff[0] = a.into();
         result
@@ -321,13 +329,11 @@ impl<const D: usize, const N: u64> IntModCyclo<D, N> {
     }
 }
 
-impl<const D: usize, const N: u64> IntModCyclo<D, N> {
-    pub fn norm(&self) -> u64 {
+impl<const D: usize, const N: u64> NormedRingElement for IntModCyclo<D, N> {
+    fn norm(&self) -> u64 {
         let mut worst: u64 = 0;
         for i in 0..D {
-            let pos: u64 = self.coeff[i].into();
-            let neg: u64 = (-self.coeff[i]).into();
-            worst = max(worst, min(pos, neg));
+            worst = max(worst, self.coeff[i].norm());
         }
         worst
     }

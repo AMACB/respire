@@ -272,6 +272,7 @@ pub type RingGSWNTTTestMedium = ring_gsw_ntt_from_params!(RING_GSW_NTT_TEST_MEDI
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::math::ring_elem::NormedRingElement;
 
     #[test]
     fn keygen_is_correct() {

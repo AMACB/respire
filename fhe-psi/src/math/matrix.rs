@@ -3,7 +3,8 @@
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use rand::Rng;
-use std::ops::{Add, Index, IndexMut, Mul, Neg, Sub};
+use std::cmp::max;
+use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub};
 
 // TODO
 // * Implement as an array instead of as a `Vec`. The main sticking point is that to move a matrix
@@ -163,15 +164,14 @@ where
 {
     /// Converts a matrix over the ring `R` into a matrix over the ring `S`, given that `R` can be
     /// converted to `S`.
-    pub fn into_ring<S: RingElement>(self) -> Matrix<N, M, S>
+    pub fn into_ring<S: RingElement, F: Fn(&R) -> S>(&self, func: F) -> Matrix<N, M, S>
     where
         for<'a> &'a S: RingElementRef<S>,
-        for<'a> S: From<&'a R>,
     {
         let mut result: Matrix<N, M, S> = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                result[(r, c)] = S::from(&self[(r, c)]);
+                result[(r, c)] = func(&self[(r, c)]);
             }
         }
         result
@@ -210,11 +210,26 @@ where
         for r in 0..N {
             for c in 0..K {
                 for i in 0..M {
-                    out[(r, c)] += &(&self[(r, i)] * &other[(i, c)]);
+                    out[(r, c)].add_eq_mul(&self[(r, i)], &other[(i, c)]);
                 }
             }
         }
         out
+    }
+}
+
+impl<const N: usize, const K: usize, R: RingElement> Matrix<N, K, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    pub fn add_eq_mul<const M: usize>(&mut self, a: &Matrix<N, M, R>, b: &Matrix<M, K, R>) {
+        for r in 0..N {
+            for c in 0..K {
+                for i in 0..M {
+                    self[(r, c)].add_eq_mul(&a[(r, i)], &b[(i, c)]);
+                }
+            }
+        }
     }
 }
 
@@ -229,10 +244,23 @@ where
         let mut out = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                out[(r, c)] = &self[(r, c)] + &other[(r, c)]
+                out[(r, c)] = &self[(r, c)] + &other[(r, c)];
             }
         }
         out
+    }
+}
+
+impl<const N: usize, const M: usize, R: RingElement> AddAssign<&Matrix<N, M, R>> for Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    fn add_assign(&mut self, rhs: &Matrix<N, M, R>) {
+        for r in 0..N {
+            for c in 0..M {
+                self[(r, c)] += &rhs[(r, c)];
+            }
+        }
     }
 }
 
@@ -272,7 +300,24 @@ where
     }
 }
 
-// Random sampling implementations inherited from the base ring.
+/// Norm
+impl<const N: usize, const M: usize, R: RingElement> Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+    R: NormedRingElement,
+{
+    pub fn norm(&self) -> u64 {
+        let mut worst: u64 = 0;
+        for r in 0..N {
+            for c in 0..M {
+                worst = max(worst, self[(r, c)].norm());
+            }
+        }
+        worst
+    }
+}
+
+/// Random sampling implementations inherited from the base ring.
 
 impl<const N: usize, const M: usize, R: RingElement> RandUniformSampled for Matrix<N, M, R>
 where
