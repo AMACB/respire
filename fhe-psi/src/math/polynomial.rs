@@ -1,20 +1,35 @@
+//! Polynomials over `Z_n`.
+
+use crate::math::ring_elem::*;
+use crate::math::z_n::Z_N;
 use std::iter;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::slice::Iter;
 
-use rand::Rng;
+// TODO: Improve the in-place `RingElement` operations
 
-use crate::ring_elem::{RingElement, RingElementRef};
-use crate::z_n::Z_N;
-
+/// Coefficient representation of a polynomial with coefficients mod `n`. While this type does
+/// implement [`RingElement`], [`RingElementRef`], it is not intended for use if high efficiency is
+/// required.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolynomialZ_N<const N: u64> {
     coeff: Vec<Z_N<N>>,
 }
 
-/*
- * Conversions
- */
+/// Conversions
+
+impl<const N: u64> From<u64> for PolynomialZ_N<N> {
+    fn from(a: u64) -> Self {
+        vec![a].into()
+    }
+}
+
+impl<const N: u64> From<Vec<i64>> for PolynomialZ_N<N> {
+    fn from(coeff: Vec<i64>) -> Self {
+        let v: Vec<Z_N<N>> = coeff.iter().map(|x| (*x).into()).collect();
+        PolynomialZ_N::from(v)
+    }
+}
 
 impl<const N: u64> From<Vec<u64>> for PolynomialZ_N<N> {
     fn from(coeff: Vec<u64>) -> Self {
@@ -37,9 +52,7 @@ impl<const N: u64> From<Vec<Z_N<N>>> for PolynomialZ_N<N> {
     }
 }
 
-/*
- * RingElementRef implementation
- */
+/// RingElementRef implementation
 
 impl<const N: u64> RingElementRef<PolynomialZ_N<N>> for &PolynomialZ_N<N> {}
 
@@ -91,25 +104,16 @@ impl<const N: u64> Neg for &PolynomialZ_N<N> {
     }
 }
 
-/*
- * RingElement implementation
- */
+/// RingElement implementation
 
 impl<const N: u64> RingElement for PolynomialZ_N<N> {
     fn zero() -> PolynomialZ_N<N> {
         vec![0_u64].into()
     }
-
     fn one() -> PolynomialZ_N<N> {
         vec![1_u64].into()
     }
-
-    fn random<T: Rng>(_: &mut T) -> Self {
-        unimplemented!()
-    }
 }
-
-// TODO: make these not stupid
 
 impl<'a, const N: u64> AddAssign<&'a Self> for PolynomialZ_N<N> {
     fn add_assign(&mut self, rhs: &'a Self) {
@@ -132,15 +136,15 @@ impl<'a, const N: u64> MulAssign<&'a Self> for PolynomialZ_N<N> {
     }
 }
 
-/*
- * Other Polynomial things
- */
+/// Other polynomial-specific operations.
 
 impl<const N: u64> PolynomialZ_N<N> {
+    /// Constructs the polynomial `x`.
     pub fn x() -> PolynomialZ_N<N> {
         vec![0_u64, 1_u64].into()
     }
 
+    /// Evaluates the polynomial at the given point.
     pub fn eval(&self, x: Z_N<N>) -> Z_N<N> {
         let mut result: Z_N<N> = 0_u64.into();
         let mut current_pow: Z_N<N> = 1_u64.into();
@@ -151,11 +155,12 @@ impl<const N: u64> PolynomialZ_N<N> {
         result
     }
 
-    /* Degree of polynomial. By convention 0 has degree -1. */
+    /// Degree of polynomial. By convention 0 has degree -1.
     pub fn deg(&self) -> isize {
         (self.coeff.len() as isize) - 1
     }
 
+    /// Iterator over the coefficients in order of increasing power (`x^0`, `x^1`, ...)
     pub fn coeff_iter(&self) -> Iter<'_, Z_N<{ N }>> {
         self.coeff.iter()
     }
@@ -169,9 +174,9 @@ mod test {
 
     #[test]
     fn test_from_deg() {
-        let p = PolynomialZ_N::<P>::from(vec![42, 6, 1, 0, 0, 0]);
-        let q = PolynomialZ_N::<P>::from(vec![42, 6, 1, 0]);
-        let r = PolynomialZ_N::<P>::from(vec![42, 6, 1]);
+        let p = PolynomialZ_N::<P>::from(vec![42_u64, 6, 1, 0, 0, 0]);
+        let q = PolynomialZ_N::<P>::from(vec![42_u64, 6, 1, 0]);
+        let r = PolynomialZ_N::<P>::from(vec![42_u64, 6, 1]);
         assert_eq!(p, q);
         assert_eq!(p, r);
         assert_eq!(q, r);
@@ -179,8 +184,8 @@ mod test {
         assert_eq!(q.deg(), 2);
         assert_eq!(r.deg(), 2);
 
-        let t = PolynomialZ_N::<P>::from(vec![0, 0]);
-        let u = PolynomialZ_N::<P>::from(vec![0]);
+        let t = PolynomialZ_N::<P>::from(vec![0_u64, 0]);
+        let u = PolynomialZ_N::<P>::from(vec![0_u64]);
         let v = PolynomialZ_N::<P>::from(vec![0_u64; 0]);
         assert_eq!(t, u);
         assert_eq!(t, v);
@@ -205,7 +210,7 @@ mod test {
         assert_eq!(x.eval(10_u64.into()), 10_u64.into());
         assert_eq!(x.eval(31_u64.into()), 31_u64.into());
 
-        let p = PolynomialZ_N::<P>::from(vec![5, 3, 1]);
+        let p = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
 
         assert_eq!(p.eval((P - 3).into()), 5_u64.into());
         assert_eq!(p.eval((P - 2).into()), 3_u64.into());
@@ -218,22 +223,22 @@ mod test {
 
     #[test]
     fn test_add() {
-        let p1 = PolynomialZ_N::<P>::from(vec![5, 3, 1]);
-        let q1 = PolynomialZ_N::<P>::from(vec![5, 3]);
-        assert_eq!(&p1 + &q1, vec![10, 6, 1].into());
-        assert_eq!(&q1 + &p1, vec![10, 6, 1].into());
+        let p1 = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
+        let q1 = PolynomialZ_N::<P>::from(vec![5_u64, 3]);
+        assert_eq!(&p1 + &q1, vec![10_u64, 6, 1].into());
+        assert_eq!(&q1 + &p1, vec![10_u64, 6, 1].into());
 
-        let p2 = PolynomialZ_N::<P>::from(vec![5, 3, 1]);
-        let q2 = PolynomialZ_N::<P>::from(vec![5, 3, P - 1]);
-        assert_eq!(&p2 + &q2, vec![10, 6].into());
-        assert_eq!(&q2 + &p2, vec![10, 6].into());
+        let p2 = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
+        let q2 = PolynomialZ_N::<P>::from(vec![5_u64, 3, P - 1]);
+        assert_eq!(&p2 + &q2, vec![10_u64, 6].into());
+        assert_eq!(&q2 + &p2, vec![10_u64, 6].into());
     }
 
     #[test]
     fn test_mul() {
-        let p = PolynomialZ_N::<P>::from(vec![5, 3, 1]);
-        let q = PolynomialZ_N::<P>::from(vec![P - 4, 2, 1]);
-        let r = PolynomialZ_N::<P>::from(vec![P - 20, P - 2, 7, 5, 1]);
+        let p = PolynomialZ_N::<P>::from(vec![5_u64, 3, 1]);
+        let q = PolynomialZ_N::<P>::from(vec![-4_i64, 2, 1]);
+        let r = PolynomialZ_N::<P>::from(vec![-20_i64, -2, 7, 5, 1]);
         assert_eq!(&p * &q, r.clone());
 
         let zero = PolynomialZ_N::<P>::zero();
