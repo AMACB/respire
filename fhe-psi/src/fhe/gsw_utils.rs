@@ -1,10 +1,10 @@
 //! Generic GSW implementations over ring elements.
 
-use crate::fhe::gadget::*;
+use crate::math::gadget::*;
+use crate::math::int_mod::IntMod;
 use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
-use crate::math::z_n::Z_N;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
@@ -117,9 +117,9 @@ where
 }
 
 /// Rounding function used to switch from the ciphertext ring `Z_Q` to the plaintext ring `Z_P`.
-pub fn gsw_round<const P: u64, const Q: u64, T: Into<u64>>(x: T) -> Z_N<P> {
+pub fn gsw_round<const P: u64, const Q: u64, T: Into<u64>>(x: T) -> IntMod<P> {
     let floored = x.into() * P * 2 / Q;
-    Z_N::from((floored + 1) / 2)
+    IntMod::from((floored + 1) / 2)
 }
 
 pub fn ciphertext_add<

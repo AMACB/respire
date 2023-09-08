@@ -2,10 +2,10 @@
 
 use crate::fhe::fhe::*;
 use crate::fhe::gsw_utils::*;
+use crate::math::int_mod::IntMod;
+use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::matrix::Matrix;
 use crate::math::utils::ceil_log;
-use crate::math::z_n::Z_N;
-use crate::math::z_n_cyclo::Z_N_CycloRaw;
 
 /*
  * A Ring GSW implementation
@@ -44,7 +44,7 @@ pub struct RingGSWRawCiphertext<
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    ct: Matrix<N, M, Z_N_CycloRaw<D, Q>>,
+    ct: Matrix<N, M, IntModCyclo<D, Q>>,
 }
 
 #[derive(Clone, Debug)]
@@ -57,7 +57,7 @@ pub struct RingGSWRawPublicKey<
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    A: Matrix<N, M, Z_N_CycloRaw<D, Q>>,
+    A: Matrix<N, M, IntModCyclo<D, Q>>,
 }
 
 #[derive(Clone, Debug)]
@@ -70,7 +70,7 @@ pub struct RingGSWRawSecretKey<
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    s_T: Matrix<1, N, Z_N_CycloRaw<D, Q>>,
+    s_T: Matrix<1, N, IntModCyclo<D, Q>>,
 }
 
 impl<
@@ -100,7 +100,7 @@ impl<
     > EncryptionScheme
     for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
-    type Plaintext = Z_N<P>;
+    type Plaintext = IntMod<P>;
     type Ciphertext = RingGSWRawCiphertext<N, M, P, Q, D, G_BASE, G_LEN>;
     type PublicKey = RingGSWRawPublicKey<N, M, P, Q, D, G_BASE, G_LEN>;
     type SecretKey = RingGSWRawSecretKey<N, M, P, Q, D, G_BASE, G_LEN>;
@@ -111,20 +111,20 @@ impl<
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: &Self::Plaintext) -> Self::Ciphertext {
-        let mu = Z_N_CycloRaw::from(u64::from(mu.clone()));
+        let mu = IntModCyclo::from(u64::from(mu.clone()));
         let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, _>(&pk.A, mu);
         Self::Ciphertext { ct }
     }
 
     fn encrypt_sk(sk: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
-        let mu = Z_N_CycloRaw::from(u64::from(mu.clone()));
+        let mu = IntModCyclo::from(u64::from(mu.clone()));
         let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
             &sk.s_T, mu,
         );
         Self::Ciphertext { ct }
     }
 
-    fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
+    fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> IntMod<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
         let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
@@ -187,11 +187,11 @@ impl<
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > AddScalarEncryptionScheme<Z_N<P>>
+    > AddScalarEncryptionScheme<IntMod<P>>
     for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
-    fn add_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
-        let rhs_q = Z_N_CycloRaw::<D, Q>::from(u64::from(*rhs));
+    fn add_scalar(lhs: &Self::Ciphertext, rhs: &IntMod<P>) -> Self::Ciphertext {
+        let rhs_q = IntModCyclo::<D, Q>::from(u64::from(*rhs));
         Self::Ciphertext {
             ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q),
         }
@@ -208,11 +208,11 @@ impl<
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > MulScalarEncryptionScheme<Z_N<P>>
+    > MulScalarEncryptionScheme<IntMod<P>>
     for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
-    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Z_N<P>) -> Self::Ciphertext {
-        let rhs_q = Z_N_CycloRaw::<D, Q>::from(u64::from(*rhs));
+    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &IntMod<P>) -> Self::Ciphertext {
+        let rhs_q = IntModCyclo::<D, Q>::from(u64::from(*rhs));
         Self::Ciphertext {
             ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q),
         }
@@ -324,10 +324,10 @@ mod test {
     #[test]
     fn homomorphism_mul_multiple_correct() {
         let (A, s_T) = RingGSWRawTest::keygen();
-        let mu1 = Z_N::from(5_u64);
-        let mu2 = Z_N::from(12_u64);
-        let mu3 = Z_N::from(6_u64);
-        let mu4 = Z_N::from(18_u64);
+        let mu1 = IntMod::from(5_u64);
+        let mu2 = IntMod::from(12_u64);
+        let mu3 = IntMod::from(6_u64);
+        let mu4 = IntMod::from(18_u64);
 
         let ct1 = RingGSWRawTest::encrypt(&A, &mu1);
         let ct2 = RingGSWRawTest::encrypt(&A, &mu2);

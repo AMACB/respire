@@ -327,7 +327,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::math::z_n::*;
+    use crate::math::int_mod::*;
 
     use super::*;
 
@@ -337,58 +337,58 @@ mod test {
 
     #[test]
     fn zero_matrix_is_correct() {
-        let zero: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let zero: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         for i in 0..N {
             for j in 0..M {
-                assert_eq!(zero[(i, j)], Z_N::zero());
+                assert_eq!(zero[(i, j)], IntMod::zero());
             }
         }
     }
 
     #[test]
     fn identity_matrix_is_correct() {
-        let I: Matrix<M, M, Z_N<Q>> = Matrix::identity();
+        let ident: Matrix<M, M, IntMod<Q>> = Matrix::identity();
         for i in 0..M {
             for j in 0..M {
                 if i == j {
-                    assert_eq!(I[(i, j)], Z_N::one());
+                    assert_eq!(ident[(i, j)], IntMod::one());
                 } else {
-                    assert_eq!(I[(i, j)], Z_N::zero());
+                    assert_eq!(ident[(i, j)], IntMod::zero());
                 }
             }
         }
     }
 
     fn addition_test1() {
-        let mut mat: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let mut mat: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         for i in 0..N {
             for j in 0..M {
-                mat[(i, j)] = Z_N::from((i * M + j) as u64);
+                mat[(i, j)] = IntMod::from((i * M + j) as u64);
             }
         }
-        let zero: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let zero: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         assert_eq!(&mat + &zero, mat, "multiplication by identity failed");
     }
 
     fn addition_test2() {
-        let mut mat1: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let mut mat1: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         for i in 0..N {
             for j in 0..M {
-                mat1[(i, j)] = Z_N::from((i * M + j) as u64);
+                mat1[(i, j)] = IntMod::from((i * M + j) as u64);
             }
         }
 
-        let mut mat2: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let mut mat2: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         for i in 0..N {
             for j in 0..M {
-                mat2[(i, j)] = Z_N::from((i + 2 * j) as u64);
+                mat2[(i, j)] = IntMod::from((i + 2 * j) as u64);
             }
         }
 
-        let mut mat3: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let mut mat3: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         for i in 0..N {
             for j in 0..M {
-                mat3[(i, j)] = Z_N::from((i * (M + 1) + 3 * j) as u64);
+                mat3[(i, j)] = IntMod::from((i * (M + 1) + 3 * j) as u64);
             }
         }
 
@@ -402,35 +402,35 @@ mod test {
     }
 
     fn multiplication_test1() {
-        let mut mat: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let mut mat: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         for i in 0..N {
             for j in 0..M {
-                mat[(i, j)] = Z_N::from((i * M + j) as u64);
+                mat[(i, j)] = IntMod::from((i * M + j) as u64);
             }
         }
-        let I = Matrix::identity();
-        assert_eq!(&mat * &I, mat, "multiplication by identity failed");
+        let ident = Matrix::identity();
+        assert_eq!(&mat * &ident, mat, "multiplication by identity failed");
     }
 
     fn multiplication_test2() {
-        let mut mat1: Matrix<N, N, Z_N<Q>> = Matrix::zero();
+        let mut mat1: Matrix<N, N, IntMod<Q>> = Matrix::zero();
         for i in 0..N {
             for j in 0..N {
-                mat1[(i, j)] = Z_N::from((i * N + j) as u64);
+                mat1[(i, j)] = IntMod::from((i * N + j) as u64);
             }
         }
 
-        let mut mat2: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let mut mat2: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         for i in 0..N {
             for j in 0..M {
-                mat2[(i, j)] = Z_N::from((i * M + j) as u64);
+                mat2[(i, j)] = IntMod::from((i * M + j) as u64);
             }
         }
 
-        let mut mat3: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let mut mat3: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         for j in 0..M {
-            mat3[(0, j)] = Z_N::from((M + j) as u64);
-            mat3[(1, j)] = Z_N::from((3 * M + 5 * j) as u64);
+            mat3[(0, j)] = IntMod::from((M + j) as u64);
+            mat3[(1, j)] = IntMod::from((3 * M + 5 * j) as u64);
         }
 
         assert_eq!(&mat1 * &mat2, mat3);
@@ -444,13 +444,13 @@ mod test {
 
     #[test]
     fn negation_is_correct() {
-        let mut mat: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let mut mat: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         for i in 0..N {
             for j in 0..M {
-                mat[(i, j)] = Z_N::from((i * M + j) as u64);
+                mat[(i, j)] = IntMod::from((i * M + j) as u64);
             }
         }
-        let zero: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let zero: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         assert_eq!(
             &mat + &(-&mat),
             zero,
@@ -460,32 +460,32 @@ mod test {
 
     #[test]
     fn scalar_mult_is_correct() {
-        let mut mat1: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let mut mat1: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         for i in 0..N {
             for j in 0..M {
-                mat1[(i, j)] = Z_N::from((i * M + j) as u64);
+                mat1[(i, j)] = IntMod::from((i * M + j) as u64);
             }
         }
 
-        let mut mat2: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let mut mat2: Matrix<N, M, IntMod<Q>> = Matrix::zero();
         for i in 0..N {
             for j in 0..M {
-                mat2[(i, j)] = Z_N::from((5 * (i * M + j)) as u64);
+                mat2[(i, j)] = IntMod::from((5 * (i * M + j)) as u64);
             }
         }
 
-        let zero: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let zero: Matrix<N, M, IntMod<Q>> = Matrix::zero();
 
         assert_eq!(
-            &mat1 * &Z_N::zero(),
+            &mat1 * &IntMod::zero(),
             zero,
             "multiplication by scalar zero doesn't yield zero"
         );
         assert_eq!(
-            &mat1 * &Z_N::one(),
+            &mat1 * &IntMod::one(),
             mat1,
             "multiplication by scalar one doesn't yield itself"
         );
-        assert_eq!(&mat1 * &Z_N::from(5_u64), mat2);
+        assert_eq!(&mat1 * &IntMod::from(5_u64), mat2);
     }
 }

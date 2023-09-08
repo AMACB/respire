@@ -1,8 +1,6 @@
 // use crate::fhe::ringgsw_ntt::RingGSWNTT;
 // use crate::math::matrix::Matrix;
 // use crate::math::utils::ceil_log;
-// use crate::math::z_n_cyclo::Z_N_CycloRaw;
-// use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 //
 // pub trait PIRScheme {
 //     type Database;

@@ -73,8 +73,8 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::math::int_mod::IntMod;
     use crate::math::utils::ceil_log;
-    use crate::math::z_n::Z_N;
 
     const N: usize = 2;
     const M: usize = 8;
@@ -84,35 +84,35 @@ mod test {
 
     #[test]
     fn gadget_is_correct() {
-        let G = build_gadget::<Z_N<Q>, N, M, G_BASE, G_LEN>();
+        let g_mat = build_gadget::<IntMod<Q>, N, M, G_BASE, G_LEN>();
 
-        let mut expected_G: Matrix<N, M, Z_N<Q>> = Matrix::zero();
-        expected_G[(0, 0)] = 1_u64.into();
-        expected_G[(0, 1)] = 2_u64.into();
-        expected_G[(0, 2)] = 4_u64.into();
-        expected_G[(0, 3)] = 8_u64.into();
+        let mut expected_g_mat: Matrix<N, M, IntMod<Q>> = Matrix::zero();
+        expected_g_mat[(0, 0)] = 1_u64.into();
+        expected_g_mat[(0, 1)] = 2_u64.into();
+        expected_g_mat[(0, 2)] = 4_u64.into();
+        expected_g_mat[(0, 3)] = 8_u64.into();
 
-        expected_G[(1, 4)] = 1_u64.into();
-        expected_G[(1, 5)] = 2_u64.into();
-        expected_G[(1, 6)] = 4_u64.into();
-        expected_G[(1, 7)] = 8_u64.into();
+        expected_g_mat[(1, 4)] = 1_u64.into();
+        expected_g_mat[(1, 5)] = 2_u64.into();
+        expected_g_mat[(1, 6)] = 4_u64.into();
+        expected_g_mat[(1, 7)] = 8_u64.into();
 
-        assert_eq!(G, expected_G, "gadget constructed incorrectly");
+        assert_eq!(g_mat, expected_g_mat, "gadget constructed incorrectly");
     }
 
     #[test]
     fn gadget_inverse_is_correct() {
-        let mut R: Matrix<N, M, Z_N<Q>> = Matrix::zero();
+        let mut m: Matrix<N, M, IntMod<Q>> = Matrix::zero();
 
         for i in 0..N {
             for j in 0..M {
-                R[(i, j)] = ((i * M + j) as u64).into();
+                m[(i, j)] = ((i * M + j) as u64).into();
             }
         }
 
-        let G = build_gadget::<Z_N<Q>, N, M, G_BASE, G_LEN>();
-        let R_inv = gadget_inverse::<Z_N<Q>, N, M, M, G_BASE, G_LEN>(&R);
-        let R_hopefully = &G * &R_inv;
-        assert_eq!(R, R_hopefully, "gadget inverse was not correct");
+        let g_mat = build_gadget::<IntMod<Q>, N, M, G_BASE, G_LEN>();
+        let g_inv_m = gadget_inverse::<IntMod<Q>, N, M, M, G_BASE, G_LEN>(&m);
+        let m_hopefully = &g_mat * &g_inv_m;
+        assert_eq!(m, m_hopefully, "gadget inverse was not correct");
     }
 }

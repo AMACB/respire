@@ -2,10 +2,10 @@
 
 use crate::fhe::fhe::*;
 use crate::fhe::gsw_utils::*;
+use crate::math::int_mod::IntMod;
+use crate::math::int_mod_crt::IntModCRT;
 use crate::math::matrix::Matrix;
 use crate::math::utils::{ceil_log, mod_inverse};
-use crate::math::z_n::Z_N;
-use crate::math::z_n_crt::Z_N_CRT;
 
 /*
  * A GSW implementation using Chinese Remainder Theorem to achieve larger Q.
@@ -51,7 +51,7 @@ pub struct GSWCRTCiphertext<
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    ct: Matrix<N, M, Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>>,
+    ct: Matrix<N, M, IntModCRT<Q1, Q2, Q1_INV, Q2_INV>>,
 }
 
 #[derive(Clone, Debug)]
@@ -67,7 +67,7 @@ pub struct GSWCRTPublicKey<
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    A: Matrix<N, M, Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>>,
+    A: Matrix<N, M, IntModCRT<Q1, Q2, Q1_INV, Q2_INV>>,
 }
 
 #[derive(Clone, Debug)]
@@ -83,7 +83,7 @@ pub struct GSWCRTSecretKey<
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    s_T: Matrix<1, N, Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>>,
+    s_T: Matrix<1, N, IntModCRT<Q1, Q2, Q1_INV, Q2_INV>>,
 }
 
 // TODO: Find a way to validate these params at compile time (static_assert / const_guards crate?)
@@ -139,7 +139,7 @@ impl<
     > EncryptionScheme
     for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
-    type Plaintext = Z_N<P>;
+    type Plaintext = IntMod<P>;
     type Ciphertext = GSWCRTCiphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
     type PublicKey = GSWCRTPublicKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
     type SecretKey = GSWCRTSecretKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
@@ -150,24 +150,24 @@ impl<
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: &Self::Plaintext) -> Self::Ciphertext {
-        let mu = Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(mu.clone()));
+        let mu = IntModCRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(mu.clone()));
         let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, _>(&pk.A, mu);
         Self::Ciphertext { ct }
     }
 
     fn encrypt_sk(sk: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
-        let mu = Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(mu.clone()));
+        let mu = IntModCRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(mu.clone()));
         let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
             &sk.s_T, mu,
         );
         Self::Ciphertext { ct }
     }
 
-    fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
+    fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> IntMod<P> {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
         let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
-        gsw_round::<P, Q, Z_N_CRT<Q1, Q2, Q1_INV, Q2_INV>>(pt)
+        gsw_round::<P, Q, IntModCRT<Q1, Q2, Q1_INV, Q2_INV>>(pt)
     }
 }
 
@@ -233,11 +233,11 @@ impl<
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > AddScalarEncryptionScheme<Z_N<P>>
+    > AddScalarEncryptionScheme<IntMod<P>>
     for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn add_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
-        let rhs = Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(*rhs));
+        let rhs = IntModCRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(*rhs));
         Self::Ciphertext {
             ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs),
         }
@@ -257,11 +257,11 @@ impl<
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > MulScalarEncryptionScheme<Z_N<P>>
+    > MulScalarEncryptionScheme<IntMod<P>>
     for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
-        let rhs = Z_N_CRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(*rhs));
+        let rhs = IntModCRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(*rhs));
         Self::Ciphertext {
             ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs),
         }
@@ -339,7 +339,7 @@ mod test {
     fn encryption_is_correct() {
         let (A, s_T) = GSWCRTTest::keygen();
         for i in 0_u64..10_u64 {
-            let mu = Z_N::from(i);
+            let mu = IntMod::from(i);
             let ct = GSWCRTTest::encrypt(&A, &mu);
             let pt = GSWCRTTest::decrypt(&s_T, &ct);
             assert_eq!(pt, mu, "decryption failed");
@@ -351,8 +351,8 @@ mod test {
         let (A, s_T) = GSWCRTTest::keygen();
         for i in 0_u64..10_u64 {
             for j in 0_u64..10_u64 {
-                let mu1 = Z_N::from(i);
-                let mu2 = Z_N::from(j);
+                let mu1 = IntMod::from(i);
+                let mu2 = IntMod::from(j);
                 let ct1 = GSWCRTTest::encrypt(&A, &mu1);
                 let ct2 = GSWCRTTest::encrypt(&A, &mu2);
 
@@ -371,10 +371,10 @@ mod test {
     #[test]
     fn homomorphism_mul_multiple_correct() {
         let (A, s_T) = GSWCRTTest::keygen();
-        let mu1 = Z_N::from(5_u64);
-        let mu2 = Z_N::from(12_u64);
-        let mu3 = Z_N::from(6_u64);
-        let mu4 = Z_N::from(18_u64);
+        let mu1 = IntMod::from(5_u64);
+        let mu2 = IntMod::from(12_u64);
+        let mu3 = IntMod::from(6_u64);
+        let mu4 = IntMod::from(18_u64);
 
         let ct1 = GSWCRTTest::encrypt(&A, &mu1);
         let ct2 = GSWCRTTest::encrypt(&A, &mu2);

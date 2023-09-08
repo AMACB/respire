@@ -1,6 +1,6 @@
 //! The trivial (insecure) FHE scheme, but additionally tracks noise for GSW schemes.
 use crate::fhe::fhe::*;
-use crate::math::z_n::Z_N;
+use crate::math::int_mod::IntMod;
 
 /// `M` refers to the implicit width of each matrix.
 /// For standard GSW, this is just the lattice parameter `m`.
@@ -10,12 +10,12 @@ pub struct GSWNoiseTracker<const P: u64, const Q: u64, const M: u64> {}
 
 #[derive(Clone, Debug)]
 pub struct NoiseCiphertext<const P: u64, const Q: u64, const M: u64> {
-    x: Z_N<P>,
+    x: IntMod<P>,
     noise: u64,
 }
 
 impl<const P: u64, const Q: u64, const M: u64> EncryptionScheme for GSWNoiseTracker<P, Q, M> {
-    type Plaintext = Z_N<P>;
+    type Plaintext = IntMod<P>;
     type Ciphertext = NoiseCiphertext<P, Q, M>;
     type PublicKey = ();
     type SecretKey = ();
@@ -32,7 +32,7 @@ impl<const P: u64, const Q: u64, const M: u64> EncryptionScheme for GSWNoiseTrac
         Self::Ciphertext { x: *mu, noise: 1 }
     }
 
-    fn decrypt(_: &Self::SecretKey, ct: &Self::Ciphertext) -> Z_N<P> {
+    fn decrypt(_: &Self::SecretKey, ct: &Self::Ciphertext) -> IntMod<P> {
         ct.x
     }
 }
