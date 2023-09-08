@@ -1,9 +1,9 @@
-use crate::fhe::gadget::build_gadget;
+use crate::math::gadget::build_gadget;
+use crate::math::int_mod_cyclo::IntModCyclo;
+use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::utils::floor_log;
-use crate::math::z_n_cyclo::Z_N_CycloRaw;
-use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 use crate::pir::encoding::EncodingScheme;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -20,6 +20,7 @@ pub struct GSWEncoding<
     const NOISE_WIDTH_MILLIONTHS: u64,
 > {}
 
+#[allow(non_snake_case)]
 pub struct GSWEncodingParamsRaw {
     pub N: usize,
     pub Q: u64,
@@ -31,21 +32,22 @@ pub struct GSWEncodingParamsRaw {
 
 impl GSWEncodingParamsRaw {
     pub const fn expand(&self) -> GSWEncodingParams {
-        let T = floor_log(self.G_BASE, self.Q) + 1;
+        let t_mat = floor_log(self.G_BASE, self.Q) + 1;
         GSWEncodingParams {
             N: self.N,
             N_PLUS_ONE: self.N + 1,
-            M: (self.N + 1) * T,
+            M: (self.N + 1) * t_mat,
             Q: self.Q,
             D: self.D,
             W: self.W,
             G_BASE: self.G_BASE,
-            G_LEN: T,
+            G_LEN: t_mat,
             NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
         }
     }
 }
 
+#[allow(non_snake_case)]
 pub struct GSWEncodingParams {
     pub N: usize,
     pub N_PLUS_ONE: usize,
@@ -88,26 +90,26 @@ impl<
     > EncodingScheme
     for GSWEncoding<N, N_PLUS_ONE, M, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
-    type Plaintext = Z_N_CycloRaw<D, Q>;
-    type Ciphertext = Matrix<N_PLUS_ONE, M, Z_N_CycloNTT<D, Q, W>>;
-    type SecretKey = Matrix<N, 1, Z_N_CycloNTT<D, Q, W>>;
+    type Plaintext = IntModCyclo<D, Q>;
+    type Ciphertext = Matrix<N_PLUS_ONE, M, IntModCycloEval<D, Q, W>>;
+    type SecretKey = Matrix<N, 1, IntModCycloEval<D, Q, W>>;
 
     fn keygen() -> Self::SecretKey {
         let mut rng = ChaCha20Rng::from_entropy();
-        let s: Matrix<N, 1, Z_N_CycloNTT<D, Q, W>> = Matrix::rand_uniform(&mut rng);
+        let s: Matrix<N, 1, IntModCycloEval<D, Q, W>> = Matrix::rand_uniform(&mut rng);
         s
     }
 
     fn encode(s: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
         let mut rng = ChaCha20Rng::from_entropy();
-        let a_T: Matrix<1, M, Z_N_CycloNTT<D, Q, W>> = Matrix::rand_uniform(&mut rng);
-        let E: Matrix<N, M, Z_N_CycloNTT<D, Q, W>> =
+        let a_t: Matrix<1, M, IntModCycloEval<D, Q, W>> = Matrix::rand_uniform(&mut rng);
+        let e_mat: Matrix<N, M, IntModCycloEval<D, Q, W>> =
             Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-        let C: Matrix<N_PLUS_ONE, M, Z_N_CycloNTT<D, Q, W>> =
-            &Matrix::stack(&a_T, &(&(s * &a_T) + &E))
-                + &(&build_gadget::<Z_N_CycloNTT<D, Q, W>, N_PLUS_ONE, M, Q, G_BASE, G_LEN>()
-                    * &Z_N_CycloNTT::from(mu));
-        C
+        let c_mat: Matrix<N_PLUS_ONE, M, IntModCycloEval<D, Q, W>> =
+            &Matrix::stack(&a_t, &(&(s * &a_t) + &e_mat))
+                + &(&build_gadget::<IntModCycloEval<D, Q, W>, N_PLUS_ONE, M, G_BASE, G_LEN>()
+                    * &IntModCycloEval::from(mu));
+        c_mat
     }
 }
 
@@ -126,6 +128,6 @@ impl<
     pub fn complement(
         ct: &<Self as EncodingScheme>::Ciphertext,
     ) -> <Self as EncodingScheme>::Ciphertext {
-        &build_gadget::<Z_N_CycloNTT<D, Q, W>, N_PLUS_ONE, M, Q, G_BASE, G_LEN>() - &ct
+        &build_gadget::<IntModCycloEval<D, Q, W>, N_PLUS_ONE, M, G_BASE, G_LEN>() - &ct
     }
 }

@@ -108,9 +108,9 @@
 //     const ETA2: usize
 // > PIRScheme for SPIRAL<N, N_PLUS_ONE, M, Q, D, G_LEN, G_BASE, NOISE_WIDTH_MILLIONTHS, P, Q1, Q2, ETA1, ETA2> {}
 
+use crate::math::int_mod_cyclo::IntModCyclo;
+use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
-use crate::math::z_n_cyclo::Z_N_CycloRaw;
-use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 use crate::pir::encoding::EncodingScheme;
 use crate::pir::gsw_encoding::GSWEncoding;
 use crate::pir::matrix_regev_encoding::{
@@ -118,27 +118,27 @@ use crate::pir::matrix_regev_encoding::{
 };
 use crate::{gsw_encoding, matrix_regev_encoding};
 
-struct SPIRAL {}
+pub struct SPIRAL {}
 
-const N: usize = 2;
-const Q: u64 = 268369921;
-const D: usize = 2048;
-const W: u64 = 63703579;
-const G_BASE: u64 = 2;
-const NOISE_WIDTH_MILLIONTHS: u64 = 1;
+pub const N: usize = 2;
+pub const Q: u64 = 268369921;
+pub const D: usize = 2048;
+pub const W: u64 = 63703579;
+pub const G_BASE: u64 = 2;
+pub const NOISE_WIDTH_MILLIONTHS: u64 = 1;
 
-const P: u64 = 1 << 8;
+pub const P: u64 = 1 << 8;
 // const Q1: u64 = 1 << 10;
 // const Q2: u64 = 1 << 21;
 
-const ETA1: usize = 9;
-const ETA2: usize = 6;
-const DB_SIZE: usize = 1 << (ETA1 + ETA2);
+pub const ETA1: usize = 9;
+pub const ETA2: usize = 6;
+pub const DB_SIZE: usize = 1 << (ETA1 + ETA2);
 
-const ETA1_MASK: usize = (1 << ETA1) - 1;
-const ETA2_MASK: usize = (1 << ETA2) - 1;
+pub const ETA1_MASK: usize = (1 << ETA1) - 1;
+pub const ETA2_MASK: usize = (1 << ETA2) - 1;
 
-const HYBRID_PARAMS: HybridEncodingParams = HybridEncodingParamsRaw {
+pub const HYBRID_PARAMS: HybridEncodingParams = HybridEncodingParamsRaw {
     N,
     Q,
     D,
@@ -148,34 +148,34 @@ const HYBRID_PARAMS: HybridEncodingParams = HybridEncodingParamsRaw {
 }
 .expand();
 
-type Regev = matrix_regev_encoding!(HYBRID_PARAMS.matrix_regev);
-type GSW = gsw_encoding!(HYBRID_PARAMS.gsw);
+pub type Regev = matrix_regev_encoding!(HYBRID_PARAMS.matrix_regev);
+pub type GSW = gsw_encoding!(HYBRID_PARAMS.gsw);
 
-type RegevCT = <Regev as EncodingScheme>::Ciphertext;
-type GSWCT = <GSW as EncodingScheme>::Ciphertext;
+pub type RegevCT = <Regev as EncodingScheme>::Ciphertext;
+pub type GSWCT = <GSW as EncodingScheme>::Ciphertext;
 
-type QueryKey = <Regev as EncodingScheme>::SecretKey;
-type Query = (Vec<RegevCT>, Vec<GSWCT>);
-type Response = RegevCT;
+pub type QueryKey = <Regev as EncodingScheme>::SecretKey;
+pub type Query = (Vec<RegevCT>, Vec<GSWCT>);
+pub type Response = RegevCT;
 
-type Record = Matrix<N, N, Z_N_CycloRaw<D, P>>;
-type RecordPreprocessed = Matrix<N, N, Z_N_CycloNTT<D, Q, W>>;
-type Database = Vec<Record>;
-type DatabasePreprocessed = Vec<RecordPreprocessed>;
+pub type Record = Matrix<N, N, IntModCyclo<D, P>>;
+pub type RecordPreprocessed = Matrix<N, N, IntModCycloEval<D, Q, W>>;
+pub type Database = Vec<Record>;
+pub type DatabasePreprocessed = Vec<RecordPreprocessed>;
 
 impl SPIRAL {
-    fn setup() -> QueryKey {
+    pub fn setup() -> QueryKey {
         Regev::keygen()
     }
 
-    fn query(qk: &QueryKey, idx: usize) -> Query {
+    pub fn query(qk: &QueryKey, idx: usize) -> Query {
         let idx_i = (idx >> ETA2) & ETA1_MASK;
         let idx_j = idx & ETA2_MASK;
 
         let mut regevs: Vec<RegevCT> = Vec::with_capacity(1 << ETA1);
         for i in 0..(1 << ETA1) {
             regevs.push(if i == idx_i {
-                let ident = Matrix::<N, N, Z_N_CycloRaw<D, P>>::identity();
+                let ident = Matrix::<N, N, IntModCyclo<D, P>>::identity();
                 Regev::encode(&qk, &ident.into_ring(|x| x.scale_up_into()))
             } else {
                 Regev::encode(&qk, &Matrix::zero())
@@ -194,7 +194,7 @@ impl SPIRAL {
         (regevs, gsws)
     }
 
-    fn answer(d: &DatabasePreprocessed, q: &Query) -> Response {
+    pub fn answer(d: &DatabasePreprocessed, q: &Query) -> Response {
         let d_at = |i: usize, j: usize| &d[(i << ETA2) + j];
         let mut prev: Vec<RegevCT> = Vec::with_capacity(1 << ETA2);
         for j in 0..(1 << ETA2) {
@@ -212,15 +212,15 @@ impl SPIRAL {
             let mut curr: Vec<RegevCT> = Vec::with_capacity(curr_size);
             for j in 0..curr_size {
                 let b = &q.1[r];
-                let C0 = &prev[j];
-                let C1 = &prev[curr_size + j];
-                let C1_sub_C0 = Regev::sub_hom(C1, C0);
+                let c0 = &prev[j];
+                let c1 = &prev[curr_size + j];
+                let c1_sub_c0 = Regev::sub_hom(c1, c0);
                 let mut result = Regev::mul_hom_gsw::<
                     { HYBRID_PARAMS.gsw.M },
                     { HYBRID_PARAMS.gsw.G_BASE },
                     { HYBRID_PARAMS.gsw.G_LEN },
-                >(b, &C1_sub_C0);
-                result += C0;
+                >(b, &c1_sub_c0);
+                result += c0;
                 curr.push(result);
             }
             prev = curr;
@@ -228,7 +228,7 @@ impl SPIRAL {
         prev.remove(0)
     }
 
-    fn extract(qk: &QueryKey, r: &Response) -> Record {
+    pub fn extract(qk: &QueryKey, r: &Response) -> Record {
         Regev::decode(&qk, &r).into_ring(|x| x.round_down_into())
     }
 }
@@ -240,6 +240,16 @@ mod test {
 
     #[test]
     fn test_spiral() {
+        test_spiral_n([0, 11111, DB_SIZE - 1].into_iter());
+    }
+
+    #[ignore]
+    #[test]
+    fn test_spiral_stress() {
+        test_spiral_n(0..DB_SIZE);
+    }
+
+    fn test_spiral_n<I: Iterator<Item = usize>>(iter: I) {
         let mut db: Database = Vec::with_capacity(DB_SIZE);
         for i in 0..DB_SIZE as u64 {
             let mut record: Record = Matrix::zero();
@@ -258,7 +268,7 @@ mod test {
         let start = Instant::now();
         let mut db_pre: DatabasePreprocessed = Vec::with_capacity(DB_SIZE);
         for i in 0..DB_SIZE {
-            db_pre.push(db[i].into_ring(|x| Z_N_CycloNTT::from(x.include_into())));
+            db_pre.push(db[i].into_ring(|x| IntModCycloEval::from(x.include_into())));
         }
         let end = Instant::now();
         eprintln!("{:?} to preprocess", end - start);
@@ -271,7 +281,7 @@ mod test {
             assert_eq!(&extracted, &db[idx])
         };
 
-        for i in 0..DB_SIZE {
+        for i in iter {
             let start = Instant::now();
             check(i);
             let end = Instant::now();

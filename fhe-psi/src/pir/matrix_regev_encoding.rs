@@ -1,8 +1,8 @@
-use crate::fhe::gadget::gadget_inverse;
+use crate::math::gadget::gadget_inverse;
+use crate::math::int_mod_cyclo::IntModCyclo;
+use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
-use crate::math::z_n_cyclo::Z_N_CycloRaw;
-use crate::math::z_n_cyclo_ntt::Z_N_CycloNTT;
 use crate::pir::encoding::EncodingScheme;
 use crate::pir::gsw_encoding::{GSWEncoding, GSWEncodingParams, GSWEncodingParamsRaw};
 use rand::SeedableRng;
@@ -17,6 +17,7 @@ pub struct MatrixRegevEncoding<
     const NOISE_WIDTH_MILLIONTHS: u64,
 > {}
 
+#[allow(non_snake_case)]
 pub struct MatrixRegevEncodingParamsRaw {
     pub N: usize,
     pub Q: u64,
@@ -38,6 +39,7 @@ impl MatrixRegevEncodingParamsRaw {
     }
 }
 
+#[allow(non_snake_case)]
 pub struct MatrixRegevEncodingParams {
     pub N: usize,
     pub N_PLUS_ONE: usize,
@@ -70,26 +72,26 @@ impl<
         const NOISE_WIDTH_MILLIONTHS: u64,
     > EncodingScheme for MatrixRegevEncoding<N, N_PLUS_ONE, Q, D, W, NOISE_WIDTH_MILLIONTHS>
 {
-    type Plaintext = Matrix<N, N, Z_N_CycloRaw<D, Q>>;
-    type Ciphertext = Matrix<N_PLUS_ONE, N, Z_N_CycloNTT<D, Q, W>>;
-    type SecretKey = Matrix<N, 1, Z_N_CycloNTT<D, Q, W>>;
+    type Plaintext = Matrix<N, N, IntModCyclo<D, Q>>;
+    type Ciphertext = Matrix<N_PLUS_ONE, N, IntModCycloEval<D, Q, W>>;
+    type SecretKey = Matrix<N, 1, IntModCycloEval<D, Q, W>>;
 
     fn keygen() -> Self::SecretKey {
         let mut rng = ChaCha20Rng::from_entropy();
-        let s: Matrix<N, 1, Z_N_CycloNTT<D, Q, W>> = Matrix::rand_uniform(&mut rng);
+        let s: Matrix<N, 1, IntModCycloEval<D, Q, W>> = Matrix::rand_uniform(&mut rng);
         s
     }
 
     fn encode(s: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
         let mut rng = ChaCha20Rng::from_entropy();
-        let a_T: Matrix<1, N, Z_N_CycloNTT<D, Q, W>> = Matrix::rand_uniform(&mut rng);
-        let E: Matrix<N, N, Z_N_CycloNTT<D, Q, W>> =
+        let a_t: Matrix<1, N, IntModCycloEval<D, Q, W>> = Matrix::rand_uniform(&mut rng);
+        let e_mat: Matrix<N, N, IntModCycloEval<D, Q, W>> =
             Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-        let C: Matrix<N_PLUS_ONE, N, Z_N_CycloNTT<D, Q, W>> = Matrix::stack(
-            &a_T,
-            &(&(&(s * &a_T) + &E) + &mu.into_ring(|x| Z_N_CycloNTT::from(x))),
+        let c_mat: Matrix<N_PLUS_ONE, N, IntModCycloEval<D, Q, W>> = Matrix::stack(
+            &a_t,
+            &(&(&(s * &a_t) + &e_mat) + &mu.into_ring(|x| IntModCycloEval::from(x))),
         );
-        C
+        c_mat
     }
 }
 
@@ -120,14 +122,14 @@ impl<
         lhs: &<Self as EncodingScheme>::Ciphertext,
         rhs: &<Self as EncodingScheme>::Plaintext,
     ) -> <Self as EncodingScheme>::Ciphertext {
-        lhs * &rhs.into_ring(|x| Z_N_CycloNTT::from(x))
+        lhs * &rhs.into_ring(|x| IntModCycloEval::from(x))
     }
 
     pub fn mul_hom_gsw<const M: usize, const G_BASE: u64, const G_LEN: usize>(
         lhs: &<GSWEncoding<N, N_PLUS_ONE, M, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS> as EncodingScheme>::Ciphertext,
         rhs: &<Self as EncodingScheme>::Ciphertext,
     ) -> <Self as EncodingScheme>::Ciphertext {
-        lhs * &gadget_inverse::<Z_N_CycloNTT<D, Q, W>, N_PLUS_ONE, M, N, G_BASE, G_LEN>(rhs)
+        lhs * &gadget_inverse::<IntModCycloEval<D, Q, W>, N_PLUS_ONE, M, N, G_BASE, G_LEN>(rhs)
     }
 
     pub fn decode(
@@ -135,10 +137,11 @@ impl<
         c: &<Self as EncodingScheme>::Ciphertext,
     ) -> <Self as EncodingScheme>::Plaintext {
         (&Matrix::append(&-s, &Matrix::<N, N, _>::identity()) * c)
-            .into_ring(|x| Z_N_CycloRaw::from(x))
+            .into_ring(|x| IntModCyclo::from(x))
     }
 }
 
+#[allow(non_snake_case)]
 pub struct HybridEncodingParamsRaw {
     pub N: usize,
     pub Q: u64,
@@ -199,10 +202,10 @@ mod test {
     fn test_encode_decode() {
         let sk = TestRegev::keygen();
         let mut msg = Matrix::zero();
-        msg[(0, 0)] = Z_N_CycloRaw::from(10000_u64);
-        msg[(0, 1)] = Z_N_CycloRaw::from(80000_u64);
-        msg[(1, 0)] = Z_N_CycloRaw::from(77000_u64);
-        msg[(1, 1)] = Z_N_CycloRaw::from(0_u64);
+        msg[(0, 0)] = IntModCyclo::from(10000_u64);
+        msg[(0, 1)] = IntModCyclo::from(80000_u64);
+        msg[(1, 0)] = IntModCyclo::from(77000_u64);
+        msg[(1, 1)] = IntModCyclo::from(0_u64);
         let ct = TestRegev::encode(&sk, &msg);
         let diff = &TestRegev::decode(&sk, &ct) - &msg;
         assert!(diff.norm() <= 8); // |E| = at most 8 widths = 8
@@ -212,16 +215,16 @@ mod test {
     fn test_hom() {
         let sk = TestRegev::keygen();
         let mut msg1 = Matrix::zero();
-        msg1[(0, 0)] = Z_N_CycloRaw::from(33000_i64);
-        msg1[(0, 1)] = Z_N_CycloRaw::from(10000_i64);
-        msg1[(1, 0)] = Z_N_CycloRaw::from(0_i64);
-        msg1[(1, 1)] = Z_N_CycloRaw::from(65000_i64);
+        msg1[(0, 0)] = IntModCyclo::from(33000_i64);
+        msg1[(0, 1)] = IntModCyclo::from(10000_i64);
+        msg1[(1, 0)] = IntModCyclo::from(0_i64);
+        msg1[(1, 1)] = IntModCyclo::from(65000_i64);
 
         let mut msg2 = Matrix::zero();
-        msg2[(0, 0)] = Z_N_CycloRaw::from(1_i64);
-        msg2[(0, 1)] = Z_N_CycloRaw::from(1_i64);
-        msg2[(1, 0)] = Z_N_CycloRaw::from(-1_i64);
-        msg2[(1, 1)] = Z_N_CycloRaw::from(1_i64);
+        msg2[(0, 0)] = IntModCyclo::from(1_i64);
+        msg2[(0, 1)] = IntModCyclo::from(1_i64);
+        msg2[(1, 0)] = IntModCyclo::from(-1_i64);
+        msg2[(1, 1)] = IntModCyclo::from(1_i64);
 
         let ct1 = TestRegev::encode(&sk, &msg1);
         let ct2 = TestRegev::encode(&sk, &msg2);
@@ -237,12 +240,12 @@ mod test {
     fn test_hom_gsw() {
         let sk = TestRegev::keygen();
         let mut msg1 = Matrix::zero();
-        msg1[(0, 0)] = Z_N_CycloRaw::from(33000_i64);
-        msg1[(0, 1)] = Z_N_CycloRaw::from(10000_i64);
-        msg1[(1, 0)] = Z_N_CycloRaw::from(0_i64);
-        msg1[(1, 1)] = Z_N_CycloRaw::from(65000_i64);
+        msg1[(0, 0)] = IntModCyclo::from(33000_i64);
+        msg1[(0, 1)] = IntModCyclo::from(10000_i64);
+        msg1[(1, 0)] = IntModCyclo::from(0_i64);
+        msg1[(1, 1)] = IntModCyclo::from(65000_i64);
 
-        let msg2 = Z_N_CycloRaw::from(vec![-1_i64, 0, 1, 0]);
+        let msg2 = IntModCyclo::from(vec![-1_i64, 0, 1, 0]);
         let ct1 = TestRegev::encode(&sk, &msg1);
         let ct2 = TestGSW::encode(&sk, &msg2);
         let ct1_mul_ct2 = TestRegev::mul_hom_gsw::<

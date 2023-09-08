@@ -269,22 +269,6 @@ where
     for<'a> &'a R: RingElementRef<R>,
 {
     type Output = Matrix<N, M, R>;
-    fn sub(self, other: &Matrix<N, M, R>) -> Self::Output {
-        let mut out = Matrix::zero();
-        for r in 0..N {
-            for c in 0..M {
-                out[(r, c)] = &self[(r, c)] - &other[(r, c)];
-            }
-        }
-        out
-    }
-}
-
-impl<const N: usize, const M: usize, R: RingElement> Sub<&Matrix<N, M, R>> for &Matrix<N, M, R>
-where
-    for<'a> &'a R: RingElementRef<R>,
-{
-    type Output = Matrix<N, M, R>;
 
     /// Element-wise subtraction.
     fn sub(self, other: &Matrix<N, M, R>) -> Self::Output {

@@ -31,7 +31,7 @@ impl<const D: usize, const N: u64> From<u64> for IntModCyclo<D, N> {
     }
 }
 
-impl<const D: usize, const N: u64> From<i64> for Z_N_CycloRaw<D, N> {
+impl<const D: usize, const N: u64> From<i64> for IntModCyclo<D, N> {
     fn from(a: i64) -> Self {
         let mut result = Self::zero();
         result.coeff[0] = a.into();
@@ -329,7 +329,7 @@ impl<const D: usize, const N: u64> IntModCyclo<D, N> {
     }
 }
 
-impl<const D: usize, const N: u64> NormedRingElement for Z_N_CycloRaw<D, N> {
+impl<const D: usize, const N: u64> NormedRingElement for IntModCyclo<D, N> {
     fn norm(&self) -> u64 {
         let mut worst: u64 = 0;
         for i in 0..D {
