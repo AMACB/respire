@@ -20,6 +20,7 @@ use std::slice::Iter;
 ///
 /// Internally, this is an array of evaluations, where the `i`th index corresponds to `f(w^{2*i+1})`. `w` here is the `2*D`th root of unity.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(C)]
 pub struct IntModCycloEval<const D: usize, const N: u64, const W: u64> {
     points: [IntMod<N>; D],
 }
@@ -264,14 +265,11 @@ impl<const D: usize, const N: u64, const W: u64> IntModCycloEval<D, N, W> {
     pub fn points_iter(&self) -> Iter<'_, IntMod<{ N }>> {
         self.points.iter()
     }
+}
 
-    pub fn with_modulus<const M: u64, const WW: u64>(self) -> IntModCycloEval<D, M, WW> {
-        let ptr = &self as *const IntModCycloEval<D, N, W> as *const IntModCycloEval<D, M, WW>;
-        // Safety: since IntModCycloEval<D, N, W> and IntModCycloEval<D, M, WW> have identical layouts
-        let val = unsafe { ptr.read() };
-        std::mem::forget(self);
-        val
-    }
+unsafe impl<const D: usize, const N: u64, const W: u64, const M: u64, const WW: u64>
+    RingCompatible<IntModCycloEval<D, M, WW>> for IntModCycloEval<D, N, W>
+{
 }
 
 #[cfg(test)]

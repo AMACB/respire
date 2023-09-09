@@ -14,6 +14,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 // TODO: documentation
 // TODO: somewhat unsatisfactory -- can't generalize to N = N_1 * ... * N_k
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
+#[repr(C)]
 pub struct IntModCRT<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> {
     a1: IntMod<N1>,
     a2: IntMod<N2>,
@@ -294,12 +295,19 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
         let neg: u64 = u64::from(-*self);
         min(pos, neg)
     }
+}
 
-    pub fn with_modulus<const M1: u64, const M2: u64, const M1_INV: u64, const M2_INV: u64>(
-        self,
-    ) -> IntModCRT<M1, M2, M1_INV, M2_INV> {
-        unsafe { std::mem::transmute(self) }
-    }
+unsafe impl<
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const M1: u64,
+        const M2: u64,
+        const M1_INV: u64,
+        const M2_INV: u64,
+    > RingCompatible<IntModCRT<M1, M2, M1_INV, M2_INV>> for IntModCRT<N1, N2, N1_INV, N2_INV>
+{
 }
 
 #[cfg(test)]

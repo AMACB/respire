@@ -4,6 +4,7 @@ use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use rand::Rng;
 use std::cmp::max;
+use std::mem::ManuallyDrop;
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub};
 
 // TODO
@@ -17,6 +18,7 @@ use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub};
 /// Technically, `Matrix` could in itself be `RingElement`. But so far there has not been a need
 /// for this, so it is not implemented.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct Matrix<const N: usize, const M: usize, R: RingElement>
 where
     R: Sized,
@@ -175,6 +177,27 @@ where
             }
         }
         result
+    }
+
+    ///
+    /// Interprets a Matrix of `R` to a Matrix of `S`. This requires `R` and `S` to be compatible as
+    /// defined with the `RingCompatible` trait.
+    ///
+    pub fn convert_ring<S: RingElement>(self) -> Matrix<N, M, S>
+    where
+        for<'a> &'a S: RingElementRef<S>,
+        R: RingCompatible<S>,
+    {
+        let mut self_clone: ManuallyDrop<Matrix<N, M, R>> = ManuallyDrop::new(self);
+        Matrix::<N, M, S> {
+            data: unsafe {
+                Vec::from_raw_parts(
+                    self_clone.data.as_mut_ptr() as *mut S,
+                    self_clone.data.len(),
+                    self_clone.data.capacity(),
+                )
+            },
+        }
     }
 }
 /// Arithmetic operations

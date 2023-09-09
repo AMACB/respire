@@ -53,3 +53,17 @@ where
 {
     fn norm(&self) -> u64;
 }
+
+pub unsafe trait RingCompatible<Other: RingElement>: RingElement
+where
+    for<'a> &'a Self: RingElementRef<Self>,
+    for<'a> &'a Other: RingElementRef<Other>,
+{
+    fn convert(self) -> Other {
+        let ptr = &self as *const Self as *const Other;
+        // Safety: Self is RingCompatible<Other> implies this conversion is safe
+        let val = unsafe { ptr.read() };
+        std::mem::forget(self);
+        val
+    }
+}

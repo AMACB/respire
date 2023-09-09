@@ -20,6 +20,7 @@ use std::slice::Iter;
 ///
 /// Internally, this is an array of coefficients where the `i`th index corresponds to `x^i`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(C)]
 pub struct IntModCyclo<const D: usize, const N: u64> {
     coeff: [IntMod<N>; D],
 }
@@ -327,14 +328,11 @@ impl<const D: usize, const N: u64> IntModCyclo<D, N> {
         }
         result
     }
+}
 
-    pub fn with_modulus<const M: u64>(self) -> IntModCyclo<D, M> {
-        let ptr = &self as *const IntModCyclo<D, N> as *const IntModCyclo<D, M>;
-        // Safety: since IntModCyclo<D, N> and IntModCyclo<D, M> have identical layouts
-        let val = unsafe { ptr.read() };
-        std::mem::forget(self);
-        val
-    }
+unsafe impl<const D: usize, const N: u64, const M: u64> RingCompatible<IntModCyclo<D, M>>
+    for IntModCyclo<D, N>
+{
 }
 
 /// Random sampling
@@ -458,13 +456,13 @@ mod test {
     }
 
     #[test]
-    fn test_with_modulus() {
+    fn test_convert() {
         type R31 = IntModCyclo<4, 31>;
         type R0 = IntModCyclo<4, 0>;
         let x: R31 = vec![1_u64, 2_u64, 3_u64, 4_u64].into();
-        let mut x: R0 = x.with_modulus();
+        let mut x: R0 = x.convert();
         x += &vec![10_u64, 10_u64, 10_u64, 10_u64].into();
-        let x: R31 = x.with_modulus();
+        let x: R31 = x.convert();
         assert_eq!(x, vec![11_u64, 12_u64, 13_u64, 14_u64].into())
     }
 

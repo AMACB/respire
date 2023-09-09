@@ -12,6 +12,7 @@ use std::slice::Iter;
 /// implement [`RingElement`], [`RingElementRef`], it is not intended for use if high efficiency is
 /// required.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(C)]
 pub struct IntModPoly<const N: u64> {
     coeff: Vec<IntMod<N>>,
 }

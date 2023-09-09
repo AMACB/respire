@@ -17,6 +17,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 // TODO: documentation
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(C)]
 pub struct IntModCycloCRT<
     const D: usize,
     const N1: u64,
@@ -397,17 +398,21 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
         }
         worst
     }
+}
 
-    pub fn with_modulus<const M1: u64, const M2: u64, const M1_INV: u64, const M2_INV: u64>(
-        self,
-    ) -> IntModCycloCRT<D, M1, M2, M1_INV, M2_INV> {
-        let ptr = &self as *const IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
-            as *const IntModCycloCRT<D, M1, M2, M1_INV, M2_INV>;
-        // Safety: since IntModCycloCRT<D, N1, N2, N1_INV, N2_INV> and IntModCycloCRT<D, M1, M2, M1_INV, M2_INV> have identical layouts
-        let val = unsafe { ptr.read() };
-        std::mem::forget(self);
-        val
-    }
+unsafe impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const M1: u64,
+        const M2: u64,
+        const M1_INV: u64,
+        const M2_INV: u64,
+    > RingCompatible<IntModCycloCRT<D, M1, M2, M1_INV, M2_INV>>
+    for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+{
 }
 
 // TODO: this should be a TryFrom

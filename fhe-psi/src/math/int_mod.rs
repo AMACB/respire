@@ -246,12 +246,9 @@ impl<const N: u64> IntMod<N> {
         let ratio = N / M;
         ((u64::from(self) + ratio / 2) / ratio).into()
     }
-
-    /// Unchecked conversion between moduli.
-    pub fn with_modulus<const M: u64>(self) -> IntMod<M> {
-        IntMod::<M> { a: self.a }
-    }
 }
+
+unsafe impl<const N: u64, const M: u64> RingCompatible<IntMod<M>> for IntMod<N> {}
 
 /// Formatting
 
