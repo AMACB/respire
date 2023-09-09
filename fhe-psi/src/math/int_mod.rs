@@ -254,6 +254,12 @@ impl<const N: u64> IntMod<N> {
         u64::from(self).into()
     }
 
+    /// Maps `Z_N` into `Z_M` by projecting. This only makes sense if `M` divides `N`.
+    pub fn project_into<const M: u64>(self) -> IntMod<M> {
+        assert_eq!(N % M, 0);
+        u64::from(self).into()
+    }
+
     /// Maps `Z_N` into `Z_M` by rounding `0 <= a < N` to the nearest multiple of `N / M`, and
     /// dividing. This function acts like an inverse of `scale_up_into`, with tolerance to additive noise. We require `N >= M`.
     pub fn round_down_into<const M: u64>(self) -> IntMod<M> {

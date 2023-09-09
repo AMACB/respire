@@ -2,6 +2,9 @@
 
 use crate::math::gadget::RingElementDecomposable;
 use crate::math::int_mod::{IntMod, NoReduce};
+use crate::math::int_mod_crt::IntModCRT;
+use crate::math::int_mod_cyclo_crt::IntModCycloCRT;
+use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
 use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::int_mod_poly::IntModPoly;
 use crate::math::matrix::Matrix;
@@ -88,6 +91,43 @@ impl<const D: usize, const N: u64> TryFrom<&IntModCyclo<D, N>> for IntMod<N> {
             }
         }
         Ok(a.coeff[0])
+    }
+}
+
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const N: u64,
+    > From<&IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>> for IntModCyclo<D, N>
+{
+    fn from(a: &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>) -> Self {
+        assert_eq!(N, N1 * N2);
+        let mut result = IntModCyclo::zero();
+        for i in 0..D {
+            result.coeff[i] = IntMod::from(u64::from(IntModCRT::<N1, N2, N1_INV, N2_INV>::from((
+                a.p1[i], a.p2[i],
+            ))));
+        }
+        result
+    }
+}
+
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+        const N: u64,
+    > From<&IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>> for IntModCyclo<D, N>
+{
+    fn from(a: &IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>) -> Self {
+        IntModCyclo::from(&IntModCycloCRT::from(a))
     }
 }
 
@@ -266,6 +306,15 @@ impl<const D: usize, const N: u64> IntModCyclo<D, N> {
         let mut result = IntModCyclo::zero();
         for i in 0..D {
             result.coeff[i] = self.coeff[i].include_into();
+        }
+        result
+    }
+
+    /// Applies `Z_N::project_into` coefficient-wise.
+    pub fn project_into<const M: u64>(&self) -> IntModCyclo<D, M> {
+        let mut result = IntModCyclo::zero();
+        for i in 0..D {
+            result.coeff[i] = self.coeff[i].project_into();
         }
         result
     }

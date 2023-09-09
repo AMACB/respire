@@ -22,8 +22,8 @@ pub struct IntModCycloCRTEval<
     const W1: u64,
     const W2: u64,
 > {
-    p1: IntModCycloEval<D, N1, W1>,
-    p2: IntModCycloEval<D, N2, W2>,
+    pub(in crate::math) p1: IntModCycloEval<D, N1, W1>,
+    pub(in crate::math) p2: IntModCycloEval<D, N2, W2>,
 }
 
 /// Conversions
@@ -70,13 +70,29 @@ impl<
         const N2_INV: u64,
         const W1: u64,
         const W2: u64,
-    > From<&IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>>
-    for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+        const N: u64,
+    > From<&IntModCyclo<D, N>> for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
 {
-    fn from(a: &IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>) -> Self {
-        let p1_raw: IntModCyclo<D, N1> = (&a.p1).into();
-        let p2_raw: IntModCyclo<D, N2> = (&a.p2).into();
-        (p1_raw, p2_raw).into()
+    fn from(a: &IntModCyclo<D, N>) -> Self {
+        IntModCycloCRTEval::from(&IntModCycloCRT::from(a))
+    }
+}
+
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > From<&IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>>
+    for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
+    fn from(a: &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>) -> Self {
+        let p1_eval: IntModCycloEval<D, N1, W1> = (&a.p1).into();
+        let p2_eval: IntModCycloEval<D, N2, W2> = (&a.p2).into();
+        (p1_eval, p2_eval).into()
     }
 }
 

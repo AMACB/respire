@@ -108,28 +108,33 @@
 //     const ETA2: usize
 // > PIRScheme for SPIRAL<N, N_PLUS_ONE, M, Q, D, G_LEN, G_BASE, NOISE_WIDTH_MILLIONTHS, P, Q1, Q2, ETA1, ETA2> {}
 
+use crate::math::gadget::{build_gadget, gadget_inverse};
 use crate::math::int_mod_cyclo::IntModCyclo;
-use crate::math::int_mod_cyclo_eval::IntModCycloEval;
+use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
 use crate::math::matrix::Matrix;
-use crate::pir::encoding::EncodingScheme;
-use crate::pir::gsw_encoding::GSWEncoding;
-use crate::pir::matrix_regev_encoding::{
-    HybridEncodingParams, HybridEncodingParamsRaw, MatrixRegevEncoding,
-};
-use crate::{gsw_encoding, matrix_regev_encoding};
+use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
+use crate::math::utils::{floor_log, mod_inverse};
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 
 pub struct SPIRAL {}
 
 pub const N: usize = 2;
-pub const Q: u64 = 268369921;
+pub const Q_A: u64 = 268369921;
+pub const Q_B: u64 = 249561089;
+pub const Q: u64 = Q_A * Q_B;
+pub const Q_A_INV: u64 = mod_inverse(Q_A, Q_B);
+pub const Q_B_INV: u64 = mod_inverse(Q_B, Q_A);
 pub const D: usize = 2048;
-pub const W: u64 = 63703579;
+pub const W1: u64 = 66294444;
+pub const W2: u64 = 30909463;
 pub const G_BASE: u64 = 2;
+pub const G_LEN: usize = floor_log(G_BASE, Q) + 1;
+pub const M: usize = (N + 1) * G_LEN;
+
 pub const NOISE_WIDTH_MILLIONTHS: u64 = 1;
 
 pub const P: u64 = 1 << 8;
-// const Q1: u64 = 1 << 10;
-// const Q2: u64 = 1 << 21;
 
 pub const ETA1: usize = 9;
 pub const ETA2: usize = 6;
@@ -138,56 +143,97 @@ pub const DB_SIZE: usize = 1 << (ETA1 + ETA2);
 pub const ETA1_MASK: usize = (1 << ETA1) - 1;
 pub const ETA2_MASK: usize = (1 << ETA2) - 1;
 
-pub const HYBRID_PARAMS: HybridEncodingParams = HybridEncodingParamsRaw {
-    N,
-    Q,
-    D,
-    W,
-    G_BASE,
-    NOISE_WIDTH_MILLIONTHS,
-}
-.expand();
+pub type RingP = IntModCyclo<D, P>;
+pub type RingQ = IntModCyclo<D, Q>;
+pub type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B, Q_A_INV, Q_B_INV, W1, W2>;
+pub type MatrixRegevCiphertext = Matrix<{ N + 1 }, N, RingQFast>;
+pub type GSWCiphertext = Matrix<{ N + 1 }, M, RingQFast>;
 
-pub type Regev = matrix_regev_encoding!(HYBRID_PARAMS.matrix_regev);
-pub type GSW = gsw_encoding!(HYBRID_PARAMS.gsw);
+pub type QueryKey = Matrix<N, 1, RingQFast>;
+pub type Query = (Vec<MatrixRegevCiphertext>, Vec<GSWCiphertext>);
+pub type Response = MatrixRegevCiphertext;
 
-pub type RegevCT = <Regev as EncodingScheme>::Ciphertext;
-pub type GSWCT = <GSW as EncodingScheme>::Ciphertext;
-
-pub type QueryKey = <Regev as EncodingScheme>::SecretKey;
-pub type Query = (Vec<RegevCT>, Vec<GSWCT>);
-pub type Response = RegevCT;
-
-pub type Record = Matrix<N, N, IntModCyclo<D, P>>;
-pub type RecordPreprocessed = Matrix<N, N, IntModCycloEval<D, Q, W>>;
-pub type Database = Vec<Record>;
-pub type DatabasePreprocessed = Vec<RecordPreprocessed>;
+pub type MatrixP = Matrix<N, N, RingP>;
+pub type MatrixQ = Matrix<N, N, RingQ>;
+pub type MatrixQFast = Matrix<N, N, RingQFast>;
+pub type Database = Vec<MatrixP>;
+pub type DatabasePreprocessed = Vec<MatrixQFast>;
 
 impl SPIRAL {
+    fn encode_regev(qk: &QueryKey, mu: &MatrixQ) -> MatrixRegevCiphertext {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let a_t: Matrix<1, N, RingQFast> = Matrix::rand_uniform(&mut rng);
+        let e_mat: Matrix<N, N, RingQFast> =
+            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+        let c_mat: Matrix<{ N + 1 }, N, RingQFast> = Matrix::stack(
+            &a_t,
+            &(&(&(qk * &a_t) + &e_mat) + &mu.into_ring(|x| RingQFast::from(x))),
+        );
+        c_mat
+    }
+
+    fn encode_gsw(qk: &QueryKey, mu: &RingP) -> GSWCiphertext {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let a_t: Matrix<1, M, RingQFast> = Matrix::rand_uniform(&mut rng);
+        let e_mat: Matrix<N, M, RingQFast> =
+            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+        let c_mat: Matrix<{ N + 1 }, M, RingQFast> = &Matrix::stack(&a_t, &(&(qk * &a_t) + &e_mat))
+            + &(&build_gadget::<RingQFast, { N + 1 }, M, G_BASE, G_LEN>()
+                * &RingQFast::from(&mu.include_into::<Q>()));
+        c_mat
+    }
+
+    fn regev_sub_hom(
+        lhs: &MatrixRegevCiphertext,
+        rhs: &MatrixRegevCiphertext,
+    ) -> MatrixRegevCiphertext {
+        lhs - rhs
+    }
+    fn regev_mul_scalar(lhs: &MatrixRegevCiphertext, rhs: &MatrixQFast) -> MatrixRegevCiphertext {
+        lhs * rhs
+    }
+    fn regev_add_eq_mul_scalar(
+        lhs: &mut MatrixRegevCiphertext,
+        rhs_a: &MatrixRegevCiphertext,
+        rhs_b: &MatrixQFast,
+    ) {
+        lhs.add_eq_mul(rhs_a, rhs_b);
+    }
+
+    fn hybrid_mul_hom(regev: &MatrixRegevCiphertext, gsw: &GSWCiphertext) -> MatrixRegevCiphertext {
+        gsw * &gadget_inverse::<RingQFast, { N + 1 }, M, N, G_BASE, G_LEN>(regev)
+    }
+
+    fn decode_regev(qk: &QueryKey, c: &MatrixRegevCiphertext) -> MatrixQ {
+        (&Matrix::append(&-qk, &Matrix::<N, N, _>::identity()) * c).into_ring(|x| RingQ::from(x))
+    }
+
     pub fn setup() -> QueryKey {
-        Regev::keygen()
+        let mut rng = ChaCha20Rng::from_entropy();
+        let s: Matrix<N, 1, RingQFast> = Matrix::rand_uniform(&mut rng);
+        s
     }
 
     pub fn query(qk: &QueryKey, idx: usize) -> Query {
         let idx_i = (idx >> ETA2) & ETA1_MASK;
         let idx_j = idx & ETA2_MASK;
 
-        let mut regevs: Vec<RegevCT> = Vec::with_capacity(1 << ETA1);
+        let mut regevs: Vec<MatrixRegevCiphertext> = Vec::with_capacity(1 << ETA1);
         for i in 0..(1 << ETA1) {
             regevs.push(if i == idx_i {
-                let ident = Matrix::<N, N, IntModCyclo<D, P>>::identity();
-                Regev::encode(&qk, &ident.into_ring(|x| x.scale_up_into()))
+                let ident = MatrixP::identity();
+                Self::encode_regev(&qk, &ident.into_ring(|x| x.scale_up_into()))
             } else {
-                Regev::encode(&qk, &Matrix::zero())
+                Self::encode_regev(&qk, &MatrixQ::zero())
             });
         }
 
-        let mut gsws: Vec<GSWCT> = Vec::with_capacity(ETA2);
+        let mut gsws: Vec<GSWCiphertext> = Vec::with_capacity(ETA2);
         for j in 0..ETA2 {
             gsws.push(if (idx_j >> (ETA2 - j - 1)) & 1 != 0 {
-                GSW::encode(&qk, &1_u64.into())
+                Self::encode_gsw(&qk, &1_u64.into())
             } else {
-                GSW::encode(&qk, &0_u64.into())
+                Self::encode_gsw(&qk, &0_u64.into())
             });
         }
 
@@ -196,30 +242,24 @@ impl SPIRAL {
 
     pub fn answer(d: &DatabasePreprocessed, q: &Query) -> Response {
         let d_at = |i: usize, j: usize| &d[(i << ETA2) + j];
-        let mut prev: Vec<RegevCT> = Vec::with_capacity(1 << ETA2);
+        let mut prev: Vec<MatrixRegevCiphertext> = Vec::with_capacity(1 << ETA2);
         for j in 0..(1 << ETA2) {
-            // Regev scalar mul
-            let mut sum = &q.0[0] * d_at(0, j);
+            let mut sum = Self::regev_mul_scalar(&q.0[0], d_at(0, j));
             for i in 1..(1 << ETA1) {
-                // Regev hom add, Regev scalar mul
-                sum.add_eq_mul(&q.0[i], d_at(i, j));
+                Self::regev_add_eq_mul_scalar(&mut sum, &q.0[i], d_at(i, j));
             }
             prev.push(sum);
         }
 
         for r in 0..ETA2 {
             let curr_size = 1 << (ETA2 - r - 1);
-            let mut curr: Vec<RegevCT> = Vec::with_capacity(curr_size);
+            let mut curr: Vec<MatrixRegevCiphertext> = Vec::with_capacity(curr_size);
             for j in 0..curr_size {
                 let b = &q.1[r];
                 let c0 = &prev[j];
                 let c1 = &prev[curr_size + j];
-                let c1_sub_c0 = Regev::sub_hom(c1, c0);
-                let mut result = Regev::mul_hom_gsw::<
-                    { HYBRID_PARAMS.gsw.M },
-                    { HYBRID_PARAMS.gsw.G_BASE },
-                    { HYBRID_PARAMS.gsw.G_LEN },
-                >(b, &c1_sub_c0);
+                let c1_sub_c0 = Self::regev_sub_hom(c1, c0);
+                let mut result = Self::hybrid_mul_hom(&c1_sub_c0, &b);
                 result += c0;
                 curr.push(result);
             }
@@ -228,8 +268,8 @@ impl SPIRAL {
         prev.remove(0)
     }
 
-    pub fn extract(qk: &QueryKey, r: &Response) -> Record {
-        Regev::decode(&qk, &r).into_ring(|x| x.round_down_into())
+    pub fn extract(qk: &QueryKey, r: &Response) -> MatrixP {
+        Self::decode_regev(qk, r).into_ring(|x| x.round_down_into())
     }
 }
 
@@ -238,6 +278,10 @@ mod test {
     use super::*;
     use std::time::Instant;
 
+    #[test]
+    fn test_spiral_one() {
+        test_spiral_n([11111].into_iter());
+    }
     #[test]
     fn test_spiral() {
         test_spiral_n([0, 11111, DB_SIZE - 1].into_iter());
@@ -252,7 +296,7 @@ mod test {
     fn test_spiral_n<I: Iterator<Item = usize>>(iter: I) {
         let mut db: Database = Vec::with_capacity(DB_SIZE);
         for i in 0..DB_SIZE as u64 {
-            let mut record: Record = Matrix::zero();
+            let mut record: MatrixP = Matrix::zero();
             record[(0, 0)] = vec![
                 i % 100,
                 (i / 100) % 100,
@@ -268,7 +312,7 @@ mod test {
         let start = Instant::now();
         let mut db_pre: DatabasePreprocessed = Vec::with_capacity(DB_SIZE);
         for i in 0..DB_SIZE {
-            db_pre.push(db[i].into_ring(|x| IntModCycloEval::from(x.include_into())));
+            db_pre.push(db[i].into_ring(|x| RingQFast::from(&x.include_into::<Q>())));
         }
         let end = Instant::now();
         eprintln!("{:?} to preprocess", end - start);
