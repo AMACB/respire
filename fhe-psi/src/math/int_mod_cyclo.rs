@@ -327,6 +327,14 @@ impl<const D: usize, const N: u64> IntModCyclo<D, N> {
         }
         result
     }
+
+    pub fn with_modulus<const M: u64>(self) -> IntModCyclo<D, M> {
+        let ptr = &self as *const IntModCyclo<D, N> as *const IntModCyclo<D, M>;
+        // Safety: since IntModCyclo<D, N> and IntModCyclo<D, M> have identical layouts
+        let val = unsafe { ptr.read() };
+        std::mem::forget(self);
+        val
+    }
 }
 
 /// Random sampling
@@ -447,6 +455,17 @@ mod test {
             &orig.scale_up_into() + &vec![-MAX_ERROR, MAX_ERROR, MAX_ERROR / 2, -MAX_ERROR].into();
         let recovered: R31 = scaled_with_error.round_down_into();
         assert_eq!(orig, recovered);
+    }
+
+    #[test]
+    fn test_with_modulus() {
+        type R31 = IntModCyclo<4, 31>;
+        type R0 = IntModCyclo<4, 0>;
+        let x: R31 = vec![1_u64, 2_u64, 3_u64, 4_u64].into();
+        let mut x: R0 = x.with_modulus();
+        x += &vec![10_u64, 10_u64, 10_u64, 10_u64].into();
+        let x: R31 = x.with_modulus();
+        assert_eq!(x, vec![11_u64, 12_u64, 13_u64, 14_u64].into())
     }
 
     #[test]

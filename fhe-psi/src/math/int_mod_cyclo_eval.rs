@@ -258,11 +258,19 @@ impl<const D: usize, const N: u64, const W: u64> RandDiscreteGaussianSampled
     }
 }
 
-/// Other polynomial-specific operations.
+/// Other operations.
 
 impl<const D: usize, const N: u64, const W: u64> IntModCycloEval<D, N, W> {
     pub fn points_iter(&self) -> Iter<'_, IntMod<{ N }>> {
         self.points.iter()
+    }
+
+    pub fn with_modulus<const M: u64, const WW: u64>(self) -> IntModCycloEval<D, M, WW> {
+        let ptr = &self as *const IntModCycloEval<D, N, W> as *const IntModCycloEval<D, M, WW>;
+        // Safety: since IntModCycloEval<D, N, W> and IntModCycloEval<D, M, WW> have identical layouts
+        let val = unsafe { ptr.read() };
+        std::mem::forget(self);
+        val
     }
 }
 

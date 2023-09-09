@@ -471,6 +471,24 @@ impl<
         let p: IntModCycloCRT<D, N1, N2, N1_INV, N2_INV> = self.into();
         p.norm()
     }
+
+    pub fn with_modulus<
+        const M1: u64,
+        const M2: u64,
+        const M1_INV: u64,
+        const M2_INV: u64,
+        const WW1: u64,
+        const WW2: u64,
+    >(
+        self,
+    ) -> IntModCycloCRTEval<D, M1, M2, M1_INV, M2_INV, WW1, WW2> {
+        let ptr = &self as *const IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
+            as *const IntModCycloCRTEval<D, M1, M2, M1_INV, M2_INV, WW1, WW2>;
+        // Safety: since IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2> and IntModCycloCRTEval<D, M1, M2, M1_INV, M2_INV, WW1, WW2> have identical layouts
+        let val = unsafe { ptr.read() };
+        std::mem::forget(self);
+        val
+    }
 }
 
 // TODO: this should be a TryFrom
