@@ -132,7 +132,7 @@ pub const G_BASE: u64 = 2;
 pub const G_LEN: usize = floor_log(G_BASE, Q) + 1;
 pub const M: usize = (N + 1) * G_LEN;
 
-pub const NOISE_WIDTH_MILLIONTHS: u64 = 1;
+pub const NOISE_WIDTH_MILLIONTHS: u64 = 6_400_000;
 
 pub const P: u64 = 1 << 8;
 
