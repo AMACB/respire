@@ -25,6 +25,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 ///
 /// The behavior when `N < 2` is not defined.
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct IntMod<const N: u64> {
     a: u64,
 }

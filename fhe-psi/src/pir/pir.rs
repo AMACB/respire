@@ -219,12 +219,13 @@ impl SPIRAL {
         let idx_j = idx & ETA2_MASK;
 
         let mut regevs: Vec<MatrixRegevCiphertext> = Vec::with_capacity(1 << ETA1);
+        let one = MatrixP::identity().into_ring(|x| x.scale_up_into());
+        let zero = MatrixQ::zero();
         for i in 0..(1 << ETA1) {
             regevs.push(if i == idx_i {
-                let ident = MatrixP::identity();
-                Self::encode_regev(&qk, &ident.into_ring(|x| x.scale_up_into()))
+                Self::encode_regev(&qk, &one)
             } else {
-                Self::encode_regev(&qk, &MatrixQ::zero())
+                Self::encode_regev(&qk, &zero)
             });
         }
 
