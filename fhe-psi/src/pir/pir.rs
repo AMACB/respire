@@ -128,7 +128,7 @@ pub const Q_B_INV: u64 = mod_inverse(Q_B, Q_A);
 pub const D: usize = 2048;
 pub const W1: u64 = 66294444;
 pub const W2: u64 = 30909463;
-pub const G_BASE: u64 = 2;
+pub const G_BASE: u64 = 128;
 pub const G_LEN: usize = floor_log(G_BASE, Q) + 1;
 pub const M: usize = (N + 1) * G_LEN;
 
