@@ -140,6 +140,7 @@ macro_rules! spiral {
 }
 
 pub trait SPIRAL {
+    // Type aliases
     type RingP;
     type RingQ;
     type RingQFast;
@@ -149,11 +150,23 @@ pub trait SPIRAL {
     type MatrixRegevCiphertext;
     type GSWCiphertext;
 
+    // Associated types
     type QueryKey;
     type Query;
     type Response;
     type Record;
     type RecordPreprocessed;
+
+    // Constants
+    const DB_SIZE: usize;
+    const ETA1: usize;
+    const ETA2: usize;
+
+    fn preprocess(record: &Self::Record) -> Self::RecordPreprocessed;
+    fn setup() -> Self::QueryKey;
+    fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
+    fn answer(db: &Vec<Self::RecordPreprocessed>, query: &Self::Query) -> Self::Response;
+    fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
 }
 
 impl<
@@ -195,6 +208,7 @@ impl<
         ETA2,
     >
 {
+    // Type aliases
     type RingP = IntModCyclo<D, P>;
     type RingQ = IntModCyclo<D, Q>;
     type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B, Q_A_INV, Q_B_INV, W1, W2>;
@@ -203,11 +217,98 @@ impl<
     type MatrixQFast = Matrix<N, N, Self::RingQFast>;
     type MatrixRegevCiphertext = Matrix<N_PLUS_ONE, N, Self::RingQFast>;
     type GSWCiphertext = Matrix<N_PLUS_ONE, M, Self::RingQFast>;
+
+    // Associated types
     type QueryKey = Matrix<N, 1, Self::RingQFast>;
     type Query = (Vec<Self::MatrixRegevCiphertext>, Vec<Self::GSWCiphertext>);
     type Response = Self::MatrixRegevCiphertext;
     type Record = Self::MatrixP;
     type RecordPreprocessed = Self::MatrixQFast;
+
+    // Constants
+    const DB_SIZE: usize = 1 << (ETA1 + ETA2);
+    const ETA1: usize = ETA1;
+    const ETA2: usize = ETA2;
+    // const ETA1_MASK: usize = (1 << ETA1) - 1;
+    // const ETA2_MASK: usize = (1 << ETA2) - 1;
+
+    fn preprocess(record: &<Self as SPIRAL>::Record) -> <Self as SPIRAL>::RecordPreprocessed {
+        record.into_ring(|x| <Self as SPIRAL>::RingQFast::from(&x.include_into::<Q>()))
+    }
+
+    fn setup() -> <Self as SPIRAL>::QueryKey {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let s: Matrix<N, 1, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
+        s
+    }
+
+    fn query(qk: &<Self as SPIRAL>::QueryKey, idx: usize) -> <Self as SPIRAL>::Query {
+        // Rust won't allow these to be const for some annoying reason.
+        #[allow(non_snake_case)]
+        let ETA1_MASK: usize = (1 << Self::ETA1) - 1;
+        #[allow(non_snake_case)]
+        let ETA2_MASK: usize = (1 << Self::ETA2) - 1;
+        let idx_i = (idx >> ETA2) & ETA1_MASK;
+        let idx_j = idx & ETA2_MASK;
+
+        let mut regevs: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> =
+            Vec::with_capacity(1 << ETA1);
+        let one = <Self as SPIRAL>::MatrixP::identity().into_ring(|x| x.scale_up_into());
+        let zero = <Self as SPIRAL>::MatrixQ::zero();
+        for i in 0..(1 << ETA1) {
+            regevs.push(if i == idx_i {
+                Self::encode_regev(&qk, &one)
+            } else {
+                Self::encode_regev(&qk, &zero)
+            });
+        }
+
+        let mut gsws: Vec<<Self as SPIRAL>::GSWCiphertext> = Vec::with_capacity(ETA2);
+        for j in 0..ETA2 {
+            gsws.push(if (idx_j >> (ETA2 - j - 1)) & 1 != 0 {
+                Self::encode_gsw(&qk, &1_u64.into())
+            } else {
+                Self::encode_gsw(&qk, &0_u64.into())
+            });
+        }
+
+        (regevs, gsws)
+    }
+
+    fn answer(
+        db: &Vec<<Self as SPIRAL>::RecordPreprocessed>,
+        (regevs, gsws): &<Self as SPIRAL>::Query,
+    ) -> <Self as SPIRAL>::Response {
+        let db_at = |i: usize, j: usize| &db[(i << ETA2) + j];
+        let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(1 << ETA2);
+        for j in 0..(1 << ETA2) {
+            let mut sum = Self::regev_mul_scalar(&regevs[0], db_at(0, j));
+            for i in 1..(1 << ETA1) {
+                Self::regev_add_eq_mul_scalar(&mut sum, &regevs[i], db_at(i, j));
+            }
+            curr.push(sum.convert_ring());
+        }
+
+        for r in 0..ETA2 {
+            let curr_size = 1 << (ETA2 - r - 1);
+            curr.truncate(2 * curr_size);
+            for j in 0..curr_size {
+                let b = &gsws[r];
+                let c0 = &curr[j];
+                let c1 = &curr[curr_size + j];
+                let c1_sub_c0 = Self::regev_sub_hom(c1, c0);
+                curr[j] += &Self::hybrid_mul_hom(&c1_sub_c0, &b);
+            }
+        }
+        curr.remove(0)
+    }
+
+    fn extract(
+        qk: &<Self as SPIRAL>::QueryKey,
+        r: &<Self as SPIRAL>::Response,
+    ) -> <Self as SPIRAL>::MatrixP {
+        Self::decode_regev(qk, r).into_ring(|x| x.round_down_into())
+    }
 }
 
 impl<
@@ -249,9 +350,6 @@ impl<
         ETA2,
     >
 {
-    pub const DB_SIZE: usize = 1 << (ETA1 + ETA2);
-    pub const ETA1_MASK: usize = (1 << ETA1) - 1;
-    pub const ETA2_MASK: usize = (1 << ETA2) - 1;
     fn encode_regev(
         qk: &<Self as SPIRAL>::QueryKey,
         mu: &<Self as SPIRAL>::MatrixQ,
@@ -316,79 +414,6 @@ impl<
         (&Matrix::append(&-qk, &Matrix::<N, N, _>::identity()) * c)
             .into_ring(|x| <Self as SPIRAL>::RingQ::from(x))
     }
-
-    pub fn preprocess(record: &<Self as SPIRAL>::Record) -> <Self as SPIRAL>::RecordPreprocessed {
-        record.into_ring(|x| <Self as SPIRAL>::RingQFast::from(&x.include_into::<Q>()))
-    }
-
-    pub fn setup() -> <Self as SPIRAL>::QueryKey {
-        let mut rng = ChaCha20Rng::from_entropy();
-        let s: Matrix<N, 1, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
-        s
-    }
-
-    pub fn query(qk: &<Self as SPIRAL>::QueryKey, idx: usize) -> <Self as SPIRAL>::Query {
-        let idx_i = (idx >> ETA2) & Self::ETA1_MASK;
-        let idx_j = idx & Self::ETA2_MASK;
-
-        let mut regevs: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> =
-            Vec::with_capacity(1 << ETA1);
-        let one = <Self as SPIRAL>::MatrixP::identity().into_ring(|x| x.scale_up_into());
-        let zero = <Self as SPIRAL>::MatrixQ::zero();
-        for i in 0..(1 << ETA1) {
-            regevs.push(if i == idx_i {
-                Self::encode_regev(&qk, &one)
-            } else {
-                Self::encode_regev(&qk, &zero)
-            });
-        }
-
-        let mut gsws: Vec<<Self as SPIRAL>::GSWCiphertext> = Vec::with_capacity(ETA2);
-        for j in 0..ETA2 {
-            gsws.push(if (idx_j >> (ETA2 - j - 1)) & 1 != 0 {
-                Self::encode_gsw(&qk, &1_u64.into())
-            } else {
-                Self::encode_gsw(&qk, &0_u64.into())
-            });
-        }
-
-        (regevs, gsws)
-    }
-
-    pub fn answer(
-        db: &Vec<<Self as SPIRAL>::RecordPreprocessed>,
-        (regevs, gsws): &<Self as SPIRAL>::Query,
-    ) -> <Self as SPIRAL>::Response {
-        let db_at = |i: usize, j: usize| &db[(i << ETA2) + j];
-        let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(1 << ETA2);
-        for j in 0..(1 << ETA2) {
-            let mut sum = Self::regev_mul_scalar(&regevs[0], db_at(0, j));
-            for i in 1..(1 << ETA1) {
-                Self::regev_add_eq_mul_scalar(&mut sum, &regevs[i], db_at(i, j));
-            }
-            curr.push(sum.convert_ring());
-        }
-
-        for r in 0..ETA2 {
-            let curr_size = 1 << (ETA2 - r - 1);
-            curr.truncate(2 * curr_size);
-            for j in 0..curr_size {
-                let b = &gsws[r];
-                let c0 = &curr[j];
-                let c1 = &curr[curr_size + j];
-                let c1_sub_c0 = Self::regev_sub_hom(c1, c0);
-                curr[j] += &Self::hybrid_mul_hom(&c1_sub_c0, &b);
-            }
-        }
-        curr.remove(0)
-    }
-
-    pub fn extract(
-        qk: &<Self as SPIRAL>::QueryKey,
-        r: &<Self as SPIRAL>::Response,
-    ) -> <Self as SPIRAL>::MatrixP {
-        Self::decode_regev(qk, r).into_ring(|x| x.round_down_into())
-    }
 }
 
 #[cfg(test)]
@@ -415,23 +440,28 @@ mod test {
 
     #[test]
     fn test_spiral_one() {
-        test_spiral_n([11111].into_iter());
+        run_spiral::<SPIRALTest, _>([11111].into_iter());
     }
     #[test]
     fn test_spiral() {
-        test_spiral_n([0, 11111, SPIRALTest::DB_SIZE - 1].into_iter());
+        run_spiral::<SPIRALTest, _>([0, 11111, SPIRALTest::DB_SIZE - 1].into_iter());
     }
 
     #[ignore]
     #[test]
     fn test_spiral_stress() {
-        test_spiral_n(0..SPIRALTest::DB_SIZE);
+        run_spiral::<SPIRALTest, _>(0..SPIRALTest::DB_SIZE);
     }
 
-    fn test_spiral_n<I: Iterator<Item = usize>>(iter: I) {
-        let mut db: Vec<<SPIRALTest as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);
-        for i in 0..SPIRALTest::DB_SIZE as u64 {
-            let mut record: <SPIRALTest as SPIRAL>::MatrixP = Matrix::zero();
+    fn run_spiral<
+        TheSPIRAL: SPIRAL<Record = Matrix<2, 2, IntModCyclo<2048, 256>>>,
+        I: Iterator<Item = usize>,
+    >(
+        iter: I,
+    ) {
+        let mut db: Vec<<TheSPIRAL as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);
+        for i in 0..TheSPIRAL::DB_SIZE as u64 {
+            let mut record: <TheSPIRAL as SPIRAL>::Record = Matrix::zero();
             record[(0, 0)] = vec![
                 i % 100,
                 (i / 100) % 100,
@@ -445,19 +475,19 @@ mod test {
         }
 
         let start = Instant::now();
-        let mut db_pre: Vec<<SPIRALTest as SPIRAL>::RecordPreprocessed> =
-            Vec::with_capacity(SPIRALTest::DB_SIZE);
-        for i in 0..SPIRALTest::DB_SIZE {
-            db_pre.push(SPIRALTest::preprocess(&db[i]));
+        let mut db_pre: Vec<<TheSPIRAL as SPIRAL>::RecordPreprocessed> =
+            Vec::with_capacity(TheSPIRAL::DB_SIZE);
+        for i in 0..TheSPIRAL::DB_SIZE {
+            db_pre.push(TheSPIRAL::preprocess(&db[i]));
         }
         let end = Instant::now();
         eprintln!("{:?} to preprocess", end - start);
 
-        let qk = SPIRALTest::setup();
+        let qk = TheSPIRAL::setup();
         let check = |idx: usize| {
-            let cts = SPIRALTest::query(&qk, idx);
-            let result = SPIRALTest::answer(&db_pre, &cts);
-            let extracted = SPIRALTest::extract(&qk, &result);
+            let cts = TheSPIRAL::query(&qk, idx);
+            let result = TheSPIRAL::answer(&db_pre, &cts);
+            let extracted = TheSPIRAL::extract(&qk, &result);
             assert_eq!(&extracted, &db[idx])
         };
 
