@@ -1,27 +1,3 @@
-// pub trait PIRScheme {
-//     type Database;
-//     type Index;
-//     type Record;
-//
-//     type PublicParams;
-//     type QueryKey;
-//     type State;
-//     type Query;
-//     type Response;
-//
-//     fn setup() -> (Self::PublicParams, Self::QueryKey);
-//
-//     fn query(qk: &Self::QueryKey, idx: &Self::Index) -> (Self::State, Self::Query);
-//
-//     fn answer(
-//         pp: &Self::PublicParams,
-//         database: &Self::Database,
-//         q: &Self::Query,
-//     ) -> Self::Response;
-//
-//     fn extract(qk: &Self::QueryKey, st: &Self::State, r: &Self::Response) -> Self::Record;
-// }
-
 use crate::math::gadget::{build_gadget, gadget_inverse};
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
