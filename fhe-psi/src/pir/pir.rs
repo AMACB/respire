@@ -26,6 +26,7 @@ use crate::math::gadget::{build_gadget, gadget_inverse};
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
 use crate::math::matrix::Matrix;
+use crate::math::number_theory::find_sqrt_primitive_root;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::utils::{floor_log, mod_inverse};
 use rand::SeedableRng;
@@ -40,8 +41,8 @@ pub struct SPIRALImpl<
     const Q_A_INV: u64,
     const Q_B_INV: u64,
     const D: usize,
-    const W1: u64,
-    const W2: u64,
+    const W_A: u64,
+    const W_B: u64,
     const G_BASE: u64,
     const G_LEN: usize,
     const M: usize,
@@ -57,8 +58,6 @@ pub struct SPIRALParamsRaw {
     pub Q_A: u64,
     pub Q_B: u64,
     pub D: usize,
-    pub W1: u64,
-    pub W2: u64,
     pub G_BASE: u64,
     pub NOISE_WIDTH_MILLIONTHS: u64,
     pub P: u64,
@@ -79,8 +78,8 @@ impl SPIRALParamsRaw {
             Q_A_INV: mod_inverse(self.Q_A, self.Q_B),
             Q_B_INV: mod_inverse(self.Q_B, self.Q_A),
             D: self.D,
-            W1: self.W1,
-            W2: self.W2,
+            W_A: find_sqrt_primitive_root(self.D, self.Q_A),
+            W_B: find_sqrt_primitive_root(self.D, self.Q_B),
             G_BASE: self.G_BASE,
             G_LEN: t,
             M: (self.N + 1) * t,
@@ -103,8 +102,8 @@ pub struct SPIRALParams {
     pub Q_A_INV: u64,
     pub Q_B_INV: u64,
     pub D: usize,
-    pub W1: u64,
-    pub W2: u64,
+    pub W_A: u64,
+    pub W_B: u64,
     pub G_BASE: u64,
     pub G_LEN: usize,
     pub M: usize,
@@ -126,8 +125,8 @@ macro_rules! spiral {
             {$params.Q_A_INV},
             {$params.Q_B_INV},
             {$params.D},
-            {$params.W1},
-            {$params.W2},
+            {$params.W_A},
+            {$params.W_B},
             {$params.G_BASE},
             {$params.G_LEN},
             {$params.M},
@@ -178,8 +177,8 @@ impl<
         const Q_A_INV: u64,
         const Q_B_INV: u64,
         const D: usize,
-        const W1: u64,
-        const W2: u64,
+        const W_A: u64,
+        const W_B: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const M: usize,
@@ -197,8 +196,8 @@ impl<
         Q_A_INV,
         Q_B_INV,
         D,
-        W1,
-        W2,
+        W_A,
+        W_B,
         G_BASE,
         G_LEN,
         M,
@@ -211,7 +210,7 @@ impl<
     // Type aliases
     type RingP = IntModCyclo<D, P>;
     type RingQ = IntModCyclo<D, Q>;
-    type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B, Q_A_INV, Q_B_INV, W1, W2>;
+    type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B, Q_A_INV, Q_B_INV, W_A, W_B>;
     type MatrixP = Matrix<N, N, Self::RingP>;
     type MatrixQ = Matrix<N, N, Self::RingQ>;
     type MatrixQFast = Matrix<N, N, Self::RingQFast>;
@@ -320,8 +319,8 @@ impl<
         const Q_A_INV: u64,
         const Q_B_INV: u64,
         const D: usize,
-        const W1: u64,
-        const W2: u64,
+        const W_A: u64,
+        const W_B: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const M: usize,
@@ -339,8 +338,8 @@ impl<
         Q_A_INV,
         Q_B_INV,
         D,
-        W1,
-        W2,
+        W_A,
+        W_B,
         G_BASE,
         G_LEN,
         M,
@@ -426,8 +425,6 @@ mod test {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
-        W1: 66294444,
-        W2: 30909463,
         G_BASE: 128,
         NOISE_WIDTH_MILLIONTHS: 6_400_000,
         P: 1 << 8,
