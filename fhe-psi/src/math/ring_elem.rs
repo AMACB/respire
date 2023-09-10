@@ -66,4 +66,8 @@ where
         std::mem::forget(self);
         val
     }
+
+    fn convert_ref(&self) -> &Other {
+        unsafe { &*(self as *const Self as *const Other) }
+    }
 }

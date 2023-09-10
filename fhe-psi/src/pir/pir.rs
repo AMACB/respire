@@ -241,22 +241,22 @@ impl SPIRAL {
         (regevs, gsws)
     }
 
-    pub fn answer(d: &DatabasePreprocessed, q: &Query) -> Response {
+    pub fn answer(d: &DatabasePreprocessed, (regevs, gsws): &Query) -> Response {
         let d_at = |i: usize, j: usize| &d[(i << ETA2) + j];
         let mut curr: Vec<MatrixRegevCiphertext> = Vec::with_capacity(1 << ETA2);
         for j in 0..(1 << ETA2) {
-            let mut sum = Self::regev_mul_scalar(&q.0[0], d_at(0, j));
+            let mut sum = Self::regev_mul_scalar(&regevs[0], d_at(0, j));
             for i in 1..(1 << ETA1) {
-                Self::regev_add_eq_mul_scalar(&mut sum, &q.0[i], d_at(i, j));
+                Self::regev_add_eq_mul_scalar(&mut sum, &regevs[i], d_at(i, j));
             }
-            curr.push(sum);
+            curr.push(sum.convert_ring());
         }
 
         for r in 0..ETA2 {
             let curr_size = 1 << (ETA2 - r - 1);
             curr.truncate(2 * curr_size);
             for j in 0..curr_size {
-                let b = &q.1[r];
+                let b = &gsws[r];
                 let c0 = &curr[j];
                 let c1 = &curr[curr_size + j];
                 let c1_sub_c0 = Self::regev_sub_hom(c1, c0);
