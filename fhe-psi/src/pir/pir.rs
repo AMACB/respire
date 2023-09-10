@@ -120,6 +120,7 @@ use rand_chacha::ChaCha20Rng;
 pub struct SPIRAL {}
 
 pub const N: usize = 2;
+pub const N_PLUS_ONE: usize = N + 1;
 pub const Q_A: u64 = 268369921;
 pub const Q_B: u64 = 249561089;
 pub const Q: u64 = Q_A * Q_B;
@@ -130,7 +131,7 @@ pub const W1: u64 = 66294444;
 pub const W2: u64 = 30909463;
 pub const G_BASE: u64 = 128;
 pub const G_LEN: usize = floor_log(G_BASE, Q) + 1;
-pub const M: usize = (N + 1) * G_LEN;
+pub const M: usize = N_PLUS_ONE * G_LEN;
 
 pub const NOISE_WIDTH_MILLIONTHS: u64 = 6_400_000;
 
@@ -146,8 +147,8 @@ pub const ETA2_MASK: usize = (1 << ETA2) - 1;
 pub type RingP = IntModCyclo<D, P>;
 pub type RingQ = IntModCyclo<D, Q>;
 pub type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B, Q_A_INV, Q_B_INV, W1, W2>;
-pub type MatrixRegevCiphertext = Matrix<{ N + 1 }, N, RingQFast>;
-pub type GSWCiphertext = Matrix<{ N + 1 }, M, RingQFast>;
+pub type MatrixRegevCiphertext = Matrix<N_PLUS_ONE, N, RingQFast>;
+pub type GSWCiphertext = Matrix<N_PLUS_ONE, M, RingQFast>;
 
 pub type QueryKey = Matrix<N, 1, RingQFast>;
 pub type Query = (Vec<MatrixRegevCiphertext>, Vec<GSWCiphertext>);
@@ -165,7 +166,7 @@ impl SPIRAL {
         let a_t: Matrix<1, N, RingQFast> = Matrix::rand_uniform(&mut rng);
         let e_mat: Matrix<N, N, RingQFast> =
             Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-        let c_mat: Matrix<{ N + 1 }, N, RingQFast> = Matrix::stack(
+        let c_mat: Matrix<N_PLUS_ONE, N, RingQFast> = Matrix::stack(
             &a_t,
             &(&(&(qk * &a_t) + &e_mat) + &mu.into_ring(|x| RingQFast::from(x))),
         );
@@ -177,8 +178,8 @@ impl SPIRAL {
         let a_t: Matrix<1, M, RingQFast> = Matrix::rand_uniform(&mut rng);
         let e_mat: Matrix<N, M, RingQFast> =
             Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-        let c_mat: Matrix<{ N + 1 }, M, RingQFast> = &Matrix::stack(&a_t, &(&(qk * &a_t) + &e_mat))
-            + &(&build_gadget::<RingQFast, { N + 1 }, M, G_BASE, G_LEN>()
+        let c_mat: Matrix<N_PLUS_ONE, M, RingQFast> = &Matrix::stack(&a_t, &(&(qk * &a_t) + &e_mat))
+            + &(&build_gadget::<RingQFast, N_PLUS_ONE, M, G_BASE, G_LEN>()
                 * &RingQFast::from(&mu.include_into::<Q>()));
         c_mat
     }
@@ -201,7 +202,7 @@ impl SPIRAL {
     }
 
     fn hybrid_mul_hom(regev: &MatrixRegevCiphertext, gsw: &GSWCiphertext) -> MatrixRegevCiphertext {
-        gsw * &gadget_inverse::<RingQFast, { N + 1 }, M, N, G_BASE, G_LEN>(regev)
+        gsw * &gadget_inverse::<RingQFast, N_PLUS_ONE, M, N, G_BASE, G_LEN>(regev)
     }
 
     fn decode_regev(qk: &QueryKey, c: &MatrixRegevCiphertext) -> MatrixQ {
