@@ -179,12 +179,6 @@ mod test {
 
     type IntersectFHEInsecure<const P: u64> = FHEInsecure<IntMod<P>>;
 
-    impl<const P: u64> MulScalarEncryptionScheme<IntMod<P>> for IntersectFHEInsecure<P> {
-        fn mul_scalar(lhs: &Self::Ciphertext, rhs: &IntMod<P>) -> Self::Ciphertext {
-            lhs * &u64::from(*rhs).into()
-        }
-    }
-
     impl<const P: u64> IntersectFHEScheme<P> for IntersectFHEInsecure<P> {}
 
     // Actual schemes

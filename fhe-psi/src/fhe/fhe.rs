@@ -73,6 +73,24 @@ where
     }
 }
 
+impl<R: RingElement> AddScalarEncryptionScheme<R> for FHEInsecure<R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    fn add_scalar(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
+        lhs + rhs
+    }
+}
+
+impl<R: RingElement> MulScalarEncryptionScheme<R> for FHEInsecure<R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
+        lhs * rhs
+    }
+}
+
 impl<R: RingElement> FHEScheme for FHEInsecure<R> where for<'a> &'a R: RingElementRef<R> {}
 
 impl<R: RingElement> EncryptionScheme for FHEInsecure<R>
