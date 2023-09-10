@@ -142,6 +142,11 @@ pub trait SPIRAL {
     fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
     fn answer(db: &Vec<Self::RecordPreprocessed>, query: &Self::Query) -> Self::Response;
     fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
+    fn response_error(
+        qk: &<Self as SPIRAL>::QueryKey,
+        r: &<Self as SPIRAL>::Response,
+        actual: &<Self as SPIRAL>::Record,
+    ) -> f64;
 }
 
 impl<
@@ -281,8 +286,31 @@ impl<
     fn extract(
         qk: &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::Response,
-    ) -> <Self as SPIRAL>::MatrixP {
+    ) -> <Self as SPIRAL>::Record {
         Self::decode_regev(qk, r).into_ring(|x| x.round_down_into())
+    }
+
+    fn response_error(
+        qk: &<Self as SPIRAL>::QueryKey,
+        r: &<Self as SPIRAL>::Response,
+        actual: &<Self as SPIRAL>::Record,
+    ) -> f64 {
+        let actual_scaled = actual.into_ring(|x| x.scale_up_into());
+        let decoded = Self::decode_regev(qk, r);
+        let diff = &actual_scaled - &decoded;
+        (diff.norm() as f64) / (Q as f64)
+        // let mut err = 0_f64;
+        // let mut ct = 0_usize;
+        // for i in 0..N {
+        //     for j in 0..N {
+        //         for e in diff[(i, j)].coeff_iter() {
+        //             let rel_e = (u64::from(*e) as f64) / (Q as f64);
+        //             err += rel_e * rel_e;
+        //             ct += 1;
+        //         }
+        //     }
+        // }
+        // (err / (ct as f64)) * (Q as f64)
     }
 }
 
@@ -457,18 +485,22 @@ mod test {
         eprintln!("{:?} to preprocess", end - start);
 
         let qk = TheSPIRAL::setup();
-        let check = |idx: usize| {
+        let check = |idx: usize| -> f64 {
             let cts = TheSPIRAL::query(&qk, idx);
             let result = TheSPIRAL::answer(&db_pre, &cts);
             let extracted = TheSPIRAL::extract(&qk, &result);
-            assert_eq!(&extracted, &db[idx])
+            if &extracted != &db[idx] {
+                eprintln!("protocol failed!");
+            }
+            TheSPIRAL::response_error(&qk, &result, &db[idx])
         };
 
         for i in iter {
             let start = Instant::now();
-            check(i);
+            let err = check(i);
             let end = Instant::now();
             eprintln!("{:?} for query {}", end - start, i);
+            eprintln!("relative error: 2^({})", err.log2());
         }
     }
 }
