@@ -2,7 +2,6 @@
 
 use crate::fhe::fhe::*;
 use crate::fhe::gsw_utils::*;
-use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
@@ -180,11 +179,11 @@ impl<
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > AddScalarEncryptionScheme<IntMod<P>>
+    > AddScalarEncryptionScheme<IntModCyclo<D, P>>
     for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
-    fn add_scalar(lhs: &Self::Ciphertext, rhs: &IntMod<P>) -> Self::Ciphertext {
-        let rhs_q = IntModCycloEval::<D, Q, W>::from(u64::from(*rhs));
+    fn add_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
+        let rhs_q = rhs.include_into().into();
         Self::Ciphertext {
             ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q),
         }
@@ -202,11 +201,11 @@ impl<
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > MulScalarEncryptionScheme<IntMod<P>>
+    > MulScalarEncryptionScheme<IntModCyclo<D, P>>
     for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
-    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &IntMod<P>) -> Self::Ciphertext {
-        let rhs_q = IntModCycloEval::<D, Q, W>::from(u64::from(*rhs));
+    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
+        let rhs_q = rhs.include_into().into();
         Self::Ciphertext {
             ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q),
         }
