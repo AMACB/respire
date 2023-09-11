@@ -474,6 +474,24 @@ impl<
     }
 }
 
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
+    pub fn reduce_mod(a: &mut IntModCycloCRTEval<D, 0, 0, 0, 0, 0, 0>) {
+        for i in 0..D {
+            a.p1.points[i] = (u64::from(a.p1.points[i]) % N1).into();
+            a.p2.points[i] = (u64::from(a.p2.points[i]) % N2).into();
+        }
+    }
+}
+
 unsafe impl<
         const D: usize,
         const N1: u64,

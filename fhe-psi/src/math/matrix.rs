@@ -158,6 +158,19 @@ where
     }
 }
 
+impl<const N: usize, const M: usize, R: RingElement> Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    pub fn iter_do<F: Fn(&mut R)>(&mut self, f: F) {
+        for r in 0..N {
+            for c in 0..M {
+                f(&mut self[(r, c)]);
+            }
+        }
+    }
+}
+
 /// Conversions
 impl<const N: usize, const M: usize, R: RingElement> Matrix<N, M, R>
 where

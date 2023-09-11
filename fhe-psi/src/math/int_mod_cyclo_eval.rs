@@ -22,7 +22,7 @@ use std::slice::Iter;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct IntModCycloEval<const D: usize, const N: u64, const W: u64> {
-    points: [IntMod<N>; D],
+    pub(in crate::math) points: [IntMod<N>; D],
 }
 
 /// Conversions

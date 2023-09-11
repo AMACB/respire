@@ -1,3 +1,4 @@
+use std::cmp::max;
 use crate::math::gadget::{build_gadget, gadget_inverse};
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
@@ -5,10 +6,9 @@ use crate::math::matrix::Matrix;
 use crate::math::number_theory::find_sqrt_primitive_root;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::ring_elem::{RingCompatible, RingElement};
-use crate::math::utils::{floor_log, mod_inverse};
+use crate::math::utils::{ceil_log, floor_log, mod_inverse};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use std::ops::Add;
 
 pub struct SPIRALImpl<
     const N: usize,
@@ -270,10 +270,17 @@ impl<
         let db_at = |i: usize, j: usize| &db[(i << ETA2) + j];
         let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(1 << ETA2);
         for j in 0..(1 << ETA2) {
+            // Norm is at most N * max(Q_A, Q_B)^2 for each term
+            // Add one for margin
+            let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - N - 1);
             let mut sum = Self::regev_mul_scalar_no_reduce(&regevs[0], db_at(0, j));
             for i in 1..(1 << ETA1) {
                 Self::regev_add_eq_mul_scalar_no_reduce(&mut sum, &regevs[i], db_at(i, j));
+                if i % reduce_every == 0 {
+                    sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
+                }
             }
+            sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
             curr.push(sum.convert_ring());
         }
 
@@ -397,12 +404,13 @@ impl<
     ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
         lhs - rhs
     }
-    fn regev_mul_scalar(
-        lhs: &<Self as SPIRAL>::MatrixRegevCiphertext,
-        rhs: &<Self as SPIRAL>::MatrixQFast,
-    ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
-        lhs * rhs
-    }
+
+    // fn regev_mul_scalar(
+    //     lhs: &<Self as SPIRAL>::MatrixRegevCiphertext,
+    //     rhs: &<Self as SPIRAL>::MatrixQFast,
+    // ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
+    //     lhs * rhs
+    // }
 
     fn regev_mul_scalar_no_reduce(
         lhs: &<Self as SPIRAL>::MatrixRegevCiphertext,
@@ -415,13 +423,13 @@ impl<
         result
     }
 
-    fn regev_add_eq_mul_scalar(
-        lhs: &mut <Self as SPIRAL>::MatrixRegevCiphertext,
-        rhs_a: &<Self as SPIRAL>::MatrixRegevCiphertext,
-        rhs_b: &<Self as SPIRAL>::MatrixQFast,
-    ) {
-        lhs.add_eq_mul(rhs_a, rhs_b);
-    }
+    // fn regev_add_eq_mul_scalar(
+    //     lhs: &mut <Self as SPIRAL>::MatrixRegevCiphertext,
+    //     rhs_a: &<Self as SPIRAL>::MatrixRegevCiphertext,
+    //     rhs_b: &<Self as SPIRAL>::MatrixQFast,
+    // ) {
+    //     lhs.add_eq_mul(rhs_a, rhs_b);
+    // }
 
     fn regev_add_eq_mul_scalar_no_reduce(
         lhs: &mut <Self as SPIRAL>::MatrixRegevCiphertext0,
