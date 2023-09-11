@@ -21,7 +21,6 @@ use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub};
 #[repr(transparent)]
 pub struct Matrix<const N: usize, const M: usize, R: RingElement>
 where
-    R: Sized,
     for<'a> &'a R: RingElementRef<R>,
 {
     data: Vec<R>,
@@ -220,6 +219,25 @@ where
     }
 }
 
+impl<const N: usize, const M: usize, R: RingElement> Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    pub fn mul_iter_do<const K: usize, F: FnMut((usize, usize), &R, &R)>(
+        &self,
+        other: &Matrix<M, K, R>,
+        mut f: F,
+    ) {
+        for r in 0..N {
+            for c in 0..K {
+                for i in 0..M {
+                    f((r, c), &self[(r, i)], &other[(i, c)]);
+                }
+            }
+        }
+    }
+}
+
 impl<const N: usize, const M: usize, const K: usize, R: RingElement> Mul<&Matrix<M, K, R>>
     for &Matrix<N, M, R>
 where
@@ -230,13 +248,9 @@ where
     /// Naive matrix multiplication.
     fn mul(self, other: &Matrix<M, K, R>) -> Self::Output {
         let mut out = Matrix::zero();
-        for r in 0..N {
-            for c in 0..K {
-                for i in 0..M {
-                    out[(r, c)].add_eq_mul(&self[(r, i)], &other[(i, c)]);
-                }
-            }
-        }
+        self.mul_iter_do(other, |(r, c), lhs, rhs| {
+            out[(r, c)].add_eq_mul(&lhs, &rhs);
+        });
         out
     }
 }
