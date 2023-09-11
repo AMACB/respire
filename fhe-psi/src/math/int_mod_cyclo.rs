@@ -8,6 +8,7 @@ use crate::math::matrix::Matrix;
 use crate::math::ntt::*;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
+use crate::math::utils::ceil_log;
 use rand::Rng;
 use std::cmp::max;
 use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -91,47 +92,37 @@ impl<const D: usize, const N: u64> TryFrom<&IntModCyclo<D, N>> for IntMod<N> {
     }
 }
 
-impl<const D: usize, const N: u64, const W: u64> From<IntModCycloEval<D, N, W>>
-    for IntModCyclo<D, N>
+// TODO: this does a clone, which the user may not be aware about...
+impl<const D: usize, const N: u64, const W: u64> From<&IntModCyclo<D, N>>
+    for IntModCycloEval<D, N, W>
 {
-    fn from(a_eval: IntModCycloEval<D, N, W>) -> Self {
-        (&a_eval).into()
+    fn from(a: &IntModCyclo<D, N>) -> Self {
+        (a.clone()).into()
     }
 }
 
-impl<const D: usize, const N: u64, const W: u64> From<&IntModCycloEval<D, N, W>>
-    for IntModCyclo<D, N>
+impl<const D: usize, const N: u64, const W: u64> From<IntModCyclo<D, N>>
+    for IntModCycloEval<D, N, W>
 {
-    fn from(a_eval: &IntModCycloEval<D, N, W>) -> Self {
+    fn from(a: IntModCyclo<D, N>) -> Self {
         // TODO: this should be in the type, probably
-        let mut log_d = 1;
-        while (1 << log_d) < D {
-            log_d += 1;
-        }
+        let log_d = ceil_log(2, D as u64);
         assert_eq!(1 << log_d, D);
 
+        let mut points: [IntMod<N>; D] = a.coeff;
+
         let root: IntMod<N> = W.into();
-
-        let mut coeff: [IntMod<N>; D] = [0_u64.into(); D];
-        for (i, x) in a_eval.points_iter().enumerate() {
-            coeff[i] = x.clone();
-        }
-
-        bit_reverse_order(&mut coeff, log_d);
-        ntt(&mut coeff, (root * root).inverse(), log_d);
-
-        let mut inv_root_pow: IntMod<N> = 1u64.into();
-        let inv_root = root.inverse();
-        let inv_d = IntMod::<N>::from(D as u64).inverse();
+        let mut root_power: IntMod<N> = 1u64.into();
+        // negacyclic preprocessing
         for i in 0..D {
-            // divide by degree
-            coeff[i] *= inv_d;
-            // negacyclic post-processing
-            coeff[i] *= inv_root_pow;
-            inv_root_pow *= inv_root;
+            points[i] *= root_power;
+            root_power *= root;
         }
 
-        return Self { coeff };
+        bit_reverse_order(&mut points, log_d);
+        ntt(&mut points, root * root, log_d);
+
+        return points.into();
     }
 }
 

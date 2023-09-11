@@ -167,7 +167,7 @@ impl<
         let s_T = &sk.s_T;
         let ct = &ct.ct;
         let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
-        gsw_round::<P, Q, IntModCRT<Q1, Q2, Q1_INV, Q2_INV>>(pt)
+        pt.round_down_into()
     }
 }
 

@@ -8,6 +8,7 @@ use crate::math::matrix::Matrix;
 use crate::math::ntt::*;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
+use crate::math::utils::ceil_log;
 use rand::Rng;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::slice::Iter;
@@ -42,41 +43,41 @@ impl<const D: usize, const N: u64, const W: u64> From<[IntMod<N>; D]> for IntMod
     }
 }
 
-impl<const D: usize, const N: u64, const W: u64> From<IntModCyclo<D, N>>
-    for IntModCycloEval<D, N, W>
+// TODO: this does a clone, which the user may not be aware about...
+impl<const D: usize, const N: u64, const W: u64> From<&IntModCycloEval<D, N, W>>
+    for IntModCyclo<D, N>
 {
-    fn from(a: IntModCyclo<D, N>) -> Self {
-        (&a).into()
+    fn from(a_eval: &IntModCycloEval<D, N, W>) -> Self {
+        (a_eval.clone()).into()
     }
 }
 
-impl<const D: usize, const N: u64, const W: u64> From<&IntModCyclo<D, N>>
-    for IntModCycloEval<D, N, W>
+impl<const D: usize, const N: u64, const W: u64> From<IntModCycloEval<D, N, W>>
+    for IntModCyclo<D, N>
 {
-    fn from(a: &IntModCyclo<D, N>) -> Self {
+    fn from(a_eval: IntModCycloEval<D, N, W>) -> Self {
         // TODO: this should be in the type, probably
-        let mut log_d = 1;
-        while (1 << log_d) < D {
-            log_d += 1;
-        }
+        let log_d = ceil_log(2, D as u64);
         assert_eq!(1 << log_d, D);
 
+        let mut coeff: [IntMod<N>; D] = a_eval.points;
+        bit_reverse_order(&mut coeff, log_d);
+
         let root: IntMod<N> = W.into();
+        ntt(&mut coeff, (root * root).inverse(), log_d);
 
-        let mut root_power: IntMod<N> = 1u64.into();
-        let mut points: [IntMod<N>; D] = [0_u64.into(); D];
-        for (i, x) in a.coeff_iter().enumerate() {
-            points[i] = x.clone();
-
-            // negacyclic preprocessing
-            points[i] *= root_power;
-            root_power *= root;
+        let mut inv_root_pow: IntMod<N> = 1u64.into();
+        let inv_root = root.inverse();
+        let inv_d = IntMod::<N>::from(D as u64).inverse();
+        for i in 0..D {
+            // divide by degree
+            coeff[i] *= inv_d;
+            // negacyclic post-processing
+            coeff[i] *= inv_root_pow;
+            inv_root_pow *= inv_root;
         }
 
-        bit_reverse_order(&mut points, log_d);
-        ntt(&mut points, root * root, log_d);
-
-        return Self { points };
+        return coeff.into();
     }
 }
 

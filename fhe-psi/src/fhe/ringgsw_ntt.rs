@@ -92,7 +92,7 @@ impl<
     > EncryptionScheme
     for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
-    type Plaintext = IntMod<P>;
+    type Plaintext = IntModCyclo<D, P>;
     type Ciphertext = RingGSWNTTCiphertext<N, M, P, Q, D, W, G_BASE, G_LEN>;
     type PublicKey = RingGSWNTTPublicKey<N, M, P, Q, D, W, G_BASE, G_LEN>;
     type SecretKey = RingGSWNTTSecretKey<N, M, P, Q, D, W, G_BASE, G_LEN>;
@@ -103,15 +103,14 @@ impl<
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: &Self::Plaintext) -> Self::Ciphertext {
-        let mu = IntModCycloEval::<D, Q, W>::from(u64::from(*mu));
-        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, _>(&pk.A, mu);
+        let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, _>(&pk.A, mu.include_into().into());
         Self::Ciphertext { ct }
     }
 
     fn encrypt_sk(sk: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
-        let mu = IntModCycloEval::<D, Q, W>::from(u64::from(*mu));
         let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
-            &sk.s_T, mu,
+            &sk.s_T,
+            mu.include_into().into(),
         );
         Self::Ciphertext { ct }
     }
@@ -119,8 +118,9 @@ impl<
     fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Self::Plaintext {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
-        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
-        gsw_round::<P, Q, IntMod<Q>>(IntModCyclo::from(pt)[0])
+        let pt_eval = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
+        let pt: IntModCyclo<D, Q> = pt_eval.into();
+        pt.round_down_into()
     }
 }
 
@@ -327,10 +327,10 @@ mod test {
     #[test]
     fn homomorphism_mul_multiple_correct() {
         let (A, s_T) = RingGSWNTTTest::keygen();
-        let mu1 = IntMod::from(5_u64);
-        let mu2 = IntMod::from(12_u64);
-        let mu3 = IntMod::from(6_u64);
-        let mu4 = IntMod::from(18_u64);
+        let mu1 = IntModCyclo::from(5_u64);
+        let mu2 = IntModCyclo::from(12_u64);
+        let mu3 = IntModCyclo::from(6_u64);
+        let mu4 = IntModCyclo::from(18_u64);
 
         let ct1 = RingGSWNTTTest::encrypt(&A, &mu1);
         let ct2 = RingGSWNTTTest::encrypt(&A, &mu2);

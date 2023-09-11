@@ -2,8 +2,8 @@
 
 use crate::fhe::fhe::*;
 use crate::fhe::gsw_utils::*;
-use crate::math::int_mod::IntMod;
-use crate::math::int_mod_crt::IntModCRT;
+use crate::math::int_mod_cyclo::IntModCyclo;
+use crate::math::int_mod_cyclo_crt::IntModCycloCRT;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
 use crate::math::matrix::Matrix;
 use crate::math::utils::{ceil_log, mod_inverse};
@@ -155,7 +155,7 @@ impl<
         NOISE_WIDTH_MILLIONTHS,
     >
 {
-    type Plaintext = IntMod<P>;
+    type Plaintext = IntModCyclo<D, P>;
     type Ciphertext =
         RingGSWNTTCRTCiphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
     type PublicKey =
@@ -169,24 +169,29 @@ impl<
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: &Self::Plaintext) -> Self::Ciphertext {
-        let mu = IntModCycloCRTEval::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(*mu));
+        let mu1: IntModCyclo<D, Q1> = mu.include_into();
+        let mu2: IntModCyclo<D, Q2> = mu.include_into();
+        let mu = (&IntModCycloCRT::from((mu1, mu2))).into();
         let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, _>(&pk.A, mu);
         Self::Ciphertext { ct }
     }
 
     fn encrypt_sk(sk: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
-        let mu = IntModCycloCRTEval::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(*mu));
+        let mu1: IntModCyclo<D, Q1> = mu.include_into();
+        let mu2: IntModCyclo<D, Q2> = mu.include_into();
+        let mu = (&IntModCycloCRT::from((mu1, mu2))).into();
         let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
             &sk.s_T, mu,
         );
         Self::Ciphertext { ct }
     }
 
-    fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> IntMod<P> {
+    fn decrypt(sk: &Self::SecretKey, ct: &Self::Ciphertext) -> Self::Plaintext {
         let s_T = &sk.s_T;
         let ct = &ct.ct;
-        let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
-        gsw_round::<P, Q, IntModCRT<Q1, Q2, Q1_INV, Q2_INV>>((&pt).into())
+        let pt_eval = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
+        let pt: IntModCycloCRT<D, Q1, Q2, Q1_INV, Q2_INV> = pt_eval.into();
+        pt.round_down_into()
     }
 }
 
@@ -294,7 +299,7 @@ impl<
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > AddScalarEncryptionScheme<IntMod<P>>
+    > AddScalarEncryptionScheme<IntModCyclo<D, P>>
     for RingGSWNTTCRT<
         N_MINUS_1,
         N,
@@ -313,10 +318,13 @@ impl<
         NOISE_WIDTH_MILLIONTHS,
     >
 {
-    fn add_scalar(lhs: &Self::Ciphertext, rhs: &IntMod<P>) -> Self::Ciphertext {
-        let rhs_q = IntModCycloCRTEval::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(*rhs));
+    fn add_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
+        let rhs_q1 = rhs.include_into();
+        let rhs_q2 = rhs.include_into();
+        let rhs_q: IntModCycloCRT<D, Q1, Q2, Q1_INV, Q2_INV> = (rhs_q1, rhs_q2).into();
+        let rhs_q_eval = rhs_q.into();
         Self::Ciphertext {
-            ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q),
+            ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q_eval),
         }
         // // TODO: see below, not fast
         // let rhs_q = &Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(*rhs));
@@ -342,7 +350,7 @@ impl<
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > MulScalarEncryptionScheme<IntMod<P>>
+    > MulScalarEncryptionScheme<IntModCyclo<D, P>>
     for RingGSWNTTCRT<
         N_MINUS_1,
         N,
@@ -361,10 +369,13 @@ impl<
         NOISE_WIDTH_MILLIONTHS,
     >
 {
-    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &IntMod<P>) -> Self::Ciphertext {
-        let rhs_q = IntModCycloCRTEval::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(*rhs));
+    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
+        let rhs_q1 = rhs.include_into();
+        let rhs_q2 = rhs.include_into();
+        let rhs_q: IntModCycloCRT<D, Q1, Q2, Q1_INV, Q2_INV> = (rhs_q1, rhs_q2).into();
+        let rhs_q_eval = rhs_q.into();
         Self::Ciphertext {
-            ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q),
+            ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q_eval),
         }
         // let rhs_q = &Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(rhs));
         // Ciphertext {
@@ -514,7 +525,7 @@ mod test {
     fn encryption_is_correct() {
         let (A, s_T) = RingGSWNTTCRTTest::keygen();
         for i in 0_u64..10_u64 {
-            let mu = IntMod::from(i);
+            let mu = IntModCyclo::from(i);
             let ct = RingGSWNTTCRTTest::encrypt(&A, &mu);
             let pt = RingGSWNTTCRTTest::decrypt(&s_T, &ct);
             assert_eq!(pt, mu, "decryption failed");
@@ -526,8 +537,8 @@ mod test {
         let (A, s_T) = RingGSWNTTCRTTest::keygen();
         for i in 0_u64..10_u64 {
             for j in 0_u64..10_u64 {
-                let mu1 = IntMod::from(i);
-                let mu2 = IntMod::from(j);
+                let mu1 = IntModCyclo::from(i);
+                let mu2 = IntModCyclo::from(j);
                 let ct1 = RingGSWNTTCRTTest::encrypt(&A, &mu1);
                 let ct2 = RingGSWNTTCRTTest::encrypt(&A, &mu2);
 
@@ -538,9 +549,13 @@ mod test {
                 let pt_mul_scalar =
                     RingGSWNTTCRTTest::decrypt(&s_T, &(RingGSWNTTCRTTest::mul_scalar(&ct1, &mu2)));
 
-                assert_eq!(pt_add_ct, mu1 + mu2, "ciphertext addition failed");
-                assert_eq!(pt_mul_ct, mu1 * mu2, "ciphertext multiplication failed");
-                assert_eq!(pt_mul_scalar, mu1 * mu2, "multiplication by scalar failed");
+                assert_eq!(pt_add_ct, &mu1 + &mu2, "ciphertext addition failed");
+                assert_eq!(pt_mul_ct, &mu1 * &mu2, "ciphertext multiplication failed");
+                assert_eq!(
+                    pt_mul_scalar,
+                    &mu1 * &mu2,
+                    "multiplication by scalar failed"
+                );
             }
         }
     }
@@ -548,10 +563,10 @@ mod test {
     #[test]
     fn homomorphism_mul_multiple_correct() {
         let (A, s_T) = RingGSWNTTCRTTest::keygen();
-        let mu1 = IntMod::from(5_u64);
-        let mu2 = IntMod::from(12_u64);
-        let mu3 = IntMod::from(6_u64);
-        let mu4 = IntMod::from(18_u64);
+        let mu1 = IntModCyclo::from(5_u64);
+        let mu2 = IntModCyclo::from(12_u64);
+        let mu3 = IntModCyclo::from(6_u64);
+        let mu4 = IntModCyclo::from(18_u64);
 
         let ct1 = RingGSWNTTCRTTest::encrypt(&A, &mu1);
         let ct2 = RingGSWNTTCRTTest::encrypt(&A, &mu2);

@@ -58,6 +58,24 @@ impl<
         const N2_INV: u64,
         const W1: u64,
         const W2: u64,
+    > From<IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>>
+    for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
+    fn from(a: IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>) -> Self {
+        let p1_ntt: IntModCycloEval<D, N1, W1> = a.p1.into();
+        let p2_ntt: IntModCycloEval<D, N2, W2> = a.p2.into();
+        (p1_ntt, p2_ntt).into()
+    }
+}
+
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
     > From<&IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>>
     for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
 {
@@ -124,42 +142,6 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
 // {
 //     fn from(a: Z_N_CycloNTT<D, N, W>) -> Self {
 //         (&a).into()
-//     }
-// }
-
-// impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W: u64> From<&Z_N_CycloNTT<D, N, W>>
-//     for Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV>
-// {
-//     fn from(a_eval: &Z_N_CycloNTT<D, N, W>) -> Self {
-//         // TODO: this should be in the type, probably
-//         let mut log_d = 1;
-//         while (1 << log_d) < D {
-//             log_d += 1;
-//         }
-//         assert_eq!(1 << log_d, D);
-
-//         let root: Z_N<N> = W.into();
-
-//         let mut coeff: [Z_N<N>; D] = [0_u64.into(); D];
-//         for (i, x) in a_eval.points_iter().enumerate() {
-//             coeff[i] = x.clone();
-//         }
-
-//         bit_reverse_order(&mut coeff, log_d);
-//         ntt(&mut coeff, (root * root).inverse(), log_d);
-
-//         let mut inv_root_pow: Z_N<N> = 1u64.into();
-//         let inv_root = root.inverse();
-//         let inv_D = Z_N::<N>::from(D as u64).inverse();
-//         for i in 0..D {
-//             // divide by degree
-//             coeff[i] *= inv_D;
-//             // negacyclic post-processing
-//             coeff[i] *= inv_root_pow;
-//             inv_root_pow *= inv_root;
-//         }
-
-//         return Self { coeff };
 //     }
 // }
 
@@ -379,6 +361,16 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
             worst = max(worst, val.norm());
         }
         worst
+    }
+
+    /// Applies `Z_N::round_down_into` coefficient-wise.
+    pub fn round_down_into<const M: u64>(&self) -> IntModCyclo<D, M> {
+        let mut rounded_coeffs = [IntMod::zero(); D];
+        for i in 0..D {
+            let coeff: IntModCRT<N1, N2, N1_INV, N2_INV> = (self.p1[i], self.p2[i]).into();
+            rounded_coeffs[i] = coeff.round_down_into();
+        }
+        rounded_coeffs.into()
     }
 }
 
