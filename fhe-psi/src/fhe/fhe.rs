@@ -47,6 +47,10 @@ pub trait MulScalarEncryptionScheme<Scalar>: EncryptionScheme {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Scalar) -> Self::Ciphertext;
 }
 
+pub trait NegEncryptionScheme: EncryptionScheme {
+    fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext;
+}
+
 /// The trivial (insecure) FHE scheme where encryption does nothing, useful for testing.
 pub struct FHEInsecure<R: RingElement>
 where

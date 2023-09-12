@@ -336,6 +336,44 @@ impl<
         }
     }
 }
+
+impl<
+        const N_MINUS_1: usize,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const Q1: u64,
+        const Q2: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
+        const D: usize,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
+    > NegEncryptionScheme
+    for RingGSWCRT<
+        N_MINUS_1,
+        N,
+        M,
+        P,
+        Q,
+        Q1,
+        Q2,
+        Q1_INV,
+        Q2_INV,
+        D,
+        G_BASE,
+        G_LEN,
+        NOISE_WIDTH_MILLIONTHS,
+    >
+{
+    fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext {
+        Self::Ciphertext {
+            ct: -&ct.ct
+        }
+    }
+}
 /*
  * RingGSWCRT params
  */
