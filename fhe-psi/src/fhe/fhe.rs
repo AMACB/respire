@@ -95,6 +95,15 @@ where
     }
 }
 
+impl<R: RingElement> NegEncryptionScheme for FHEInsecure<R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext {
+        -ct
+    }
+}
+
 impl<R: RingElement> FHEScheme for FHEInsecure<R> where for<'a> &'a R: RingElementRef<R> {}
 
 impl<R: RingElement> EncryptionScheme for FHEInsecure<R>
