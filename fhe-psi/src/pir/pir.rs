@@ -268,7 +268,9 @@ impl<
             }
         };
         for digit in digits.into_iter().rev() {
-            gsws.push(encode_bit_gsw(digit == 1));
+            for which in 1..FOLD_BASE {
+                gsws.push(encode_bit_gsw(digit == which));
+            }
         }
 
         (regevs, gsws)
