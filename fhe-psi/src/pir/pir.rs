@@ -1,4 +1,3 @@
-use std::cmp::max;
 use crate::math::gadget::{build_gadget, gadget_inverse};
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
@@ -9,6 +8,7 @@ use crate::math::ring_elem::{RingCompatible, RingElement};
 use crate::math::utils::{ceil_log, floor_log, mod_inverse};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use std::cmp::max;
 
 pub struct SPIRALImpl<
     const N: usize,
@@ -302,10 +302,10 @@ impl<
         let mut curr_size = fold_size;
         for gsw_idx in 0..ETA2 {
             curr.truncate(curr_size);
-            for fold_idx in 0..curr_size/FOLD_BASE {
+            for fold_idx in 0..curr_size / FOLD_BASE {
                 let c0 = curr[fold_idx].clone();
                 for i in 1..FOLD_BASE {
-                    let c_i = &curr[i*curr_size/FOLD_BASE + fold_idx];
+                    let c_i = &curr[i * curr_size / FOLD_BASE + fold_idx];
                     let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
                     let b = &gsws[gsw_idx * (FOLD_BASE - 1) + i - 1];
                     let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, &b);
@@ -481,6 +481,7 @@ impl<
 #[cfg(test)]
 mod test {
     use super::*;
+    use rand::Rng;
     use std::time::Instant;
 
     const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
@@ -488,12 +489,12 @@ mod test {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
-        G_BASE: 128,
+        G_BASE: 1 << 20,
         NOISE_WIDTH_MILLIONTHS: 6_400_000,
         P: 1 << 8,
         ETA1: 9,
-        ETA2: 6,
-        FOLD_BASE: 2,
+        ETA2: 3,
+        FOLD_BASE: 4,
     }
     .expand();
 
@@ -511,8 +512,19 @@ mod test {
     #[ignore]
     #[test]
     fn test_spiral_stress() {
-        run_spiral::<SPIRALTest, _>(0..SPIRALTest::DB_SIZE);
+        let mut rng = ChaCha20Rng::from_entropy();
+        run_spiral::<SPIRALTest, _>((0..).map(|_| rng.gen_range(0_usize..SPIRALTest::DB_SIZE)))
     }
+
+    // struct RunResult {
+    //     success: bool,
+    //     noise: f64,
+    //     // preprocess_time: Duration,
+    //     // setup_time: Duration,
+    //     query_time: Duration,
+    //     answer_time: Duration,
+    //     extract_time: Duration,
+    // }
 
     fn run_spiral<
         TheSPIRAL: SPIRAL<Record = Matrix<2, 2, IntModCyclo<2048, 256>>>,
@@ -535,32 +547,50 @@ mod test {
             db.push(record);
         }
 
-        let start = Instant::now();
+        let pre_start = Instant::now();
         let mut db_pre: Vec<<TheSPIRAL as SPIRAL>::RecordPreprocessed> =
             Vec::with_capacity(TheSPIRAL::DB_SIZE);
         for i in 0..TheSPIRAL::DB_SIZE {
             db_pre.push(TheSPIRAL::preprocess(&db[i]));
         }
-        let end = Instant::now();
-        eprintln!("{:?} to preprocess", end - start);
+        let pre_end = Instant::now();
+        eprintln!("{:?} to preprocess", pre_end - pre_start);
 
+        let setup_start = Instant::now();
         let qk = TheSPIRAL::setup();
-        let check = |idx: usize| -> f64 {
+        let setup_end = Instant::now();
+        eprintln!("{:?} to setup", setup_end - setup_start);
+
+        let check = |idx: usize| {
+            eprintln!("Running with idx = {}", idx);
+            let query_start = Instant::now();
             let cts = TheSPIRAL::query(&qk, idx);
+            let query_end = Instant::now();
+            let query_total = query_end - query_start;
+
+            let answer_start = Instant::now();
             let result = TheSPIRAL::answer(&db_pre, &cts);
+            let answer_end = Instant::now();
+            let answer_total = answer_end - answer_start;
+
+            let extract_start = Instant::now();
             let extracted = TheSPIRAL::extract(&qk, &result);
+            let extract_end = Instant::now();
+            let extract_total = extract_end - extract_start;
+
             if &extracted != &db[idx] {
-                eprintln!("protocol failed!");
+                eprintln!("  **** protocol failed");
             }
-            TheSPIRAL::response_error(&qk, &result, &db[idx])
+            eprintln!("  {:?} total", query_total + answer_total + extract_total);
+            eprintln!("    {:?} to query", query_total);
+            eprintln!("    {:?} to answer", answer_total);
+            eprintln!("    {:?} to extract", extract_total);
+            let err = TheSPIRAL::response_error(&qk, &result, &db[idx]);
+            eprintln!("  relative error: 2^({})", err.log2());
         };
 
         for i in iter {
-            let start = Instant::now();
-            let err = check(i);
-            let end = Instant::now();
-            eprintln!("{:?} for query {}", end - start, i);
-            eprintln!("relative error: 2^({})", err.log2());
+            check(i);
         }
     }
 }
