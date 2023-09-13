@@ -28,6 +28,7 @@ pub struct SPIRALImpl<
     const P: u64,
     const ETA1: usize,
     const ETA2: usize,
+    const FOLD_BASE: usize,
 > {}
 
 #[allow(non_snake_case)]
@@ -41,6 +42,7 @@ pub struct SPIRALParamsRaw {
     pub P: u64,
     pub ETA1: usize,
     pub ETA2: usize,
+    pub FOLD_BASE: usize,
 }
 
 impl SPIRALParamsRaw {
@@ -65,6 +67,7 @@ impl SPIRALParamsRaw {
             P: self.P,
             ETA1: self.ETA1,
             ETA2: self.ETA2,
+            FOLD_BASE: self.FOLD_BASE,
         }
     }
 }
@@ -89,6 +92,7 @@ pub struct SPIRALParams {
     pub P: u64,
     pub ETA1: usize,
     pub ETA2: usize,
+    pub FOLD_BASE: usize,
 }
 
 #[macro_export]
@@ -112,6 +116,7 @@ macro_rules! spiral {
             {$params.P},
             {$params.ETA1},
             {$params.ETA2},
+            {$params.FOLD_BASE},
         >
     }
 }
@@ -172,6 +177,7 @@ impl<
         const P: u64,
         const ETA1: usize,
         const ETA2: usize,
+        const FOLD_BASE: usize,
     > SPIRAL
     for SPIRALImpl<
         N,
@@ -191,6 +197,7 @@ impl<
         P,
         ETA1,
         ETA2,
+        FOLD_BASE,
     >
 {
     // Type aliases
@@ -214,11 +221,9 @@ impl<
     type RecordPreprocessed = Self::MatrixQFast;
 
     // Constants
-    const DB_SIZE: usize = 1 << (ETA1 + ETA2);
+    const DB_SIZE: usize = 2_usize.pow(ETA1 as u32) * FOLD_BASE.pow(ETA2 as u32);
     const ETA1: usize = ETA1;
     const ETA2: usize = ETA2;
-    // const ETA1_MASK: usize = (1 << ETA1) - 1;
-    // const ETA2_MASK: usize = (1 << ETA2) - 1;
 
     fn preprocess(record: &<Self as SPIRAL>::Record) -> <Self as SPIRAL>::RecordPreprocessed {
         record.into_ring(|x| <Self as SPIRAL>::RingQFast::from(&x.include_into::<Q>()))
@@ -231,13 +236,11 @@ impl<
     }
 
     fn query(qk: &<Self as SPIRAL>::QueryKey, idx: usize) -> <Self as SPIRAL>::Query {
-        // Rust won't allow these to be const for some annoying reason.
-        #[allow(non_snake_case)]
-        let ETA1_MASK: usize = (1 << Self::ETA1) - 1;
-        #[allow(non_snake_case)]
-        let ETA2_MASK: usize = (1 << Self::ETA2) - 1;
-        let idx_i = (idx >> ETA2) & ETA1_MASK;
-        let idx_j = idx & ETA2_MASK;
+        assert!(idx < Self::DB_SIZE);
+        let fold_size: usize = FOLD_BASE.pow(Self::ETA2 as u32);
+
+        let idx_i = idx / fold_size;
+        let idx_j = idx % fold_size;
 
         let mut regevs: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> =
             Vec::with_capacity(1 << ETA1);
@@ -252,12 +255,20 @@ impl<
         }
 
         let mut gsws: Vec<<Self as SPIRAL>::GSWCiphertext> = Vec::with_capacity(ETA2);
-        for j in 0..ETA2 {
-            gsws.push(if (idx_j >> (ETA2 - j - 1)) & 1 != 0 {
-                Self::encode_gsw(&qk, &1_u64.into())
-            } else {
-                Self::encode_gsw(&qk, &0_u64.into())
-            });
+        let mut digits = Vec::with_capacity(ETA2);
+        let mut idx_j_curr = idx_j;
+        for _ in 0..ETA2 {
+            digits.push(idx_j_curr % FOLD_BASE);
+            idx_j_curr /= FOLD_BASE;
+        }
+        let encode_bit_gsw = |b: bool| -> <Self as SPIRAL>::GSWCiphertext {
+            match b {
+                false => Self::encode_gsw(&qk, &0_u64.into()),
+                true => Self::encode_gsw(&qk, &1_u64.into()),
+            }
+        };
+        for digit in digits.into_iter().rev() {
+            gsws.push(encode_bit_gsw(digit == 1));
         }
 
         (regevs, gsws)
@@ -267,9 +278,11 @@ impl<
         db: &Vec<<Self as SPIRAL>::RecordPreprocessed>,
         (regevs, gsws): &<Self as SPIRAL>::Query,
     ) -> <Self as SPIRAL>::Response {
-        let db_at = |i: usize, j: usize| &db[(i << ETA2) + j];
-        let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(1 << ETA2);
-        for j in 0..(1 << ETA2) {
+        let fold_size: usize = FOLD_BASE.pow(Self::ETA2 as u32);
+
+        let db_at = |i: usize, j: usize| &db[i * fold_size + j];
+        let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(fold_size);
+        for j in 0..fold_size {
             // Norm is at most N * max(Q_A, Q_B)^2 for each term
             // Add one for margin
             let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - N - 1);
@@ -284,16 +297,20 @@ impl<
             curr.push(sum.convert_ring());
         }
 
-        for r in 0..ETA2 {
-            let curr_size = 1 << (ETA2 - r - 1);
-            curr.truncate(2 * curr_size);
-            for j in 0..curr_size {
-                let b = &gsws[r];
-                let c0 = &curr[j];
-                let c1 = &curr[curr_size + j];
-                let c1_sub_c0 = Self::regev_sub_hom(c1, c0);
-                curr[j] += &Self::hybrid_mul_hom(&c1_sub_c0, &b);
+        let mut curr_size = fold_size;
+        for gsw_idx in 0..ETA2 {
+            curr.truncate(curr_size);
+            for fold_idx in 0..curr_size/FOLD_BASE {
+                let c0 = curr[fold_idx].clone();
+                for i in 1..FOLD_BASE {
+                    let c_i = &curr[i*curr_size/FOLD_BASE + fold_idx];
+                    let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
+                    let b = &gsws[gsw_idx * (FOLD_BASE - 1) + i - 1];
+                    let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, &b);
+                    curr[fold_idx] += &c_i_sub_c0_mul_b;
+                }
             }
+            curr_size /= FOLD_BASE;
         }
         curr.remove(0)
     }
@@ -347,6 +364,7 @@ impl<
         const P: u64,
         const ETA1: usize,
         const ETA2: usize,
+        const FOLD_BASE: usize,
     >
     SPIRALImpl<
         N,
@@ -366,6 +384,7 @@ impl<
         P,
         ETA1,
         ETA2,
+        FOLD_BASE,
     >
 {
     fn encode_regev(
@@ -472,6 +491,7 @@ mod test {
         P: 1 << 8,
         ETA1: 9,
         ETA2: 6,
+        FOLD_BASE: 2,
     }
     .expand();
 
