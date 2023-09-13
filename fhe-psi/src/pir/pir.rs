@@ -21,14 +21,14 @@ pub struct SPIRALImpl<
     const D: usize,
     const W_A: u64,
     const W_B: u64,
-    const G_BASE: u64,
-    const G_LEN: usize,
+    const Z_GSW: u64,
+    const T_GSW: usize,
     const M: usize,
     const NOISE_WIDTH_MILLIONTHS: u64,
     const P: u64,
     const ETA1: usize,
     const ETA2: usize,
-    const FOLD_BASE: usize,
+    const Z_FOLD: usize,
 > {}
 
 #[allow(non_snake_case)]
@@ -37,18 +37,18 @@ pub struct SPIRALParamsRaw {
     pub Q_A: u64,
     pub Q_B: u64,
     pub D: usize,
-    pub G_BASE: u64,
+    pub Z_GSW: u64,
     pub NOISE_WIDTH_MILLIONTHS: u64,
     pub P: u64,
     pub ETA1: usize,
     pub ETA2: usize,
-    pub FOLD_BASE: usize,
+    pub Z_FOLD: usize,
 }
 
 impl SPIRALParamsRaw {
     pub const fn expand(&self) -> SPIRALParams {
         let q = self.Q_A * self.Q_B;
-        let t = floor_log(self.G_BASE, q) + 1;
+        let t_gsw = floor_log(self.Z_GSW, q) + 1;
         SPIRALParams {
             N: self.N,
             N_PLUS_ONE: self.N + 1,
@@ -60,14 +60,14 @@ impl SPIRALParamsRaw {
             D: self.D,
             W_A: find_sqrt_primitive_root(self.D, self.Q_A),
             W_B: find_sqrt_primitive_root(self.D, self.Q_B),
-            G_BASE: self.G_BASE,
-            G_LEN: t,
-            M: (self.N + 1) * t,
+            Z_GSW: self.Z_GSW,
+            T_GSW: t_gsw,
+            M: (self.N + 1) * t_gsw,
             NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
             P: self.P,
             ETA1: self.ETA1,
             ETA2: self.ETA2,
-            FOLD_BASE: self.FOLD_BASE,
+            Z_FOLD: self.Z_FOLD,
         }
     }
 }
@@ -85,14 +85,14 @@ pub struct SPIRALParams {
     pub D: usize,
     pub W_A: u64,
     pub W_B: u64,
-    pub G_BASE: u64,
-    pub G_LEN: usize,
+    pub Z_GSW: u64,
+    pub T_GSW: usize,
     pub M: usize,
     pub NOISE_WIDTH_MILLIONTHS: u64,
     pub P: u64,
     pub ETA1: usize,
     pub ETA2: usize,
-    pub FOLD_BASE: usize,
+    pub Z_FOLD: usize,
 }
 
 #[macro_export]
@@ -109,14 +109,14 @@ macro_rules! spiral {
             {$params.D},
             {$params.W_A},
             {$params.W_B},
-            {$params.G_BASE},
-            {$params.G_LEN},
+            {$params.Z_GSW},
+            {$params.T_GSW},
             {$params.M},
             {$params.NOISE_WIDTH_MILLIONTHS},
             {$params.P},
             {$params.ETA1},
             {$params.ETA2},
-            {$params.FOLD_BASE},
+            {$params.Z_FOLD},
         >
     }
 }
@@ -170,14 +170,14 @@ impl<
         const D: usize,
         const W_A: u64,
         const W_B: u64,
-        const G_BASE: u64,
-        const G_LEN: usize,
+        const Z_GSW: u64,
+        const T_GSW: usize,
         const M: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
         const P: u64,
         const ETA1: usize,
         const ETA2: usize,
-        const FOLD_BASE: usize,
+        const Z_FOLD: usize,
     > SPIRAL
     for SPIRALImpl<
         N,
@@ -190,14 +190,14 @@ impl<
         D,
         W_A,
         W_B,
-        G_BASE,
-        G_LEN,
+        Z_GSW,
+        T_GSW,
         M,
         NOISE_WIDTH_MILLIONTHS,
         P,
         ETA1,
         ETA2,
-        FOLD_BASE,
+        Z_FOLD,
     >
 {
     // Type aliases
@@ -221,7 +221,7 @@ impl<
     type RecordPreprocessed = Self::MatrixQFast;
 
     // Constants
-    const DB_SIZE: usize = 2_usize.pow(ETA1 as u32) * FOLD_BASE.pow(ETA2 as u32);
+    const DB_SIZE: usize = 2_usize.pow(ETA1 as u32) * Z_FOLD.pow(ETA2 as u32);
     const ETA1: usize = ETA1;
     const ETA2: usize = ETA2;
 
@@ -237,7 +237,7 @@ impl<
 
     fn query(qk: &<Self as SPIRAL>::QueryKey, idx: usize) -> <Self as SPIRAL>::Query {
         assert!(idx < Self::DB_SIZE);
-        let fold_size: usize = FOLD_BASE.pow(Self::ETA2 as u32);
+        let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
 
         let idx_i = idx / fold_size;
         let idx_j = idx % fold_size;
@@ -258,8 +258,8 @@ impl<
         let mut digits = Vec::with_capacity(ETA2);
         let mut idx_j_curr = idx_j;
         for _ in 0..ETA2 {
-            digits.push(idx_j_curr % FOLD_BASE);
-            idx_j_curr /= FOLD_BASE;
+            digits.push(idx_j_curr % Z_FOLD);
+            idx_j_curr /= Z_FOLD;
         }
         let encode_bit_gsw = |b: bool| -> <Self as SPIRAL>::GSWCiphertext {
             match b {
@@ -268,7 +268,7 @@ impl<
             }
         };
         for digit in digits.into_iter().rev() {
-            for which in 1..FOLD_BASE {
+            for which in 1..Z_FOLD {
                 gsws.push(encode_bit_gsw(digit == which));
             }
         }
@@ -280,7 +280,7 @@ impl<
         db: &Vec<<Self as SPIRAL>::RecordPreprocessed>,
         (regevs, gsws): &<Self as SPIRAL>::Query,
     ) -> <Self as SPIRAL>::Response {
-        let fold_size: usize = FOLD_BASE.pow(Self::ETA2 as u32);
+        let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
 
         let db_at = |i: usize, j: usize| &db[i * fold_size + j];
         let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(fold_size);
@@ -302,17 +302,17 @@ impl<
         let mut curr_size = fold_size;
         for gsw_idx in 0..ETA2 {
             curr.truncate(curr_size);
-            for fold_idx in 0..curr_size / FOLD_BASE {
+            for fold_idx in 0..curr_size / Z_FOLD {
                 let c0 = curr[fold_idx].clone();
-                for i in 1..FOLD_BASE {
-                    let c_i = &curr[i * curr_size / FOLD_BASE + fold_idx];
+                for i in 1..Z_FOLD {
+                    let c_i = &curr[i * curr_size / Z_FOLD + fold_idx];
                     let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
-                    let b = &gsws[gsw_idx * (FOLD_BASE - 1) + i - 1];
+                    let b = &gsws[gsw_idx * (Z_FOLD - 1) + i - 1];
                     let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, &b);
                     curr[fold_idx] += &c_i_sub_c0_mul_b;
                 }
             }
-            curr_size /= FOLD_BASE;
+            curr_size /= Z_FOLD;
         }
         curr.remove(0)
     }
@@ -359,14 +359,14 @@ impl<
         const D: usize,
         const W_A: u64,
         const W_B: u64,
-        const G_BASE: u64,
-        const G_LEN: usize,
+        const Z_GSW: u64,
+        const T_GSW: usize,
         const M: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
         const P: u64,
         const ETA1: usize,
         const ETA2: usize,
-        const FOLD_BASE: usize,
+        const Z_FOLD: usize,
     >
     SPIRALImpl<
         N,
@@ -379,14 +379,14 @@ impl<
         D,
         W_A,
         W_B,
-        G_BASE,
-        G_LEN,
+        Z_GSW,
+        T_GSW,
         M,
         NOISE_WIDTH_MILLIONTHS,
         P,
         ETA1,
         ETA2,
-        FOLD_BASE,
+        Z_FOLD,
     >
 {
     fn encode_regev(
@@ -414,7 +414,7 @@ impl<
             Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
         let c_mat: Matrix<N_PLUS_ONE, M, <Self as SPIRAL>::RingQFast> =
             &Matrix::stack(&a_t, &(&(qk * &a_t) + &e_mat))
-                + &(&build_gadget::<<Self as SPIRAL>::RingQFast, N_PLUS_ONE, M, G_BASE, G_LEN>()
+                + &(&build_gadget::<<Self as SPIRAL>::RingQFast, N_PLUS_ONE, M, Z_GSW, T_GSW>()
                     * &<Self as SPIRAL>::RingQFast::from(&mu.include_into::<Q>()));
         c_mat
     }
@@ -466,7 +466,7 @@ impl<
         regev: &<Self as SPIRAL>::MatrixRegevCiphertext,
         gsw: &<Self as SPIRAL>::GSWCiphertext,
     ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
-        gsw * &gadget_inverse::<<Self as SPIRAL>::RingQFast, N_PLUS_ONE, M, N, G_BASE, G_LEN>(regev)
+        gsw * &gadget_inverse::<<Self as SPIRAL>::RingQFast, N_PLUS_ONE, M, N, Z_GSW, T_GSW>(regev)
     }
 
     fn decode_regev(
@@ -489,12 +489,12 @@ mod test {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
-        G_BASE: 1 << 20,
+        Z_GSW: 1 << 20,
         NOISE_WIDTH_MILLIONTHS: 6_400_000,
         P: 1 << 8,
         ETA1: 9,
-        ETA2: 3,
-        FOLD_BASE: 4,
+        ETA2: 6,
+        Z_FOLD: 2,
     }
     .expand();
 
