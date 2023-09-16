@@ -41,7 +41,21 @@ impl<const P: u64, const Q: u64, const M: u64> FHEScheme for GSWNoiseTracker<P, 
 
 impl<const P: u64, const Q: u64, const M: u64> AddHomEncryptionScheme for GSWNoiseTracker<P, Q, M> {
     fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
-        let new_noise = lhs.noise * M + P * rhs.noise;
+        let new_noise = lhs.noise + rhs.noise;
+        assert!(
+            new_noise < Q / P,
+            "ciphertext has become too noisy to decrypt correctly"
+        );
+        Self::Ciphertext {
+            x: lhs.x + rhs.x,
+            noise: new_noise,
+        }
+    }
+}
+
+impl<const P: u64, const Q: u64, const M: u64> MulHomEncryptionScheme for GSWNoiseTracker<P, Q, M> {
+    fn mul_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
+        let new_noise = lhs.noise * M + (P-1) * rhs.noise;
         assert!(
             new_noise < Q / P,
             "ciphertext has become too noisy to decrypt correctly"
@@ -53,16 +67,30 @@ impl<const P: u64, const Q: u64, const M: u64> AddHomEncryptionScheme for GSWNoi
     }
 }
 
-impl<const P: u64, const Q: u64, const M: u64> MulHomEncryptionScheme for GSWNoiseTracker<P, Q, M> {
-    fn mul_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
-        let new_noise = lhs.noise + rhs.noise;
-        assert!(
-            new_noise < Q / P,
-            "ciphertext has become too noisy to decrypt correctly"
-        );
+impl<const P: u64, const Q: u64, const M: u64> AddScalarEncryptionScheme<IntMod<P>> for GSWNoiseTracker<P, Q, M> {
+    fn add_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
         Self::Ciphertext {
-            x: lhs.x * rhs.x,
-            noise: new_noise,
+            x: lhs.x + *rhs,
+            noise: lhs.noise
+        }
+    }
+}
+
+impl<const P: u64, const Q: u64, const M: u64> MulScalarEncryptionScheme<IntMod<P>> for GSWNoiseTracker<P, Q, M> {
+    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
+        let new_noise = lhs.noise * M;
+        Self::Ciphertext {
+            x: lhs.x * *rhs,
+            noise: new_noise
+        }
+    }
+}
+
+impl<const P: u64, const Q: u64, const M: u64> NegEncryptionScheme for GSWNoiseTracker<P, Q, M> {
+    fn negate(lhs: &Self::Ciphertext) -> Self::Ciphertext {
+        Self::Ciphertext {
+            x: -lhs.x,
+            noise: lhs.noise
         }
     }
 }
