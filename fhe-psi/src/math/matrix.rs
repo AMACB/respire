@@ -5,7 +5,7 @@ use crate::math::ring_elem::*;
 use rand::Rng;
 use std::cmp::max;
 use std::mem::ManuallyDrop;
-use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub};
+use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub, SubAssign};
 
 // TODO
 // * Implement as an array instead of as a `Vec`. The main sticking point is that to move a matrix
@@ -329,6 +329,19 @@ where
             }
         }
         out
+    }
+}
+
+impl<const N: usize, const M: usize, R: RingElement> SubAssign<&Matrix<N, M, R>> for Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    fn sub_assign(&mut self, rhs: &Matrix<N, M, R>) {
+        for r in 0..N {
+            for c in 0..M {
+                self[(r, c)] -= &rhs[(r, c)];
+            }
+        }
     }
 }
 

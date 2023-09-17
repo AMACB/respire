@@ -293,6 +293,18 @@ impl<const D: usize, const NN: u64, const BASE: u64, const LEN: usize>
 /// Misc
 
 impl<const D: usize, const N: u64> IntModCyclo<D, N> {
+    /// Compute the automorphism x --> x^k. This only makes sense for odd `k`.
+    pub fn automorphism(&self, k: usize) -> Self {
+        let mut result = IntModCyclo::zero();
+        for i in 0..D {
+            let pow = (i * k) % (2 * D);
+            let neg = pow >= D;
+            let reduced_pow = if !neg { pow } else { pow - D };
+            result.coeff[reduced_pow] = if neg { -self.coeff[i] } else { self.coeff[i] };
+        }
+        result
+    }
+
     /// Applies `Z_N::scale_up_into` coefficient-wise.
     pub fn scale_up_into<const M: u64>(&self) -> IntModCyclo<D, M> {
         let mut result = IntModCyclo::zero();
