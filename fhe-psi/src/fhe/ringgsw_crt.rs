@@ -369,9 +369,7 @@ impl<
     >
 {
     fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext {
-        Self::Ciphertext {
-            ct: -&ct.ct
-        }
+        Self::Ciphertext { ct: -&ct.ct }
     }
 }
 /*

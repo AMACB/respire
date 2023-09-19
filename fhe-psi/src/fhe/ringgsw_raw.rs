@@ -230,9 +230,7 @@ impl<
     for RingGSWRaw<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext {
-        Self::Ciphertext {
-            ct: -&ct.ct
-        }
+        Self::Ciphertext { ct: -&ct.ct }
     }
 }
 pub struct Params {

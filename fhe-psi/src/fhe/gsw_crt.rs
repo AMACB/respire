@@ -285,9 +285,7 @@ impl<
     for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext {
-        Self::Ciphertext {
-            ct: -&ct.ct
-        }
+        Self::Ciphertext { ct: -&ct.ct }
     }
 }
 
