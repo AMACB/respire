@@ -26,13 +26,20 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
 {
     /// Reconstructs the reduced form modulo `N`.
     fn from(a: IntModCRT<N1, N2, N1_INV, N2_INV>) -> Self {
-        let a1: u128 = u64::from(a.a1) as u128;
-        let a2: u128 = u64::from(a.a2) as u128;
-        let n1: u128 = N1.into();
-        let n2: u128 = N2.into();
-        let n1_inv: u128 = N1_INV.into();
-        let n2_inv: u128 = N2_INV.into();
-        ((n2_inv * n2 * a1 + n1_inv * n1 * a2) % (n1 * n2)) as u64
+        // u64 arithmetic only when N1, N2 are 32 bit
+        if N1 < (1u64 << 32) && N2 < (1u64 << 32) {
+            let a1  = u64::from(a.a1);
+            let a2  = u64::from(a.a2);
+            (((N2_INV * a1) % N1) * N2 + ((N1_INV * a2) % N2) * N1) % (N1 * N2)
+        } else {
+            let a1: u128 = u64::from(a.a1) as u128;
+            let a2: u128 = u64::from(a.a2) as u128;
+            let n1: u128 = N1.into();
+            let n2: u128 = N2.into();
+            let n1_inv: u128 = N1_INV.into();
+            let n2_inv: u128 = N2_INV.into();
+            ((n2_inv * n2 * a1 + n1_inv * n1 * a2) % (n1 * n2)) as u64
+        }
     }
 }
 
