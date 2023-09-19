@@ -331,7 +331,6 @@ mod test {
         let p = IntModCyclo::<D, P>::from(vec![1_u64, 2, 3, 4]);
         let q = IntModCyclo::<D, P>::from(vec![-3_i64, -4, 1, 2]);
         let p_eval = IntModCycloEval::<D, P, W>::from(p.clone());
-        let q_eval = IntModCycloEval::<D, P, W>::from(q.clone());
         assert_eq!(IntModCyclo::<D, P>::from(p_eval.mul_x_pow(2)), q);
         assert_eq!(IntModCyclo::<D, P>::from(p_eval.mul_x_pow(6)), -&q);
         assert_eq!(IntModCyclo::<D, P>::from(p_eval.mul_x_pow(10)), q);

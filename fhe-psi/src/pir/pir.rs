@@ -314,7 +314,7 @@ impl<
         }
 
         // Think of the odd entries of packed as [ETA2] x [Z_FOLD - 1] x [T_GSW]
-        let inv_odd = IntMod::from(mod_pow(2, Q - 1 - (1 + Self::GSW_EXPAND_ITERS) as u64, Q));
+        let inv_odd = IntMod::from(mod_inverse(1 << (1 + Self::GSW_EXPAND_ITERS), Q));
         for (digit_idx, digit) in digits.into_iter().rev().enumerate() {
             for which in 0..Z_FOLD - 1 {
                 let mut msg = IntMod::from((digit == which + 1) as u64);
@@ -337,26 +337,55 @@ impl<
         (s_scalar, _): &<Self as SPIRAL>::QueryKey,
     ) -> <Self as SPIRAL>::Response {
         // Query expansion
+        let do_expand_iter = |i: usize, cts: &Vec<<Self as SPIRAL>::ScalarRegevCiphertext>| -> Vec<<Self as SPIRAL>::ScalarRegevCiphertext> {
+            let auto_key = &auto_keys[i];
+            let new_len = 1 << i;
+            let mut cts_new = Vec::with_capacity(new_len);
+            cts_new.resize(new_len, Matrix::zero());
+            for j in 0..new_len / 2 {
+                let shifted = Self::scalar_regev_mul_x_pow(&cts[j], 2 * D - (1 << i));
+                cts_new[j] = &cts[j] + &Self::auto_hom(auto_key, &cts[j]);
+                cts_new[j + new_len / 2] = &shifted + &Self::auto_hom(auto_key, &shifted);
+            }
+            cts_new
+        };
+
         let regev_base = q + &Self::auto_hom(&auto_keys[0], &q);
         let mut regevs = vec![regev_base];
         for i in 1..Self::REGEV_EXPAND_ITERS + 1 {
-            let auto_key = &auto_keys[i];
-            let new_len = 1 << i;
-            let mut regevs_new = Vec::with_capacity(new_len);
-            regevs_new.resize(new_len, Matrix::zero());
-            for j in 0..new_len / 2 {
-                let shifted = Self::scalar_regev_mul_x_pow(&regevs[j], 2 * D - (1 << i));
-                regevs_new[j] = &regevs[j] + &Self::auto_hom(auto_key, &regevs[j]);
-                regevs_new[j + new_len / 2] = &shifted + &Self::auto_hom(auto_key, &shifted);
-            }
-            regevs = regevs_new
+            regevs = do_expand_iter(i, &regevs);
         }
 
+        let q_shifted = Self::scalar_regev_mul_x_pow(&q, 2 * D - 1);
+        let gsw_base = &q_shifted + &Self::auto_hom(&auto_keys[0], &q_shifted);
+        let mut gsws = vec![gsw_base];
+        for i in 1..Self::GSW_EXPAND_ITERS + 1 {
+            gsws = do_expand_iter(i, &gsws);
+        }
+
+        dbg!("REGEVS");
         for (i, c) in regevs.iter().enumerate() {
             let decoded: <Self as SPIRAL>::RingP =
                 Self::decode_scalar_regev(&s_scalar, &c).round_down_into();
-            if decoded != <Self as SPIRAL>::RingP::zero() {
-                dbg!(i, decoded);
+            if decoded == <Self as SPIRAL>::RingP::zero() {
+                dbg!(i, "zero");
+            } else if decoded == <Self as SPIRAL>::RingP::one() {
+                dbg!(i, "one");
+            } else {
+                dbg!(i, "<something else>");
+            }
+        }
+
+        dbg!("GSWS");
+        for (i, c) in gsws.iter().enumerate() {
+            let decoded: <Self as SPIRAL>::RingP =
+                Self::decode_scalar_regev(&s_scalar, &c).round_down_into();
+            if decoded == <Self as SPIRAL>::RingP::zero() {
+                dbg!(i, "zero");
+            } else if decoded == <Self as SPIRAL>::RingP::one() {
+                dbg!(i, "one");
+            } else {
+                dbg!(i, "<something else>");
             }
         }
 
