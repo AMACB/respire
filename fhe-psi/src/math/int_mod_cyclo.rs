@@ -294,13 +294,37 @@ impl<const D: usize, const NN: u64, const BASE: u64, const LEN: usize>
 
 impl<const D: usize, const N: u64> IntModCyclo<D, N> {
     /// Compute the automorphism x --> x^k. This only makes sense for odd `k`.
-    pub fn automorphism(&self, k: usize) -> Self {
+    pub fn auto(&self, k: usize) -> Self {
+        // TODO test this
         let mut result = IntModCyclo::zero();
         for i in 0..D {
             let pow = (i * k) % (2 * D);
             let neg = pow >= D;
             let reduced_pow = if !neg { pow } else { pow - D };
             result.coeff[reduced_pow] = if neg { -self.coeff[i] } else { self.coeff[i] };
+        }
+        result
+    }
+
+    /// Multiply by x^k
+    pub fn mul_x_pow(&self, k: usize) -> Self {
+        let mut result = Self::zero();
+        let k_reduced = k % D;
+        let neg = (k % (2 * D)) >= D;
+        for i in 0..k_reduced {
+            result.coeff[i] = if neg {
+                // Double negate
+                self.coeff[D - k_reduced + i]
+            } else {
+                -self.coeff[D - k_reduced + i]
+            }
+        }
+        for i in k_reduced..D {
+            result.coeff[i] = if neg {
+                -self.coeff[i - k_reduced]
+            } else {
+                self.coeff[i - k_reduced]
+            }
         }
         result
     }
@@ -434,6 +458,30 @@ mod test {
         let s = IntModCyclo::<D, P>::from(vec![9483_i64, 1, 1, 1, 323, -12139, 10491, 1, 1]);
         let t = IntModCyclo::<D, P>::from(vec![9161_i64, 12140, -10490, 0, 0]);
         assert_eq!(s, t);
+    }
+
+    #[test]
+    fn test_mul_x_pow() {
+        let x0 = IntModCyclo::<D, P>::from(vec![1_u64, 0, 0, 0]);
+        let x1 = IntModCyclo::<D, P>::from(vec![0_u64, 1, 0, 0]);
+        let x2 = IntModCyclo::<D, P>::from(vec![0_u64, 0, 1, 0]);
+        let x3 = IntModCyclo::<D, P>::from(vec![0_u64, 0, 0, 1]);
+        for off in [0, 8, 16] {
+            assert_eq!(x1.mul_x_pow(0 + off), x1);
+            assert_eq!(x1.mul_x_pow(1 + off), x2);
+            assert_eq!(x1.mul_x_pow(2 + off), x3);
+            assert_eq!(x1.mul_x_pow(3 + off), -&x0);
+            assert_eq!(x1.mul_x_pow(4 + off), -&x1);
+            assert_eq!(x1.mul_x_pow(5 + off), -&x2);
+            assert_eq!(x1.mul_x_pow(6 + off), -&x3);
+            assert_eq!(x1.mul_x_pow(7 + off), x0);
+        }
+
+        let p = IntModCyclo::<D, P>::from(vec![1_u64, 2, 3, 4]);
+        let q = IntModCyclo::<D, P>::from(vec![-3_i64, -4, 1, 2]);
+        assert_eq!(p.mul_x_pow(2), q);
+        assert_eq!(p.mul_x_pow(6), -&q);
+        assert_eq!(p.mul_x_pow(10), q);
     }
 
     #[test]

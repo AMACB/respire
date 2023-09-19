@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use rand::{Rng, SeedableRng};
+use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
 use crate::math::gadget::{build_gadget, gadget_inverse};
@@ -154,6 +154,7 @@ pub trait SPIRAL {
 
     // Associated types
     type QueryKey;
+    type PublicParams;
     type Query;
     type Response;
     type Record;
@@ -163,11 +164,20 @@ pub trait SPIRAL {
     const DB_SIZE: usize;
     const ETA1: usize;
     const ETA2: usize;
+    const REGEV_COUNT: usize;
+    const REGEV_EXPAND_ITERS: usize;
+    const GSW_COUNT: usize;
+    const GSW_EXPAND_ITERS: usize;
 
     fn preprocess(record: &Self::Record) -> Self::RecordPreprocessed;
-    fn setup() -> Self::QueryKey;
+    fn setup() -> (Self::QueryKey, Self::PublicParams);
     fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
-    fn answer(db: &Vec<Self::RecordPreprocessed>, query: &Self::Query) -> Self::Response;
+    fn answer(
+        pp: &Self::PublicParams,
+        db: &Vec<Self::RecordPreprocessed>,
+        query: &Self::Query,
+        qk: &Self::QueryKey,
+    ) -> Self::Response;
     fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
     fn response_error(
         qk: &<Self as SPIRAL>::QueryKey,
@@ -237,10 +247,11 @@ impl<
 
     type ScalarKey = Self::RingQFast;
     type MatrixKey = Matrix<N, 1, Self::RingQFast>;
-    type AutoKey = Matrix<2, T_COEFF, Self::RingQFast>;
+    type AutoKey = (Matrix<2, T_COEFF, Self::RingQFast>, usize);
 
     // Associated types
-    type QueryKey = (Self::ScalarKey, Self::MatrixKey, Vec<Self::AutoKey>);
+    type QueryKey = (Self::ScalarKey, Self::MatrixKey);
+    type PublicParams = (Vec<Self::AutoKey>,);
     type Query = Self::ScalarRegevCiphertext;
     type Response = Self::MatrixRegevCiphertext;
     type Record = Self::MatrixP;
@@ -251,37 +262,34 @@ impl<
     const ETA1: usize = ETA1;
     const ETA2: usize = ETA2;
 
+    const REGEV_COUNT: usize = 1 << ETA1;
+    const REGEV_EXPAND_ITERS: usize = ETA1;
+    const GSW_COUNT: usize = ETA2 * (Z_FOLD - 1) * T_GSW;
+    const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
+
     fn preprocess(record: &<Self as SPIRAL>::Record) -> <Self as SPIRAL>::RecordPreprocessed {
         record.into_ring(|x| <Self as SPIRAL>::RingQFast::from(&x.include_into::<Q>()))
     }
 
-    fn setup() -> <Self as SPIRAL>::QueryKey {
-        let mut rng = ChaCha20Rng::from_entropy();
-
+    fn setup() -> (<Self as SPIRAL>::QueryKey, <Self as SPIRAL>::PublicParams) {
         // Scalar Regev secret key
-        let s_scalar_raw: <Self as SPIRAL>::RingQ = IntModCyclo::rand_uniform(&mut rng);
-        let s_scalar = <Self as SPIRAL>::RingQFast::from(&s_scalar_raw);
+        let s_scalar = Self::scalar_regev_setup();
 
         // Matrix Regev / GSW secret key
-        let s_mat: Matrix<N, 1, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
+        let s_mat = Self::matrix_regev_setup();
 
         // Automorphism keys
-        let auto_key_ct = 1 + max(ETA2, ceil_log(T_GSW as u64, ETA2 as u64));
+        let auto_key_ct = 1 + max(Self::REGEV_EXPAND_ITERS, Self::GSW_EXPAND_ITERS);
         let mut auto_keys: Vec<<Self as SPIRAL>::AutoKey> = Vec::with_capacity(auto_key_ct);
         for i in 0..auto_key_ct {
-            let tau_power = (1usize << (auto_key_ct - i)) + 1;
-            auto_keys.push(Self::auto_setup(
-                &mut rng,
-                tau_power,
-                &s_scalar,
-                &s_scalar_raw,
-            ));
+            let tau_power = (D >> i) + 1;
+            auto_keys.push(Self::auto_setup(tau_power, &s_scalar));
         }
 
-        (s_scalar, s_mat, auto_keys)
+        ((s_scalar, s_mat), (auto_keys,))
     }
 
-    fn query((s_scalar, _, _): &<Self as SPIRAL>::QueryKey, idx: usize) -> <Self as SPIRAL>::Query {
+    fn query((s_scalar, _): &<Self as SPIRAL>::QueryKey, idx: usize) -> <Self as SPIRAL>::Query {
         assert!(idx < Self::DB_SIZE);
         let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
 
@@ -293,10 +301,9 @@ impl<
             packed_vec.push(IntMod::zero());
         }
 
-        let num_even_iters = 1 + ETA1;
-        let inv_even = IntMod::from(mod_pow(2, Q - 1 - num_even_iters as u64, Q));
+        let inv_even = IntMod::from(mod_pow(2, Q - 1 - (1 + Self::REGEV_EXPAND_ITERS) as u64, Q));
         for i in 0_usize..(1 << ETA1) {
-            packed_vec[2 * i] = IntMod::from((i == idx_i) as u64) * inv_even;
+            packed_vec[2 * i] = (IntMod::<P>::from((i == idx_i) as u64)).scale_up_into() * inv_even;
         }
 
         let mut digits = Vec::with_capacity(ETA2);
@@ -307,8 +314,7 @@ impl<
         }
 
         // Think of the odd entries of packed as [ETA2] x [Z_FOLD - 1] x [T_GSW]
-        let num_odd_iters = 1 + ceil_log(2, (ETA2 * (Z_FOLD - 1) * T_GSW) as u64);
-        let inv_odd = IntMod::from(mod_pow(2, Q - 1 - num_odd_iters as u64, Q));
+        let inv_odd = IntMod::from(mod_pow(2, Q - 1 - (1 + Self::GSW_EXPAND_ITERS) as u64, Q));
         for (digit_idx, digit) in digits.into_iter().rev().enumerate() {
             for which in 0..Z_FOLD - 1 {
                 let mut msg = IntMod::from((digit == which + 1) as u64);
@@ -320,63 +326,94 @@ impl<
             }
         }
 
-        Self::encode_scalar_regev(s_scalar, &packed_vec.into())
+        let mu: IntModCyclo<D, Q> = packed_vec.into();
+        Self::encode_scalar_regev(s_scalar, &mu)
     }
 
     fn answer(
+        (auto_keys,): &<Self as SPIRAL>::PublicParams,
         db: &Vec<<Self as SPIRAL>::RecordPreprocessed>,
         q: &<Self as SPIRAL>::Query,
+        (s_scalar, _): &<Self as SPIRAL>::QueryKey,
     ) -> <Self as SPIRAL>::Response {
-        let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
-
-        // TODO: query expansion
-        let mut regevs = vec![];
-        let mut gsws = vec![];
-
-        let db_at = |i: usize, j: usize| &db[i * fold_size + j];
-        let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(fold_size);
-        for j in 0..fold_size {
-            // Norm is at most N * max(Q_A, Q_B)^2 for each term
-            // Add one for margin
-            let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - N - 1);
-            let mut sum = Self::regev_mul_scalar_no_reduce(&regevs[0], db_at(0, j));
-            for i in 1..(1 << ETA1) {
-                Self::regev_add_eq_mul_scalar_no_reduce(&mut sum, &regevs[i], db_at(i, j));
-                if i % reduce_every == 0 {
-                    sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
-                }
+        // Query expansion
+        let regev_base = q + &Self::auto_hom(&auto_keys[0], &q);
+        let mut regevs = vec![regev_base];
+        for i in 1..Self::REGEV_EXPAND_ITERS {
+            let auto_key = &auto_keys[i];
+            let new_len = 1 << i;
+            let mut regevs_new = Vec::with_capacity(new_len);
+            regevs_new.resize(new_len, Matrix::zero());
+            for j in 0..new_len / 2 {
+                let shifted = Self::scalar_regev_mul_x_pow(&regevs[j], 2 * D - (1 << i));
+                regevs_new[j] = &regevs[j] + &Self::auto_hom(auto_key, &regevs[j]);
+                regevs_new[j + new_len / 2] = &shifted + &Self::auto_hom(auto_key, &shifted);
             }
-            sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
-            curr.push(sum.convert_ring());
+            regevs = regevs_new
         }
 
-        let mut curr_size = fold_size;
-        for gsw_idx in 0..ETA2 {
-            curr.truncate(curr_size);
-            for fold_idx in 0..curr_size / Z_FOLD {
-                let c0 = curr[fold_idx].clone();
-                for i in 1..Z_FOLD {
-                    let c_i = &curr[i * curr_size / Z_FOLD + fold_idx];
-                    let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
-                    let b = &gsws[gsw_idx * (Z_FOLD - 1) + i - 1];
-                    let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, &b);
-                    curr[fold_idx] += &c_i_sub_c0_mul_b;
-                }
+        for (i, c) in regevs.iter().enumerate() {
+            let decoded: <Self as SPIRAL>::RingP =
+                Self::decode_scalar_regev(&s_scalar, &c).round_down_into();
+            if decoded != <Self as SPIRAL>::RingP::zero() {
+                dbg!(i, decoded);
             }
-            curr_size /= Z_FOLD;
         }
-        curr.remove(0)
+
+        panic!("dsfds");
+
+        // let shifted = Self::mul_scalar(&q, x^(-1));
+        // let gsw_base =
+
+        // let mut gsws = vec![];
+        //
+        // // First dimension processing
+        // let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
+        // let db_at = |i: usize, j: usize| &db[i * fold_size + j];
+        // let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(fold_size);
+        // for j in 0..fold_size {
+        //     // Norm is at most N * max(Q_A, Q_B)^2 for each term
+        //     // Add one for margin
+        //     let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - N - 1);
+        //     let mut sum = Self::regev_mul_scalar_no_reduce(&regevs[0], db_at(0, j));
+        //     for i in 1..(1 << ETA1) {
+        //         Self::regev_add_eq_mul_scalar_no_reduce(&mut sum, &regevs[i], db_at(i, j));
+        //         if i % reduce_every == 0 {
+        //             sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
+        //         }
+        //     }
+        //     sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
+        //     curr.push(sum.convert_ring());
+        // }
+        //
+        // // Folding
+        // let mut curr_size = fold_size;
+        // for gsw_idx in 0..ETA2 {
+        //     curr.truncate(curr_size);
+        //     for fold_idx in 0..curr_size / Z_FOLD {
+        //         let c0 = curr[fold_idx].clone();
+        //         for i in 1..Z_FOLD {
+        //             let c_i = &curr[i * curr_size / Z_FOLD + fold_idx];
+        //             let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
+        //             let b = &gsws[gsw_idx * (Z_FOLD - 1) + i - 1];
+        //             let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, &b);
+        //             curr[fold_idx] += &c_i_sub_c0_mul_b;
+        //         }
+        //     }
+        //     curr_size /= Z_FOLD;
+        // }
+        // curr.remove(0)
     }
 
     fn extract(
-        (_, s_mat, _): &<Self as SPIRAL>::QueryKey,
+        (_, s_mat): &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::Response,
     ) -> <Self as SPIRAL>::Record {
         Self::decode_regev(s_mat, r).into_ring(|x| x.round_down_into())
     }
 
     fn response_error(
-        (_, s_mat, _): &<Self as SPIRAL>::QueryKey,
+        (_, s_mat): &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::Response,
         actual: &<Self as SPIRAL>::Record,
     ) -> f64 {
@@ -444,6 +481,16 @@ impl<
         Z_FOLD,
     >
 {
+    fn scalar_regev_setup() -> <Self as SPIRAL>::RingQFast {
+        let mut rng = ChaCha20Rng::from_entropy();
+        <Self as SPIRAL>::RingQFast::rand_uniform(&mut rng)
+    }
+
+    fn matrix_regev_setup() -> Matrix<N, 1, <Self as SPIRAL>::RingQFast> {
+        let mut rng = ChaCha20Rng::from_entropy();
+        Matrix::rand_uniform(&mut rng)
+    }
+
     fn encode_scalar_regev(
         s_scalar: &<Self as SPIRAL>::ScalarKey,
         mu: &<Self as SPIRAL>::RingQ,
@@ -459,6 +506,23 @@ impl<
         c1 += &<Self as SPIRAL>::RingQFast::from(mu);
         c[(1, 0)] = c1;
         c
+    }
+
+    fn decode_scalar_regev(
+        s_scalar: &<Self as SPIRAL>::ScalarKey,
+        c: &<Self as SPIRAL>::ScalarRegevCiphertext,
+    ) -> <Self as SPIRAL>::RingQ {
+        <Self as SPIRAL>::RingQ::from(&(&c[(1, 0)] - &(&c[(0, 0)] * s_scalar)))
+    }
+
+    fn scalar_regev_mul_x_pow(
+        c: &<Self as SPIRAL>::ScalarRegevCiphertext,
+        k: usize,
+    ) -> <Self as SPIRAL>::ScalarRegevCiphertext {
+        let mut result = Matrix::zero();
+        result[(0, 0)] = c[(0, 0)].mul_x_pow(k);
+        result[(1, 0)] = c[(1, 0)].mul_x_pow(k);
+        result
     }
 
     // fn encode_matrix_regev(
@@ -550,20 +614,33 @@ impl<
             .into_ring(|x| <Self as SPIRAL>::RingQ::from(x))
     }
 
-    fn auto_setup<T: Rng>(
-        rng: &mut T,
+    fn auto_setup(
         tau_power: usize,
         s_scalar: &<Self as SPIRAL>::RingQFast,
-        s_scalar_raw: &<Self as SPIRAL>::RingQ,
     ) -> <Self as SPIRAL>::AutoKey {
-        let a_t: Matrix<1, T_COEFF, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(rng);
+        let mut rng = ChaCha20Rng::from_entropy();
+        let a_t: Matrix<1, T_COEFF, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
         let e_t: Matrix<1, T_COEFF, <Self as SPIRAL>::RingQFast> =
-            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(rng);
+            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
         let mut bottom = &a_t * s_scalar;
         bottom += &e_t;
         bottom -= &(&build_gadget::<<Self as SPIRAL>::RingQFast, 1, T_COEFF, Z_COEFF, T_COEFF>()
-            * &IntModCycloCRTEval::from(&s_scalar_raw.automorphism(tau_power)));
-        Matrix::stack(&a_t, &bottom)
+            * &s_scalar.auto(tau_power));
+        (Matrix::stack(&a_t, &bottom), tau_power)
+    }
+
+    fn auto_hom(
+        (w_mat, tau_power): &<Self as SPIRAL>::AutoKey,
+        c: &<Self as SPIRAL>::ScalarRegevCiphertext,
+    ) -> <Self as SPIRAL>::ScalarRegevCiphertext {
+        let c0 = &c[(0, 0)];
+        let c1 = &c[(1, 0)];
+        let mut tau_c0_mat: Matrix<1, 1, _> = Matrix::zero();
+        tau_c0_mat[(0, 0)] = c0.auto(*tau_power);
+        let g_inv_tau_c0 = gadget_inverse::<_, 1, T_COEFF, 1, Z_COEFF, T_COEFF>(&tau_c0_mat);
+        let mut result = w_mat * &g_inv_tau_c0;
+        result[(1, 0)] += &c1.auto(*tau_power);
+        result
     }
 }
 
@@ -571,6 +648,7 @@ impl<
 mod test {
     use std::time::Instant;
 
+    use crate::math::int_mod_poly::IntModPoly;
     use rand::Rng;
 
     use super::*;
@@ -591,6 +669,28 @@ mod test {
     .expand();
 
     type SPIRALTest = spiral!(SPIRAL_TEST_PARAMS);
+
+    #[test]
+    fn test_scalar_regev() {
+        let s = SPIRALTest::scalar_regev_setup();
+        let mu = <SPIRALTest as SPIRAL>::RingP::from(12_u64);
+        let encoded = SPIRALTest::encode_scalar_regev(&s, &mu.scale_up_into());
+        let decoded: <SPIRALTest as SPIRAL>::RingP =
+            SPIRALTest::decode_scalar_regev(&s, &encoded).round_down_into();
+        assert_eq!(mu, decoded);
+    }
+
+    #[test]
+    fn test_auto_hom() {
+        let s = SPIRALTest::scalar_regev_setup();
+        let auto_key = SPIRALTest::auto_setup(3, &s);
+        let x = <SPIRALTest as SPIRAL>::RingP::from(IntModPoly::x());
+        let encrypt = SPIRALTest::encode_scalar_regev(&s, &x.scale_up_into());
+        let encrypt_auto = SPIRALTest::auto_hom(&auto_key, &encrypt);
+        let decrypt: <SPIRALTest as SPIRAL>::RingP =
+            SPIRALTest::decode_scalar_regev(&s, &encrypt_auto).round_down_into();
+        assert_eq!(decrypt, &(&x * &x) * &x);
+    }
 
     #[test]
     fn test_spiral_one() {
@@ -645,19 +745,19 @@ mod test {
         eprintln!("{:?} to preprocess", pre_end - pre_start);
 
         let setup_start = Instant::now();
-        let qk = TheSPIRAL::setup();
+        let (qk, pp) = TheSPIRAL::setup();
         let setup_end = Instant::now();
         eprintln!("{:?} to setup", setup_end - setup_start);
 
         let check = |idx: usize| {
             eprintln!("Running with idx = {}", idx);
             let query_start = Instant::now();
-            let cts = TheSPIRAL::query(&qk, idx);
+            let q = TheSPIRAL::query(&qk, idx);
             let query_end = Instant::now();
             let query_total = query_end - query_start;
 
             let answer_start = Instant::now();
-            let result = TheSPIRAL::answer(&db_pre, &cts);
+            let result = TheSPIRAL::answer(&pp, &db_pre, &q, &qk);
             let answer_end = Instant::now();
             let answer_total = answer_end - answer_start;
 

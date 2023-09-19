@@ -497,6 +497,14 @@ impl<
             a.p2.points[i] = (u64::from(a.p2.points[i]) % N2).into();
         }
     }
+
+    pub fn auto(&self, k: usize) -> Self {
+        (self.p1.auto(k), self.p2.auto(k)).into()
+    }
+
+    pub fn mul_x_pow(&self, k: usize) -> Self {
+        (self.p1.mul_x_pow(k), self.p2.mul_x_pow(k)).into()
+    }
 }
 
 unsafe impl<
