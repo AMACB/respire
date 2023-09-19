@@ -301,7 +301,7 @@ impl<
             packed_vec.push(IntMod::zero());
         }
 
-        let inv_even = IntMod::from(mod_pow(2, Q - 1 - (1 + Self::REGEV_EXPAND_ITERS) as u64, Q));
+        let inv_even = IntMod::from(mod_inverse(1 << (1 + Self::REGEV_EXPAND_ITERS), Q));
         for i in 0_usize..(1 << ETA1) {
             packed_vec[2 * i] = (IntMod::<P>::from((i == idx_i) as u64)).scale_up_into() * inv_even;
         }
@@ -339,7 +339,7 @@ impl<
         // Query expansion
         let regev_base = q + &Self::auto_hom(&auto_keys[0], &q);
         let mut regevs = vec![regev_base];
-        for i in 1..Self::REGEV_EXPAND_ITERS {
+        for i in 1..Self::REGEV_EXPAND_ITERS + 1 {
             let auto_key = &auto_keys[i];
             let new_len = 1 << i;
             let mut regevs_new = Vec::with_capacity(new_len);
