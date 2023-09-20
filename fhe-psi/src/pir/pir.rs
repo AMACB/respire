@@ -176,6 +176,7 @@ pub trait SPIRAL {
     type QueryKey;
     type PublicParams;
     type Query;
+    type QueryExpanded;
     type Response;
     type Record;
     type RecordPreprocessed;
@@ -192,11 +193,10 @@ pub trait SPIRAL {
     fn preprocess(record: &Self::Record) -> Self::RecordPreprocessed;
     fn setup() -> (Self::QueryKey, Self::PublicParams);
     fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
+    fn query_expand(pp: &Self::PublicParams, q: &Self::Query) -> Self::QueryExpanded;
     fn answer(
-        pp: &Self::PublicParams,
         db: &Vec<Self::RecordPreprocessed>,
-        query: &Self::Query,
-        qk: &Self::QueryKey,
+        q_expanded: &Self::QueryExpanded,
     ) -> Self::Response;
     fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
     fn response_error(
@@ -286,6 +286,7 @@ impl<
     type QueryKey = (Self::ScalarKey, Self::MatrixKey);
     type PublicParams = (Vec<Self::AutoKey>, Self::ScalToMatKey, Self::RegevToGSWKey);
     type Query = Self::ScalarRegevCiphertext;
+    type QueryExpanded = (Vec<Self::MatrixRegevCiphertext>, Vec<Self::GSWCiphertext>);
     type Response = Self::MatrixRegevCiphertext;
     type Record = Self::MatrixP;
     type RecordPreprocessed = Self::MatrixQFast;
@@ -360,7 +361,6 @@ impl<
         for (digit_idx, digit) in digits.into_iter().rev().enumerate() {
             for which in 0..Z_FOLD - 1 {
                 let mut msg = IntMod::from((digit == which + 1) as u64);
-                dbg!(msg);
                 for gsw_pow in 0..T_GSW {
                     let pack_idx = T_GSW * ((Z_FOLD - 1) * digit_idx + which) + gsw_pow;
                     packed_vec[2 * pack_idx + 1] = msg * inv_odd;
@@ -373,16 +373,13 @@ impl<
         Self::encode_scalar_regev(s_scalar, &mu)
     }
 
-    fn answer(
+    fn query_expand(
         (auto_keys, scal_to_mat_key, regev_to_gsw_key): &<Self as SPIRAL>::PublicParams,
-        db: &Vec<<Self as SPIRAL>::RecordPreprocessed>,
         q: &<Self as SPIRAL>::Query,
-        (s_scal, s_mat): &<Self as SPIRAL>::QueryKey,
-    ) -> <Self as SPIRAL>::Response {
-        // Query expansion
+    ) -> <Self as SPIRAL>::QueryExpanded {
         let do_expand_iter = |i: usize,
                               cts: &Vec<<Self as SPIRAL>::ScalarRegevCiphertext>|
-         -> Vec<<Self as SPIRAL>::ScalarRegevCiphertext> {
+                              -> Vec<<Self as SPIRAL>::ScalarRegevCiphertext> {
             let auto_key = &auto_keys[i];
             let new_len = 1 << i;
             let mut cts_new = Vec::with_capacity(new_len);
@@ -420,19 +417,13 @@ impl<
             .map(|cs| Self::regev_to_gsw(&regev_to_gsw_key, cs))
             .collect();
 
-        let scale = <Self as SPIRAL>::RingQFast::from(Q / 1024);
-        for (i, c) in gsws.iter().enumerate() {
-            let decoded = Self::decode_gsw_scaled(&s_mat, c, &scale);
-            let result: IntModCyclo<D, 1024> = decoded.round_down_into();
-            if result == IntModCyclo::<D, 1024>::zero() {
-                dbg!(i, "zero");
-            } else if result == IntModCyclo::<D, 1024>::one() {
-                dbg!(i, "one");
-            } else {
-                dbg!(i, "something else");
-            }
-        }
+        (regevs, gsws)
+    }
 
+    fn answer(
+        db: &Vec<<Self as SPIRAL>::RecordPreprocessed>,
+        (regevs, gsws): &<Self as SPIRAL>::QueryExpanded,
+    ) -> <Self as SPIRAL>::Response {
         // First dimension processing
         let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
         let db_at = |i: usize, j: usize| &db[i * fold_size + j];
@@ -599,22 +590,6 @@ impl<
         result
     }
 
-    fn encode_matrix_regev(
-        s_mat: &<Self as SPIRAL>::MatrixKey,
-        mu: &<Self as SPIRAL>::MatrixQ,
-    ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
-        let mut rng = ChaCha20Rng::from_entropy();
-        let a_t: Matrix<1, N, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
-        let e_mat: Matrix<N, N, <Self as SPIRAL>::RingQFast> =
-            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-        let c_mat: Matrix<N_PLUS_ONE, N, <Self as SPIRAL>::RingQFast> = Matrix::stack(
-            &a_t,
-            &(&(&(s_mat * &a_t) + &e_mat)
-                + &mu.into_ring(|x| <Self as SPIRAL>::RingQFast::from(x))),
-        );
-        c_mat
-    }
-
     fn encode_gsw(
         s_mat: &<Self as SPIRAL>::MatrixKey,
         mu: &<Self as SPIRAL>::RingQ,
@@ -654,13 +629,6 @@ impl<
         lhs - rhs
     }
 
-    // fn regev_mul_scalar(
-    //     lhs: &<Self as SPIRAL>::MatrixRegevCiphertext,
-    //     rhs: &<Self as SPIRAL>::MatrixQFast,
-    // ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
-    //     lhs * rhs
-    // }
-
     fn regev_mul_scalar_no_reduce(
         lhs: &<Self as SPIRAL>::MatrixRegevCiphertext,
         rhs: &<Self as SPIRAL>::MatrixQFast,
@@ -671,14 +639,6 @@ impl<
         });
         result
     }
-
-    // fn regev_add_eq_mul_scalar(
-    //     lhs: &mut <Self as SPIRAL>::MatrixRegevCiphertext,
-    //     rhs_a: &<Self as SPIRAL>::MatrixRegevCiphertext,
-    //     rhs_b: &<Self as SPIRAL>::MatrixQFast,
-    // ) {
-    //     lhs.add_eq_mul(rhs_a, rhs_b);
-    // }
 
     fn regev_add_eq_mul_scalar_no_reduce(
         lhs: &mut <Self as SPIRAL>::MatrixRegevCiphertext0,
@@ -1013,8 +973,13 @@ mod test {
             let query_end = Instant::now();
             let query_total = query_end - query_start;
 
+            let query_expand_start = Instant::now();
+            let q_expanded = TheSPIRAL::query_expand(&pp, &q);
+            let query_expand_end = Instant::now();
+            let query_expand_total = query_expand_end - query_expand_start;
+
             let answer_start = Instant::now();
-            let result = TheSPIRAL::answer(&pp, &db_pre, &q, &qk);
+            let result = TheSPIRAL::answer(&db_pre, &q_expanded);
             let answer_end = Instant::now();
             let answer_total = answer_end - answer_start;
 
@@ -1027,8 +992,9 @@ mod test {
                 eprintln!("  **** **** **** **** ERROR **** **** **** ****");
                 eprintln!("  protocol failed");
             }
-            eprintln!("  {:?} total", query_total + answer_total + extract_total);
+            eprintln!("  {:?} total", query_total + query_expand_total + answer_total + extract_total);
             eprintln!("    {:?} to query", query_total);
+            eprintln!("    {:?} to query expand", query_expand_total);
             eprintln!("    {:?} to answer", answer_total);
             eprintln!("    {:?} to extract", extract_total);
             let err = TheSPIRAL::response_error(&qk, &result, &db[idx]);
