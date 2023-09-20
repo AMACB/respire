@@ -6,7 +6,9 @@ use rand_chacha::ChaCha20Rng;
 use crate::math::gadget::{build_gadget, gadget_inverse};
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
+use crate::math::int_mod_cyclo_crt::IntModCycloCRT;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
+use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
 use crate::math::number_theory::{find_sqrt_primitive_root, mod_pow};
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
@@ -30,6 +32,7 @@ pub struct SPIRALImpl<
     const T_COEFF: usize,
     const Z_CONV: u64,
     const T_CONV: usize,
+    const T_CONV_TIMES_TWO: usize,
     const M_CONV: usize,
     const M: usize,
     const NOISE_WIDTH_MILLIONTHS: u64,
@@ -78,6 +81,7 @@ impl SPIRALParamsRaw {
             T_COEFF: t_coeff,
             Z_CONV: self.Z_CONV,
             T_CONV: t_conv,
+            T_CONV_TIMES_TWO: t_conv * 2,
             M_CONV: self.N * t_conv,
             M: (self.N + 1) * t_gsw,
             NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
@@ -108,6 +112,7 @@ pub struct SPIRALParams {
     pub T_COEFF: usize,
     pub Z_CONV: u64,
     pub T_CONV: usize,
+    pub T_CONV_TIMES_TWO: usize,
     pub M_CONV: usize,
     pub M: usize,
     pub NOISE_WIDTH_MILLIONTHS: u64,
@@ -137,6 +142,7 @@ macro_rules! spiral {
             {$params.T_COEFF},
             {$params.Z_CONV},
             {$params.T_CONV},
+            {$params.T_CONV_TIMES_TWO},
             {$params.M_CONV},
             {$params.M},
             {$params.NOISE_WIDTH_MILLIONTHS},
@@ -166,6 +172,7 @@ pub trait SPIRAL {
     type MatrixKey;
     type AutoKey;
     type ScalToMatKey;
+    type RegevToGSWKey;
 
     // Associated types
     type QueryKey;
@@ -218,6 +225,7 @@ impl<
         const T_COEFF: usize,
         const Z_CONV: u64,
         const T_CONV: usize,
+        const T_CONV_TIMES_TWO: usize,
         const M_CONV: usize,
         const M: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
@@ -243,6 +251,7 @@ impl<
         T_COEFF,
         Z_CONV,
         T_CONV,
+        T_CONV_TIMES_TWO,
         M_CONV,
         M,
         NOISE_WIDTH_MILLIONTHS,
@@ -270,6 +279,10 @@ impl<
     type MatrixKey = Matrix<N, 1, Self::RingQFast>;
     type AutoKey = (Matrix<2, T_COEFF, Self::RingQFast>, usize);
     type ScalToMatKey = Matrix<N_PLUS_ONE, M_CONV, Self::RingQFast>;
+    type RegevToGSWKey = (
+        Matrix<N_PLUS_ONE, T_CONV_TIMES_TWO, Self::RingQFast>,
+        Self::ScalToMatKey,
+    );
 
     // Associated types
     type QueryKey = (Self::ScalarKey, Self::MatrixKey);
@@ -478,6 +491,7 @@ impl<
         const T_COEFF: usize,
         const Z_CONV: u64,
         const T_CONV: usize,
+        const T_CONV_TIMES_TWO: usize,
         const M_CONV: usize,
         const M: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
@@ -503,6 +517,7 @@ impl<
         T_COEFF,
         Z_CONV,
         T_CONV,
+        T_CONV_TIMES_TWO,
         M_CONV,
         M,
         NOISE_WIDTH_MILLIONTHS,
@@ -514,12 +529,12 @@ impl<
 {
     fn scalar_regev_setup() -> <Self as SPIRAL>::RingQFast {
         let mut rng = ChaCha20Rng::from_entropy();
-        <Self as SPIRAL>::RingQFast::rand_uniform(&mut rng)
+        <Self as SPIRAL>::RingQFast::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng)
     }
 
     fn matrix_regev_setup() -> Matrix<N, 1, <Self as SPIRAL>::RingQFast> {
         let mut rng = ChaCha20Rng::from_entropy();
-        Matrix::rand_uniform(&mut rng)
+        Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng)
     }
 
     fn encode_scalar_regev(
@@ -572,20 +587,37 @@ impl<
     //     c_mat
     // }
 
-    // fn encode_gsw(
-    //     s_mat: &<Self as SPIRAL>::MatrixKey,
-    //     mu: &<Self as SPIRAL>::RingP,
-    // ) -> <Self as SPIRAL>::GSWCiphertext {
-    //     let mut rng = ChaCha20Rng::from_entropy();
-    //     let a_t: Matrix<1, M, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
-    //     let e_mat: Matrix<N, M, <Self as SPIRAL>::RingQFast> =
-    //         Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-    //     let c_mat: Matrix<N_PLUS_ONE, M, <Self as SPIRAL>::RingQFast> =
-    //         &Matrix::stack(&a_t, &(&(s_mat * &a_t) + &e_mat))
-    //             + &(&build_gadget::<<Self as SPIRAL>::RingQFast, N_PLUS_ONE, M, Z_GSW, T_GSW>()
-    //             * &<Self as SPIRAL>::RingQFast::from(&mu.include_into::<Q>()));
-    //     c_mat
-    // }
+    fn encode_gsw(
+        s_mat: &<Self as SPIRAL>::MatrixKey,
+        mu: &<Self as SPIRAL>::RingQ,
+    ) -> <Self as SPIRAL>::GSWCiphertext {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let a_t: Matrix<1, M, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
+        let e_mat: Matrix<N, M, <Self as SPIRAL>::RingQFast> =
+            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+        let c_mat: Matrix<N_PLUS_ONE, M, <Self as SPIRAL>::RingQFast> =
+            &Matrix::stack(&a_t, &(&(s_mat * &a_t) + &e_mat))
+                + &(&build_gadget::<<Self as SPIRAL>::RingQFast, N_PLUS_ONE, M, Z_GSW, T_GSW>()
+                    * &<Self as SPIRAL>::RingQFast::from(mu));
+        c_mat
+    }
+
+    fn decode_gsw_scaled(
+        s_mat: &<Self as SPIRAL>::MatrixKey,
+        c: &<Self as SPIRAL>::GSWCiphertext,
+        scale: &<Self as SPIRAL>::RingQFast,
+    ) -> <Self as SPIRAL>::RingQ {
+        let ident = Matrix::<N, N, <Self as SPIRAL>::RingQFast>::identity();
+        let scaled_ident =
+            &Matrix::<N_PLUS_ONE, N_PLUS_ONE, <Self as SPIRAL>::RingQFast>::identity() * scale;
+        let s_t = Matrix::append(&(-s_mat), &ident);
+        let result_q_fast_mat = &(&s_t * c)
+            * &gadget_inverse::<<Self as SPIRAL>::RingQFast, N_PLUS_ONE, M, N_PLUS_ONE, Z_GSW, T_GSW>(
+                &scaled_ident,
+            );
+        let result_q = <Self as SPIRAL>::RingQ::from(&result_q_fast_mat[(0, 1)]);
+        <Self as SPIRAL>::RingQ::from(result_q)
+    }
 
     fn regev_sub_hom(
         lhs: &<Self as SPIRAL>::MatrixRegevCiphertext,
@@ -711,6 +743,80 @@ impl<
         }
         result
     }
+
+    fn regev_to_gsw_setup(
+        s_scalar: &<Self as SPIRAL>::ScalarKey,
+        s_matrix: &<Self as SPIRAL>::MatrixKey,
+    ) -> <Self as SPIRAL>::RegevToGSWKey {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let a_t =
+            Matrix::<1, T_CONV_TIMES_TWO, <Self as SPIRAL>::RingQFast>::rand_uniform(&mut rng);
+        let e_mat =
+            Matrix::<N, T_CONV_TIMES_TWO, <Self as SPIRAL>::RingQFast>::rand_discrete_gaussian::<
+                _,
+                NOISE_WIDTH_MILLIONTHS,
+            >(&mut rng);
+        let mut bottom = s_matrix * &a_t;
+        bottom += &e_mat;
+        let g_vec = build_gadget::<<Self as SPIRAL>::RingQFast, 1, T_CONV, Z_CONV, T_CONV>();
+        let mut s_scalar_tensor_g =
+            Matrix::<1, T_CONV_TIMES_TWO, <Self as SPIRAL>::RingQFast>::zero();
+        s_scalar_tensor_g.copy_into(&g_vec, 0, T_CONV);
+        s_scalar_tensor_g.copy_into(&(&g_vec * &(-s_scalar)), 0, 0);
+        bottom -= &(s_matrix * &s_scalar_tensor_g);
+
+        let result = Matrix::stack(&a_t, &bottom);
+        let scal_to_mat_key = Self::scal_to_mat_setup(&s_scalar, &s_matrix);
+        (result, scal_to_mat_key)
+    }
+
+    fn regev_to_gsw(
+        (v_mat, scal_to_mat_key): &<Self as SPIRAL>::RegevToGSWKey,
+        cs: &[<Self as SPIRAL>::ScalarRegevCiphertext],
+    ) -> <Self as SPIRAL>::GSWCiphertext {
+        let mut result = Matrix::<N_PLUS_ONE, M, <Self as SPIRAL>::RingQFast>::zero();
+        let mut c_hat = Matrix::<2, T_GSW, <Self as SPIRAL>::RingQFast>::zero();
+        for i in 0..T_GSW {
+            c_hat.copy_into(&cs[i], 0, i);
+        }
+        let v_g_inv_c_hat = v_mat
+            * &gadget_inverse::<
+                <Self as SPIRAL>::RingQFast,
+                2,
+                T_CONV_TIMES_TWO,
+                T_GSW,
+                Z_CONV,
+                T_CONV,
+            >(&c_hat);
+        result.copy_into(&v_g_inv_c_hat, 0, 0);
+        for i in 0..T_GSW {
+            let c_i_mat = Self::scal_to_mat(&scal_to_mat_key, &cs[i]);
+            result.copy_into(&c_i_mat, 0, T_GSW + N * i);
+        }
+
+        let mut result_perm = Matrix::<N_PLUS_ONE, M, <Self as SPIRAL>::RingQFast>::zero();
+
+        // Copy the leftmost T_GSW columns
+        for c in 0..T_GSW {
+            for r in 0..N_PLUS_ONE {
+                result_perm[(r, c)] = result[(r, c)].clone();
+            }
+        }
+
+        // Think of the columns of the bottom right minor of `result` as a N x T_GSW matrix.
+        // We are transposing this matrix. The additional `T_GSW` is to shift to the minor.
+        for i in 0..N {
+            for j in 0..T_GSW {
+                let from_c = N * j + i + T_GSW;
+                let to_c = T_GSW * i + j + T_GSW;
+                for r in 0..N_PLUS_ONE {
+                    result_perm[(r, to_c)] = result[(r, from_c)].clone();
+                }
+            }
+        }
+
+        result_perm
+    }
 }
 
 #[cfg(test)]
@@ -751,6 +857,18 @@ mod test {
     }
 
     #[test]
+    fn test_gsw() {
+        let s = SPIRALTest::matrix_regev_setup();
+        type RingPP = IntModCyclo<{ SPIRAL_TEST_PARAMS.D }, 1024>;
+        let mu = RingPP::from(111_u64);
+        let encrypt = SPIRALTest::encode_gsw(&s, &mu.include_into());
+
+        let scale = <SPIRALTest as SPIRAL>::RingQFast::from(SPIRAL_TEST_PARAMS.Q / 1024);
+        let decrypt = SPIRALTest::decode_gsw_scaled(&s, &encrypt, &scale);
+        assert_eq!(decrypt.round_down_into(), mu);
+    }
+
+    #[test]
     fn test_auto_hom() {
         let s = SPIRALTest::scalar_regev_setup();
         let auto_key = SPIRALTest::auto_setup(3, &s);
@@ -781,6 +899,26 @@ mod test {
             >::identity()
                 * &<SPIRALTest as SPIRAL>::RingP::from(1234_u64)
         );
+    }
+
+    #[test]
+    fn test_regev_to_gsw() {
+        let s_scal = SPIRALTest::scalar_regev_setup();
+        let s_mat = SPIRALTest::matrix_regev_setup();
+        let s_regev_to_gsw = SPIRALTest::regev_to_gsw_setup(&s_scal, &s_mat);
+        type RingPP = IntModCyclo<{ SPIRAL_TEST_PARAMS.D }, 1024>;
+        let mu = RingPP::from(567_u64);
+        let mut mu_curr = mu.include_into();
+        let mut encrypt_vec = Vec::with_capacity(SPIRAL_TEST_PARAMS.T_GSW);
+        for _ in 0..SPIRAL_TEST_PARAMS.T_GSW {
+            encrypt_vec.push(SPIRALTest::encode_scalar_regev(&s_scal, &mu_curr));
+            mu_curr *= IntMod::from(SPIRAL_TEST_PARAMS.Z_GSW);
+        }
+        let encrypt_gsw = SPIRALTest::regev_to_gsw(&s_regev_to_gsw, encrypt_vec.as_slice());
+
+        let scale = <SPIRALTest as SPIRAL>::RingQFast::from(SPIRAL_TEST_PARAMS.Q / 1024);
+        let decrypted = SPIRALTest::decode_gsw_scaled(&s_mat, &encrypt_gsw, &scale);
+        assert_eq!(decrypted.round_down_into(), mu);
     }
 
     #[test]
