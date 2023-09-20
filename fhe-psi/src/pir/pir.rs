@@ -6,11 +6,9 @@ use rand_chacha::ChaCha20Rng;
 use crate::math::gadget::{build_gadget, gadget_inverse};
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
-use crate::math::int_mod_cyclo_crt::IntModCycloCRT;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
-use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
-use crate::math::number_theory::{find_sqrt_primitive_root, mod_pow};
+use crate::math::number_theory::find_sqrt_primitive_root;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::ring_elem::{RingCompatible, RingElement};
 use crate::math::utils::{ceil_log, floor_log, mod_inverse};
@@ -286,7 +284,7 @@ impl<
 
     // Associated types
     type QueryKey = (Self::ScalarKey, Self::MatrixKey);
-    type PublicParams = (Vec<Self::AutoKey>,);
+    type PublicParams = (Vec<Self::AutoKey>, Self::ScalToMatKey, Self::RegevToGSWKey);
     type Query = Self::ScalarRegevCiphertext;
     type Response = Self::MatrixRegevCiphertext;
     type Record = Self::MatrixP;
@@ -311,7 +309,7 @@ impl<
         let s_scalar = Self::scalar_regev_setup();
 
         // Matrix Regev / GSW secret key
-        let s_mat = Self::matrix_regev_setup();
+        let s_matrix = Self::matrix_regev_setup();
 
         // Automorphism keys
         let auto_key_ct = 1 + max(Self::REGEV_EXPAND_ITERS, Self::GSW_EXPAND_ITERS);
@@ -321,7 +319,16 @@ impl<
             auto_keys.push(Self::auto_setup(tau_power, &s_scalar));
         }
 
-        ((s_scalar, s_mat), (auto_keys,))
+        // Scalar to matrix key. Technically, this could be shared by the regev to GSW key.
+        let scal_to_mat_key = Self::scal_to_mat_setup(&s_scalar, &s_matrix);
+
+        // Regev to GSW key
+        let regev_to_gsw_key = Self::regev_to_gsw_setup(&s_scalar, &s_matrix);
+
+        (
+            (s_scalar, s_matrix),
+            (auto_keys, scal_to_mat_key, regev_to_gsw_key),
+        )
     }
 
     fn query((s_scalar, _): &<Self as SPIRAL>::QueryKey, idx: usize) -> <Self as SPIRAL>::Query {
@@ -353,6 +360,7 @@ impl<
         for (digit_idx, digit) in digits.into_iter().rev().enumerate() {
             for which in 0..Z_FOLD - 1 {
                 let mut msg = IntMod::from((digit == which + 1) as u64);
+                dbg!(msg);
                 for gsw_pow in 0..T_GSW {
                     let pack_idx = T_GSW * ((Z_FOLD - 1) * digit_idx + which) + gsw_pow;
                     packed_vec[2 * pack_idx + 1] = msg * inv_odd;
@@ -366,10 +374,10 @@ impl<
     }
 
     fn answer(
-        (auto_keys,): &<Self as SPIRAL>::PublicParams,
+        (auto_keys, scal_to_mat_key, regev_to_gsw_key): &<Self as SPIRAL>::PublicParams,
         db: &Vec<<Self as SPIRAL>::RecordPreprocessed>,
         q: &<Self as SPIRAL>::Query,
-        (s_scalar, _): &<Self as SPIRAL>::QueryKey,
+        (s_scal, s_mat): &<Self as SPIRAL>::QueryKey,
     ) -> <Self as SPIRAL>::Response {
         // Query expansion
         let do_expand_iter = |i: usize,
@@ -388,11 +396,16 @@ impl<
         };
 
         let regev_base = q + &Self::auto_hom(&auto_keys[0], &q);
-        let mut regevs = vec![regev_base];
+        let mut regevs: Vec<Self::ScalarRegevCiphertext> = vec![regev_base];
         for i in 1..Self::REGEV_EXPAND_ITERS + 1 {
             regevs = do_expand_iter(i, &regevs);
         }
         regevs.truncate(1 << Self::ETA1);
+
+        let regevs: Vec<Self::MatrixRegevCiphertext> = regevs
+            .iter()
+            .map(|c| Self::scal_to_mat(&scal_to_mat_key, c))
+            .collect();
 
         let q_shifted = Self::scalar_regev_mul_x_pow(&q, 2 * D - 1);
         let gsw_base = &q_shifted + &Self::auto_hom(&auto_keys[0], &q_shifted);
@@ -402,45 +415,60 @@ impl<
         }
         gsws.truncate(Self::ETA2 * (Z_FOLD - 1) * T_GSW);
 
-        todo!()
+        let gsws: Vec<Self::GSWCiphertext> = gsws
+            .chunks(T_GSW)
+            .map(|cs| Self::regev_to_gsw(&regev_to_gsw_key, cs))
+            .collect();
 
-        //
-        // // First dimension processing
-        // let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
-        // let db_at = |i: usize, j: usize| &db[i * fold_size + j];
-        // let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(fold_size);
-        // for j in 0..fold_size {
-        //     // Norm is at most N * max(Q_A, Q_B)^2 for each term
-        //     // Add one for margin
-        //     let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - N - 1);
-        //     let mut sum = Self::regev_mul_scalar_no_reduce(&regevs[0], db_at(0, j));
-        //     for i in 1..(1 << ETA1) {
-        //         Self::regev_add_eq_mul_scalar_no_reduce(&mut sum, &regevs[i], db_at(i, j));
-        //         if i % reduce_every == 0 {
-        //             sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
-        //         }
-        //     }
-        //     sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
-        //     curr.push(sum.convert_ring());
-        // }
-        //
-        // // Folding
-        // let mut curr_size = fold_size;
-        // for gsw_idx in 0..ETA2 {
-        //     curr.truncate(curr_size);
-        //     for fold_idx in 0..curr_size / Z_FOLD {
-        //         let c0 = curr[fold_idx].clone();
-        //         for i in 1..Z_FOLD {
-        //             let c_i = &curr[i * curr_size / Z_FOLD + fold_idx];
-        //             let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
-        //             let b = &gsws[gsw_idx * (Z_FOLD - 1) + i - 1];
-        //             let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, &b);
-        //             curr[fold_idx] += &c_i_sub_c0_mul_b;
-        //         }
-        //     }
-        //     curr_size /= Z_FOLD;
-        // }
-        // curr.remove(0)
+        let scale = <Self as SPIRAL>::RingQFast::from(Q / 1024);
+        for (i, c) in gsws.iter().enumerate() {
+            let decoded = Self::decode_gsw_scaled(&s_mat, c, &scale);
+            let result: IntModCyclo<D, 1024> = decoded.round_down_into();
+            if result == IntModCyclo::<D, 1024>::zero() {
+                dbg!(i, "zero");
+            } else if result == IntModCyclo::<D, 1024>::one() {
+                dbg!(i, "one");
+            } else {
+                dbg!(i, "something else");
+            }
+        }
+
+        // First dimension processing
+        let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
+        let db_at = |i: usize, j: usize| &db[i * fold_size + j];
+        let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(fold_size);
+        for j in 0..fold_size {
+            // Norm is at most N * max(Q_A, Q_B)^2 for each term
+            // Add one for margin
+            let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - N - 1);
+            let mut sum = Self::regev_mul_scalar_no_reduce(&regevs[0], db_at(0, j));
+            for i in 1..(1 << ETA1) {
+                Self::regev_add_eq_mul_scalar_no_reduce(&mut sum, &regevs[i], db_at(i, j));
+                if i % reduce_every == 0 {
+                    sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
+                }
+            }
+            sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
+            curr.push(sum.convert_ring());
+        }
+
+        // Folding
+        let mut curr_size = fold_size;
+        for gsw_idx in 0..ETA2 {
+            curr.truncate(curr_size);
+            for fold_idx in 0..curr_size / Z_FOLD {
+                let c0 = curr[fold_idx].clone();
+                for i in 1..Z_FOLD {
+                    let c_i = &curr[i * curr_size / Z_FOLD + fold_idx];
+                    let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
+                    let b = &gsws[gsw_idx * (Z_FOLD - 1) + i - 1];
+                    let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, &b);
+                    curr[fold_idx] += &c_i_sub_c0_mul_b;
+                }
+            }
+            curr_size /= Z_FOLD;
+        }
+        curr.remove(0)
     }
 
     fn extract(
@@ -571,21 +599,21 @@ impl<
         result
     }
 
-    // fn encode_matrix_regev(
-    //     s_mat: &<Self as SPIRAL>::MatrixKey,
-    //     mu: &<Self as SPIRAL>::MatrixQ,
-    // ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
-    //     let mut rng = ChaCha20Rng::from_entropy();
-    //     let a_t: Matrix<1, N, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
-    //     let e_mat: Matrix<N, N, <Self as SPIRAL>::RingQFast> =
-    //         Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-    //     let c_mat: Matrix<N_PLUS_ONE, N, <Self as SPIRAL>::RingQFast> = Matrix::stack(
-    //         &a_t,
-    //         &(&(&(s_mat * &a_t) + &e_mat)
-    //             + &mu.into_ring(|x| <Self as SPIRAL>::RingQFast::from(x))),
-    //     );
-    //     c_mat
-    // }
+    fn encode_matrix_regev(
+        s_mat: &<Self as SPIRAL>::MatrixKey,
+        mu: &<Self as SPIRAL>::MatrixQ,
+    ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let a_t: Matrix<1, N, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
+        let e_mat: Matrix<N, N, <Self as SPIRAL>::RingQFast> =
+            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+        let c_mat: Matrix<N_PLUS_ONE, N, <Self as SPIRAL>::RingQFast> = Matrix::stack(
+            &a_t,
+            &(&(&(s_mat * &a_t) + &e_mat)
+                + &mu.into_ring(|x| <Self as SPIRAL>::RingQFast::from(x))),
+        );
+        c_mat
+    }
 
     fn encode_gsw(
         s_mat: &<Self as SPIRAL>::MatrixKey,
@@ -833,9 +861,9 @@ mod test {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
-        Z_GSW: 1 << 20,
-        Z_COEFF: 2,
-        Z_CONV: 1 << 14,
+        Z_GSW: 75,
+        Z_COEFF: 128,
+        Z_CONV: 16384,
         NOISE_WIDTH_MILLIONTHS: 6_400_000,
         P: 1 << 8,
         ETA1: 9,
@@ -996,7 +1024,8 @@ mod test {
             let extract_total = extract_end - extract_start;
 
             if &extracted != &db[idx] {
-                eprintln!("  **** protocol failed");
+                eprintln!("  **** **** **** **** ERROR **** **** **** ****");
+                eprintln!("  protocol failed");
             }
             eprintln!("  {:?} total", query_total + answer_total + extract_total);
             eprintln!("    {:?} to query", query_total);
