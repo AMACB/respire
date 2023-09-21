@@ -4,7 +4,8 @@ use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use rand::Rng;
 use std::cmp::max;
-use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub};
+use std::mem::ManuallyDrop;
+use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub, SubAssign};
 
 // TODO
 // * Implement as an array instead of as a `Vec`. The main sticking point is that to move a matrix
@@ -17,9 +18,9 @@ use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Neg, Sub};
 /// Technically, `Matrix` could in itself be `RingElement`. But so far there has not been a need
 /// for this, so it is not implemented.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct Matrix<const N: usize, const M: usize, R: RingElement>
 where
-    R: Sized,
     for<'a> &'a R: RingElementRef<R>,
 {
     data: Vec<R>,
@@ -157,6 +158,19 @@ where
     }
 }
 
+impl<const N: usize, const M: usize, R: RingElement> Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    pub fn iter_do<F: Fn(&mut R)>(&mut self, f: F) {
+        for r in 0..N {
+            for c in 0..M {
+                f(&mut self[(r, c)]);
+            }
+        }
+    }
+}
+
 /// Conversions
 impl<const N: usize, const M: usize, R: RingElement> Matrix<N, M, R>
 where
@@ -175,6 +189,27 @@ where
             }
         }
         result
+    }
+
+    ///
+    /// Interprets a Matrix of `R` to a Matrix of `S`. This requires `R` and `S` to be compatible as
+    /// defined with the `RingCompatible` trait.
+    ///
+    pub fn convert_ring<S: RingElement>(self) -> Matrix<N, M, S>
+    where
+        for<'a> &'a S: RingElementRef<S>,
+        R: RingCompatible<S>,
+    {
+        let mut self_clone: ManuallyDrop<Matrix<N, M, R>> = ManuallyDrop::new(self);
+        Matrix::<N, M, S> {
+            data: unsafe {
+                Vec::from_raw_parts(
+                    self_clone.data.as_mut_ptr() as *mut S,
+                    self_clone.data.len(),
+                    self_clone.data.capacity(),
+                )
+            },
+        }
     }
 }
 /// Arithmetic operations
@@ -197,6 +232,25 @@ where
     }
 }
 
+impl<const N: usize, const M: usize, R: RingElement> Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    pub fn mul_iter_do<const K: usize, F: FnMut((usize, usize), &R, &R)>(
+        &self,
+        other: &Matrix<M, K, R>,
+        mut f: F,
+    ) {
+        for r in 0..N {
+            for c in 0..K {
+                for i in 0..M {
+                    f((r, c), &self[(r, i)], &other[(i, c)]);
+                }
+            }
+        }
+    }
+}
+
 impl<const N: usize, const M: usize, const K: usize, R: RingElement> Mul<&Matrix<M, K, R>>
     for &Matrix<N, M, R>
 where
@@ -207,13 +261,9 @@ where
     /// Naive matrix multiplication.
     fn mul(self, other: &Matrix<M, K, R>) -> Self::Output {
         let mut out = Matrix::zero();
-        for r in 0..N {
-            for c in 0..K {
-                for i in 0..M {
-                    out[(r, c)].add_eq_mul(&self[(r, i)], &other[(i, c)]);
-                }
-            }
-        }
+        self.mul_iter_do(other, |(r, c), lhs, rhs| {
+            out[(r, c)].add_eq_mul(&lhs, &rhs);
+        });
         out
     }
 }
@@ -279,6 +329,19 @@ where
             }
         }
         out
+    }
+}
+
+impl<const N: usize, const M: usize, R: RingElement> SubAssign<&Matrix<N, M, R>> for Matrix<N, M, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    fn sub_assign(&mut self, rhs: &Matrix<N, M, R>) {
+        for r in 0..N {
+            for c in 0..M {
+                self[(r, c)] -= &rhs[(r, c)];
+            }
+        }
     }
 }
 

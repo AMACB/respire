@@ -46,7 +46,7 @@ pub const fn mod_inverse(x: u64, modulus: u64) -> u64 {
         x = t;
     }
 
-    (x + (x < (0 as i64)) as i64 * (modulus as i64)) as u64
+    (x + (x < (0_i64)) as i64 * modulus) as u64
 }
 
 #[cfg(test)]

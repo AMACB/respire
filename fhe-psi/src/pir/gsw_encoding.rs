@@ -32,16 +32,16 @@ pub struct GSWEncodingParamsRaw {
 
 impl GSWEncodingParamsRaw {
     pub const fn expand(&self) -> GSWEncodingParams {
-        let t_mat = floor_log(self.G_BASE, self.Q) + 1;
+        let t = floor_log(self.G_BASE, self.Q) + 1;
         GSWEncodingParams {
             N: self.N,
             N_PLUS_ONE: self.N + 1,
-            M: (self.N + 1) * t_mat,
+            M: (self.N + 1) * t,
             Q: self.Q,
             D: self.D,
             W: self.W,
             G_BASE: self.G_BASE,
-            G_LEN: t_mat,
+            G_LEN: t,
             NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
         }
     }

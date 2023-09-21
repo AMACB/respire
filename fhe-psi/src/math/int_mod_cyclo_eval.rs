@@ -6,6 +6,7 @@ use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_poly::IntModPoly;
 use crate::math::matrix::Matrix;
 use crate::math::ntt::*;
+use crate::math::number_theory::mod_pow;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use crate::math::utils::ceil_log;
@@ -21,8 +22,9 @@ use std::slice::Iter;
 ///
 /// Internally, this is an array of evaluations, where the `i`th index corresponds to `f(w^{2*i+1})`. `w` here is the `2*D`th root of unity.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(C)]
 pub struct IntModCycloEval<const D: usize, const N: u64, const W: u64> {
-    points: [IntMod<N>; D],
+    pub(in crate::math) points: [IntMod<N>; D],
 }
 
 /// Conversions
@@ -52,32 +54,28 @@ impl<const D: usize, const N: u64, const W: u64> From<&IntModCycloEval<D, N, W>>
     }
 }
 
-impl<const D: usize, const N: u64, const W: u64> From<IntModCycloEval<D, N, W>>
-    for IntModCyclo<D, N>
+impl<const D: usize, const N: u64, const W: u64> From<IntModCyclo<D, N>>
+    for IntModCycloEval<D, N, W>
 {
-    fn from(a_eval: IntModCycloEval<D, N, W>) -> Self {
+    fn from(a: IntModCyclo<D, N>) -> Self {
         // TODO: this should be in the type, probably
         let log_d = ceil_log(2, D as u64);
         assert_eq!(1 << log_d, D);
 
-        let mut coeff: [IntMod<N>; D] = a_eval.points;
-        bit_reverse_order(&mut coeff, log_d);
+        let mut points: [IntMod<N>; D] = a.coeff;
 
         let root: IntMod<N> = W.into();
-        ntt(&mut coeff, (root * root).inverse(), log_d);
-
-        let mut inv_root_pow: IntMod<N> = 1u64.into();
-        let inv_root = root.inverse();
-        let inv_d = IntMod::<N>::from(D as u64).inverse();
+        let mut root_power: IntMod<N> = 1u64.into();
+        // negacyclic preprocessing
         for i in 0..D {
-            // divide by degree
-            coeff[i] *= inv_d;
-            // negacyclic post-processing
-            coeff[i] *= inv_root_pow;
-            inv_root_pow *= inv_root;
+            points[i] *= root_power;
+            root_power *= root;
         }
 
-        return coeff.into();
+        bit_reverse_order(&mut points, log_d);
+        ntt(&mut points, root * root, log_d);
+
+        return points.into();
     }
 }
 
@@ -259,22 +257,50 @@ impl<const D: usize, const N: u64, const W: u64> RandDiscreteGaussianSampled
     }
 }
 
-/// Other polynomial-specific operations.
+/// Other operations.
 
 impl<const D: usize, const N: u64, const W: u64> IntModCycloEval<D, N, W> {
     pub fn points_iter(&self) -> Iter<'_, IntMod<{ N }>> {
         self.points.iter()
     }
+
+    /// Compute the automorphism x --> x^k. This only makes sense for odd `k`.
+    pub fn auto(&self, k: usize) -> Self {
+        let mut result = Self::zero();
+        let k_half = (k - 1) / 2;
+        for i in 0..D {
+            result.points[i] = self.points[(2 * k_half * i + k_half + i) % D];
+        }
+        result
+    }
+
+    /// Multiply by x^k
+    pub fn mul_x_pow(&self, k: usize) -> Self {
+        let mut result = Self::zero();
+        let mut w_curr = IntMod::from(mod_pow(W, k as u64, N));
+        let w_k_sq = w_curr * w_curr;
+        for i in 0..D {
+            result.points[i] = self.points[i] * w_curr;
+            w_curr *= w_k_sq;
+        }
+        result
+    }
+}
+
+unsafe impl<const D: usize, const N: u64, const W: u64, const M: u64, const WW: u64>
+    RingCompatible<IntModCycloEval<D, M, WW>> for IntModCycloEval<D, N, W>
+{
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::math::matrix::Matrix;
+    use crate::math::number_theory::find_sqrt_primitive_root;
 
     const D: usize = 4; // Z_q[X] / (X^4 + 1)
     const P: u64 = 268369921u64;
-    const W: u64 = 185593570u64; // 8th root of unity
+    const W: u64 = find_sqrt_primitive_root(D, P); // 8th root of unity
 
     // TODO: add more tests.
     #[test]
@@ -295,6 +321,16 @@ mod test {
         q = IntModCycloEval::<D, P, W>::from(IntModCyclo::from(vec![0u64, 1u64]));
         assert_eq!(p, q);
         assert_eq!(IntModCyclo::<D, P>::from(p), IntModCyclo::<D, P>::from(q));
+    }
+
+    #[test]
+    fn test_mul_x_pow() {
+        let p = IntModCyclo::<D, P>::from(vec![1_u64, 2, 3, 4]);
+        let q = IntModCyclo::<D, P>::from(vec![-3_i64, -4, 1, 2]);
+        let p_eval = IntModCycloEval::<D, P, W>::from(p.clone());
+        assert_eq!(IntModCyclo::<D, P>::from(p_eval.mul_x_pow(2)), q);
+        assert_eq!(IntModCyclo::<D, P>::from(p_eval.mul_x_pow(6)), -&q);
+        assert_eq!(IntModCyclo::<D, P>::from(p_eval.mul_x_pow(10)), q);
     }
 
     #[test]
@@ -373,5 +409,28 @@ mod test {
             IntModCyclo::<D, P>::from(m_neg[(1, 1)].clone()),
             IntModCyclo::<D, P>::from(vec![-1_i64, 0, 0, 0])
         );
+    }
+
+    #[test]
+    fn test_auto() {
+        const D2: usize = 16;
+        const W2: u64 = find_sqrt_primitive_root(D2, P);
+        type RRaw = IntModCyclo<D2, P>;
+        type REval = IntModCycloEval<D2, P, W2>;
+
+        let x_pow = |a: usize, neg: bool| -> IntModCyclo<D2, P> {
+            let mut x = [0_u64; D2];
+            x[a] = if neg { P - 1_u64 } else { 1_u64 };
+            x.to_vec().into()
+        };
+
+        for exp in [1, 3, 5, 7, 9, 11, 13, 15] {
+            for a in 0..D2 {
+                let x_a = x_pow(a, false);
+                let expected_a = exp * a % (2 * D2);
+                let expected = x_pow(expected_a % D2, expected_a >= D2);
+                assert_eq!(RRaw::from(REval::from(x_a).auto(exp)), expected);
+            }
+        }
     }
 }

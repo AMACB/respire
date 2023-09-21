@@ -13,6 +13,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 // TODO: documentation
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(C)]
 pub struct IntModCycloCRTEval<
     const D: usize,
     const N1: u64,
@@ -22,8 +23,8 @@ pub struct IntModCycloCRTEval<
     const W1: u64,
     const W2: u64,
 > {
-    p1: IntModCycloEval<D, N1, W1>,
-    p2: IntModCycloEval<D, N2, W2>,
+    pub(in crate::math) p1: IntModCycloEval<D, N1, W1>,
+    pub(in crate::math) p2: IntModCycloEval<D, N2, W2>,
 }
 
 /// Conversions
@@ -88,13 +89,29 @@ impl<
         const N2_INV: u64,
         const W1: u64,
         const W2: u64,
-    > From<&IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>>
-    for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+        const N: u64,
+    > From<&IntModCyclo<D, N>> for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
 {
-    fn from(a: &IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>) -> Self {
-        let p1_raw: IntModCyclo<D, N1> = (&a.p1).into();
-        let p2_raw: IntModCyclo<D, N2> = (&a.p2).into();
-        (p1_raw, p2_raw).into()
+    fn from(a: &IntModCyclo<D, N>) -> Self {
+        IntModCycloCRTEval::from(&IntModCycloCRT::from(a))
+    }
+}
+
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > From<&IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>>
+    for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
+    fn from(a: &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>) -> Self {
+        let p1_eval: IntModCycloEval<D, N1, W1> = (&a.p1).into();
+        let p2_eval: IntModCycloEval<D, N2, W2> = (&a.p2).into();
+        (p1_eval, p2_eval).into()
     }
 }
 
@@ -315,6 +332,13 @@ impl<
             p2: IntModCycloEval::one(),
         }
     }
+
+    fn add_eq_mul(&mut self, a: &Self, b: &Self) {
+        for i in 0..D {
+            self.p1.points[i] += a.p1.points[i] * b.p1.points[i];
+            self.p2.points[i] += a.p2.points[i] * b.p2.points[i];
+        }
+    }
 }
 
 impl<
@@ -473,6 +497,51 @@ impl<
         let p: IntModCycloCRT<D, N1, N2, N1_INV, N2_INV> = self.into();
         p.norm()
     }
+}
+
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
+    pub fn reduce_mod(a: &mut IntModCycloCRTEval<D, 0, 0, 0, 0, 0, 0>) {
+        for i in 0..D {
+            a.p1.points[i] = (u64::from(a.p1.points[i]) % N1).into();
+            a.p2.points[i] = (u64::from(a.p2.points[i]) % N2).into();
+        }
+    }
+
+    pub fn auto(&self, k: usize) -> Self {
+        (self.p1.auto(k), self.p2.auto(k)).into()
+    }
+
+    pub fn mul_x_pow(&self, k: usize) -> Self {
+        (self.p1.mul_x_pow(k), self.p2.mul_x_pow(k)).into()
+    }
+}
+
+unsafe impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+        const M1: u64,
+        const M2: u64,
+        const M1_INV: u64,
+        const M2_INV: u64,
+        const WW1: u64,
+        const WW2: u64,
+    > RingCompatible<IntModCycloCRTEval<D, M1, M2, M1_INV, M2_INV, WW1, WW2>>
+    for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
 }
 
 // TODO: this should be a TryFrom

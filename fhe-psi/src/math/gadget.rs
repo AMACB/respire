@@ -47,6 +47,7 @@ where
     );
 }
 
+/// Computes G^(-1) of an `N x K` matrix, producing an `M x K` matrix.
 pub fn gadget_inverse<
     R: RingElementDecomposable<G_BASE, G_LEN>,
     const N: usize,

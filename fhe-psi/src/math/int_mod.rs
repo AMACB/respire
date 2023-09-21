@@ -11,20 +11,21 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// Integers modulo `N` with overloaded modular arithmetic operation (`+`, `-`, `*`, unary `-`), and
-/// several other utility methods.
+/// several other utility methods. Note that when `N` is `0`, normal integer arithmetic is used.
 ///
-/// Internally, elements of this type are represented as a u64 `a` in reduced form: `0 <= a < N`.
-/// Thus `Z_N` is `Clone`. Furthermore the non-inplace operations are implemented in addition to the
+/// Internally, elements of this type are represented as a transparent `u64` in reduced form (`0 <= a < N`)
+/// Thus `IntMod` is `Clone`. Furthermore the non-inplace operations are implemented in addition to the
 /// inplace versions required by [`RingElement`].
 ///
-/// The assumption as noted above is that `a` must be in reduced form at all times. The public
+/// The operations defined on `IntMod` assume that `a` must be in reduced form at all times. The public
 /// conversion methods accomplish this by doing % every time. However, there are times when it is
 /// known that a certain value is already reduced, in which case the wrapper type NoReduce can
 /// be used for the conversion. It is the caller's responsibility to ensure such a NoReduce is
 /// indeed reduced already.
 ///
-/// The behavior when `N < 2` is not defined.
+/// The behavior when `N = 1` is not defined.
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct IntMod<const N: u64> {
     a: u64,
 }
@@ -44,42 +45,11 @@ impl<const N: u64> From<IntMod<N>> for u64 {
 impl<const N: u64> From<u64> for IntMod<N> {
     /// Converts u64 to Z_N by modular reduction.
     fn from(a: u64) -> Self {
-        // Optimized special case that is slower than just using %
-        // if N == 268369921 {
-        //     if a < N {
-        //         return Z_N {
-        //             a
-        //         }
-        //     }
-        //     // 268369921 = 2^28 - 2^16 + 1
-        //     const LSB28_MASK: u64 = (1 << 28) - 1;
-        //     let low = a & LSB28_MASK;
-        //     let mid = (a >> 28) & LSB28_MASK;
-        //     let high = (a >> 56) & LSB28_MASK;
-        //     // a = high * 2^56 + mid * 2^28 + low
-        //     //   = high * (2^16-1)^2 + mid * (2^16-1) + low
-        //     //   = high * (2^32 - 2^17 + 1) + mid * 2^16 - mid + low
-        //     let a = (high << 32) - (high << 17) + high + (mid << 16) - mid + low;
-        //     debug_assert!(a < (1 << 45));
-        //
-        //     let low = a & LSB28_MASK;
-        //     let mid = (a >> 28) & LSB28_MASK;
-        //     // a = mid * 2^28 + low
-        //     //   = mid * (2^16-1) + low
-        //     let a = (mid << 16) - mid + low;
-        //     debug_assert!(a < (1 << 34));
-        //
-        //     let low = a & LSB28_MASK;
-        //     let mid = (a >> 28) & LSB28_MASK;
-        //     // Same thing, but now both terms are small
-        //     return Z_N::<N> {
-        //         a: (mid << 16) - mid
-        //     } + Z_N::<N> {
-        //         a: low
-        //     };
-        // }
-
-        IntMod { a: a % N }
+        if N == 0 {
+            IntMod { a }
+        } else {
+            IntMod { a: a % N }
+        }
     }
 }
 
@@ -126,6 +96,10 @@ impl<const N: u64> RingElement for IntMod<N> {
 impl<const N: u64> Add for IntMod<N> {
     type Output = IntMod<N>;
     fn add(self, rhs: Self) -> Self::Output {
+        if N == 0 {
+            return (self.a + rhs.a).into();
+        }
+
         if N < (1 << 63) {
             let result = self.a + rhs.a;
             return if result >= N {
@@ -148,6 +122,10 @@ impl<const N: u64> AddAssign for IntMod<N> {
 impl<const N: u64> Mul for IntMod<N> {
     type Output = IntMod<N>;
     fn mul(self, rhs: Self) -> Self::Output {
+        if N == 0 {
+            return (self.a * rhs.a).into();
+        }
+
         if N < (1 << 32) {
             return (self.a * rhs.a).into();
         }
@@ -237,6 +215,7 @@ where
         }
     }
 }
+
 /// Misc
 
 impl<const N: u64> IntMod<N> {
@@ -254,6 +233,12 @@ impl<const N: u64> IntMod<N> {
         u64::from(self).into()
     }
 
+    /// Maps `Z_N` into `Z_M` by projecting. This only makes sense if `M` divides `N`.
+    pub fn project_into<const M: u64>(self) -> IntMod<M> {
+        assert_eq!(N % M, 0);
+        u64::from(self).into()
+    }
+
     /// Maps `Z_N` into `Z_M` by rounding `0 <= a < N` to the nearest multiple of `N / M`, and
     /// dividing. This function acts like an inverse of `scale_up_into`, with tolerance to additive noise. We require `N >= M`.
     pub fn round_down_into<const M: u64>(self) -> IntMod<M> {
@@ -262,6 +247,8 @@ impl<const N: u64> IntMod<N> {
         ((u64::from(self) + ratio / 2) / ratio).into()
     }
 }
+
+unsafe impl<const N: u64, const M: u64> RingCompatible<IntMod<M>> for IntMod<N> {}
 
 /// Formatting
 

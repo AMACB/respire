@@ -2,6 +2,9 @@
 
 use crate::math::gadget::RingElementDecomposable;
 use crate::math::int_mod::{IntMod, NoReduce};
+use crate::math::int_mod_crt::IntModCRT;
+use crate::math::int_mod_cyclo_crt::IntModCycloCRT;
+use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
 use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::int_mod_poly::IntModPoly;
 use crate::math::matrix::Matrix;
@@ -18,8 +21,9 @@ use std::slice::Iter;
 ///
 /// Internally, this is an array of coefficients where the `i`th index corresponds to `x^i`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(C)]
 pub struct IntModCyclo<const D: usize, const N: u64> {
-    coeff: [IntMod<N>; D],
+    pub(in crate::math) coeff: [IntMod<N>; D],
 }
 
 /// Conversions
@@ -92,37 +96,78 @@ impl<const D: usize, const N: u64> TryFrom<&IntModCyclo<D, N>> for IntMod<N> {
     }
 }
 
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const N: u64,
+    > From<&IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>> for IntModCyclo<D, N>
+{
+    fn from(a: &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>) -> Self {
+        assert_eq!(N, N1 * N2);
+        let mut result = IntModCyclo::zero();
+        for i in 0..D {
+            result.coeff[i] = IntMod::from(u64::from(IntModCRT::<N1, N2, N1_INV, N2_INV>::from((
+                a.p1[i], a.p2[i],
+            ))));
+        }
+        result
+    }
+}
+
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+        const N: u64,
+    > From<&IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>> for IntModCyclo<D, N>
+{
+    fn from(a: &IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>) -> Self {
+        IntModCyclo::from(&IntModCycloCRT::from(a))
+    }
+}
+
+impl<const D: usize, const N: u64, const W: u64> From<IntModCycloEval<D, N, W>>
+    for IntModCyclo<D, N>
+{
+    fn from(a_eval: IntModCycloEval<D, N, W>) -> Self {
+        // TODO: this should be in the type, probably
+        let log_d = ceil_log(2, D as u64);
+        assert_eq!(1 << log_d, D);
+
+        let mut coeff: [IntMod<N>; D] = a_eval.points;
+        bit_reverse_order(&mut coeff, log_d);
+
+        let root: IntMod<N> = W.into();
+        ntt(&mut coeff, (root * root).inverse(), log_d);
+
+        let mut inv_root_pow: IntMod<N> = 1u64.into();
+        let inv_root = root.inverse();
+        let inv_d = IntMod::<N>::from(D as u64).inverse();
+        for i in 0..D {
+            // divide by degree
+            coeff[i] *= inv_d;
+            // negacyclic post-processing
+            coeff[i] *= inv_root_pow;
+            inv_root_pow *= inv_root;
+        }
+
+        return coeff.into();
+    }
+}
+
 // TODO: this does a clone, which the user may not be aware about...
 impl<const D: usize, const N: u64, const W: u64> From<&IntModCyclo<D, N>>
     for IntModCycloEval<D, N, W>
 {
     fn from(a: &IntModCyclo<D, N>) -> Self {
         (a.clone()).into()
-    }
-}
-
-impl<const D: usize, const N: u64, const W: u64> From<IntModCyclo<D, N>>
-    for IntModCycloEval<D, N, W>
-{
-    fn from(a: IntModCyclo<D, N>) -> Self {
-        // TODO: this should be in the type, probably
-        let log_d = ceil_log(2, D as u64);
-        assert_eq!(1 << log_d, D);
-
-        let mut points: [IntMod<N>; D] = a.coeff;
-
-        let root: IntMod<N> = W.into();
-        let mut root_power: IntMod<N> = 1u64.into();
-        // negacyclic preprocessing
-        for i in 0..D {
-            points[i] *= root_power;
-            root_power *= root;
-        }
-
-        bit_reverse_order(&mut points, log_d);
-        ntt(&mut points, root * root, log_d);
-
-        return points.into();
     }
 }
 
@@ -243,6 +288,42 @@ impl<const D: usize, const NN: u64, const BASE: u64, const LEN: usize>
 /// Misc
 
 impl<const D: usize, const N: u64> IntModCyclo<D, N> {
+    /// Compute the automorphism x --> x^k. This only makes sense for odd `k`.
+    pub fn auto(&self, k: usize) -> Self {
+        // TODO test this
+        let mut result = IntModCyclo::zero();
+        for i in 0..D {
+            let pow = (i * k) % (2 * D);
+            let neg = pow >= D;
+            let reduced_pow = if !neg { pow } else { pow - D };
+            result.coeff[reduced_pow] = if neg { -self.coeff[i] } else { self.coeff[i] };
+        }
+        result
+    }
+
+    /// Multiply by x^k
+    pub fn mul_x_pow(&self, k: usize) -> Self {
+        let mut result = Self::zero();
+        let k_reduced = k % D;
+        let neg = (k % (2 * D)) >= D;
+        for i in 0..k_reduced {
+            result.coeff[i] = if neg {
+                // Double negate
+                self.coeff[D - k_reduced + i]
+            } else {
+                -self.coeff[D - k_reduced + i]
+            }
+        }
+        for i in k_reduced..D {
+            result.coeff[i] = if neg {
+                -self.coeff[i - k_reduced]
+            } else {
+                self.coeff[i - k_reduced]
+            }
+        }
+        result
+    }
+
     /// Applies `Z_N::scale_up_into` coefficient-wise.
     pub fn scale_up_into<const M: u64>(&self) -> IntModCyclo<D, M> {
         let mut result = IntModCyclo::zero();
@@ -261,6 +342,15 @@ impl<const D: usize, const N: u64> IntModCyclo<D, N> {
         result
     }
 
+    /// Applies `Z_N::project_into` coefficient-wise.
+    pub fn project_into<const M: u64>(&self) -> IntModCyclo<D, M> {
+        let mut result = IntModCyclo::zero();
+        for i in 0..D {
+            result.coeff[i] = self.coeff[i].project_into();
+        }
+        result
+    }
+
     /// Applies `Z_N::round_down_into` coefficient-wise.
     pub fn round_down_into<const M: u64>(&self) -> IntModCyclo<D, M> {
         let mut result = IntModCyclo::zero();
@@ -269,6 +359,11 @@ impl<const D: usize, const N: u64> IntModCyclo<D, N> {
         }
         result
     }
+}
+
+unsafe impl<const D: usize, const N: u64, const M: u64> RingCompatible<IntModCyclo<D, M>>
+    for IntModCyclo<D, N>
+{
 }
 
 /// Random sampling
@@ -361,6 +456,30 @@ mod test {
     }
 
     #[test]
+    fn test_mul_x_pow() {
+        let x0 = IntModCyclo::<D, P>::from(vec![1_u64, 0, 0, 0]);
+        let x1 = IntModCyclo::<D, P>::from(vec![0_u64, 1, 0, 0]);
+        let x2 = IntModCyclo::<D, P>::from(vec![0_u64, 0, 1, 0]);
+        let x3 = IntModCyclo::<D, P>::from(vec![0_u64, 0, 0, 1]);
+        for off in [0, 8, 16] {
+            assert_eq!(x1.mul_x_pow(0 + off), x1);
+            assert_eq!(x1.mul_x_pow(1 + off), x2);
+            assert_eq!(x1.mul_x_pow(2 + off), x3);
+            assert_eq!(x1.mul_x_pow(3 + off), -&x0);
+            assert_eq!(x1.mul_x_pow(4 + off), -&x1);
+            assert_eq!(x1.mul_x_pow(5 + off), -&x2);
+            assert_eq!(x1.mul_x_pow(6 + off), -&x3);
+            assert_eq!(x1.mul_x_pow(7 + off), x0);
+        }
+
+        let p = IntModCyclo::<D, P>::from(vec![1_u64, 2, 3, 4]);
+        let q = IntModCyclo::<D, P>::from(vec![-3_i64, -4, 1, 2]);
+        assert_eq!(p.mul_x_pow(2), q);
+        assert_eq!(p.mul_x_pow(6), -&q);
+        assert_eq!(p.mul_x_pow(10), q);
+    }
+
+    #[test]
     fn test_ops() {
         let p = IntModCyclo::<D, P>::from(vec![0_u64, 0, 0, 1]);
         let q = IntModCyclo::<D, P>::from(vec![0_u64, 0, 2, 0]);
@@ -389,6 +508,17 @@ mod test {
             &orig.scale_up_into() + &vec![-MAX_ERROR, MAX_ERROR, MAX_ERROR / 2, -MAX_ERROR].into();
         let recovered: R31 = scaled_with_error.round_down_into();
         assert_eq!(orig, recovered);
+    }
+
+    #[test]
+    fn test_convert() {
+        type R31 = IntModCyclo<4, 31>;
+        type R0 = IntModCyclo<4, 0>;
+        let x: R31 = vec![1_u64, 2_u64, 3_u64, 4_u64].into();
+        let mut x: R0 = x.convert();
+        x += &vec![10_u64, 10_u64, 10_u64, 10_u64].into();
+        let x: R31 = x.convert();
+        assert_eq!(x, vec![11_u64, 12_u64, 13_u64, 14_u64].into())
     }
 
     #[test]
