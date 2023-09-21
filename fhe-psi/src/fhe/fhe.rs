@@ -47,6 +47,10 @@ pub trait MulScalarEncryptionScheme<Scalar>: EncryptionScheme {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Scalar) -> Self::Ciphertext;
 }
 
+pub trait NegEncryptionScheme: EncryptionScheme {
+    fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext;
+}
+
 /// The trivial (insecure) FHE scheme where encryption does nothing, useful for testing.
 pub struct FHEInsecure<R: RingElement>
 where
@@ -70,6 +74,33 @@ where
 {
     fn mul_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         lhs * rhs
+    }
+}
+
+impl<R: RingElement> AddScalarEncryptionScheme<R> for FHEInsecure<R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    fn add_scalar(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
+        lhs + rhs
+    }
+}
+
+impl<R: RingElement> MulScalarEncryptionScheme<R> for FHEInsecure<R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
+        lhs * rhs
+    }
+}
+
+impl<R: RingElement> NegEncryptionScheme for FHEInsecure<R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext {
+        -ct
     }
 }
 

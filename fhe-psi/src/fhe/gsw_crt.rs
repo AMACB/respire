@@ -167,7 +167,7 @@ impl<
         let s_T = &sk.s_T;
         let ct = &ct.ct;
         let pt = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
-        gsw_round::<P, Q, IntModCRT<Q1, Q2, Q1_INV, Q2_INV>>(pt)
+        pt.round_down_into()
     }
 }
 
@@ -265,6 +265,27 @@ impl<
         Self::Ciphertext {
             ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs),
         }
+    }
+}
+
+impl<
+        const N_MINUS_1: usize,
+        const N: usize,
+        const M: usize,
+        const P: u64,
+        const Q: u64,
+        const Q1: u64,
+        const Q2: u64,
+        const Q1_INV: u64,
+        const Q2_INV: u64,
+        const G_BASE: u64,
+        const G_LEN: usize,
+        const NOISE_WIDTH_MILLIONTHS: u64,
+    > NegEncryptionScheme
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+{
+    fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext {
+        Self::Ciphertext { ct: -&ct.ct }
     }
 }
 

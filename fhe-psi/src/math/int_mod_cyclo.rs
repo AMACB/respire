@@ -11,6 +11,7 @@ use crate::math::matrix::Matrix;
 use crate::math::ntt::*;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
+use crate::math::utils::ceil_log;
 use rand::Rng;
 use std::cmp::max;
 use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -22,7 +23,7 @@ use std::slice::Iter;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct IntModCyclo<const D: usize, const N: u64> {
-    coeff: [IntMod<N>; D],
+    pub(in crate::math) coeff: [IntMod<N>; D],
 }
 
 /// Conversions
@@ -136,29 +137,14 @@ impl<const D: usize, const N: u64, const W: u64> From<IntModCycloEval<D, N, W>>
     for IntModCyclo<D, N>
 {
     fn from(a_eval: IntModCycloEval<D, N, W>) -> Self {
-        (&a_eval).into()
-    }
-}
-
-impl<const D: usize, const N: u64, const W: u64> From<&IntModCycloEval<D, N, W>>
-    for IntModCyclo<D, N>
-{
-    fn from(a_eval: &IntModCycloEval<D, N, W>) -> Self {
         // TODO: this should be in the type, probably
-        let mut log_d = 1;
-        while (1 << log_d) < D {
-            log_d += 1;
-        }
+        let log_d = ceil_log(2, D as u64);
         assert_eq!(1 << log_d, D);
 
-        let root: IntMod<N> = W.into();
-
-        let mut coeff: [IntMod<N>; D] = [0_u64.into(); D];
-        for (i, x) in a_eval.points_iter().enumerate() {
-            coeff[i] = x.clone();
-        }
-
+        let mut coeff: [IntMod<N>; D] = a_eval.points;
         bit_reverse_order(&mut coeff, log_d);
+
+        let root: IntMod<N> = W.into();
         ntt(&mut coeff, (root * root).inverse(), log_d);
 
         let mut inv_root_pow: IntMod<N> = 1u64.into();
@@ -172,7 +158,16 @@ impl<const D: usize, const N: u64, const W: u64> From<&IntModCycloEval<D, N, W>>
             inv_root_pow *= inv_root;
         }
 
-        return Self { coeff };
+        return coeff.into();
+    }
+}
+
+// TODO: this does a clone, which the user may not be aware about...
+impl<const D: usize, const N: u64, const W: u64> From<&IntModCyclo<D, N>>
+    for IntModCycloEval<D, N, W>
+{
+    fn from(a: &IntModCyclo<D, N>) -> Self {
+        (a.clone()).into()
     }
 }
 

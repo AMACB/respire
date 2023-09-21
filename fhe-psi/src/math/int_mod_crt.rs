@@ -27,13 +27,20 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
 {
     /// Reconstructs the reduced form modulo `N`.
     fn from(a: IntModCRT<N1, N2, N1_INV, N2_INV>) -> Self {
-        let a1: u128 = u64::from(a.a1) as u128;
-        let a2: u128 = u64::from(a.a2) as u128;
-        let n1: u128 = N1.into();
-        let n2: u128 = N2.into();
-        let n1_inv: u128 = N1_INV.into();
-        let n2_inv: u128 = N2_INV.into();
-        ((n2_inv * n2 * a1 + n1_inv * n1 * a2) % (n1 * n2)) as u64
+        // u64 arithmetic only when N1, N2 are 32 bit
+        if N1 < (1u64 << 32) && N2 < (1u64 << 32) {
+            let a1 = u64::from(a.a1);
+            let a2 = u64::from(a.a2);
+            (((N2_INV * a1) % N1) * N2 + ((N1_INV * a2) % N2) * N1) % (N1 * N2)
+        } else {
+            let a1: u128 = u64::from(a.a1) as u128;
+            let a2: u128 = u64::from(a.a2) as u128;
+            let n1: u128 = N1.into();
+            let n2: u128 = N2.into();
+            let n1_inv: u128 = N1_INV.into();
+            let n2_inv: u128 = N2_INV.into();
+            ((n2_inv * n2 * a1 + n1_inv * n1 * a2) % (n1 * n2)) as u64
+        }
     }
 }
 
@@ -48,7 +55,7 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
 impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<u64>
     for IntModCRT<N1, N2, N1_INV, N2_INV>
 {
-    /// Converts u64 to Z_N_CRT by modular reductions.
+    /// Converts u64 to IntModCRT by modular reductions.
     fn from(a: u64) -> Self {
         IntModCRT {
             a1: a.into(),
@@ -60,7 +67,7 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<u6
 impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<i64>
     for IntModCRT<N1, N2, N1_INV, N2_INV>
 {
-    /// Converts i64 to Z_N_CRT by modular reductions.
+    /// Converts i64 to IntModCRT by modular reductions.
     fn from(a: i64) -> Self {
         if a < 0 {
             -IntModCRT::from(-a as u64)
@@ -70,7 +77,7 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<i6
     }
 }
 
-/// Math operations on owned `Z_N_CRT<N1, N2, N1_INV, N2_INV>`, including [`RingElement`] implementation.
+/// Math operations on owned `IntModCRT<N1, N2, N1_INV, N2_INV>`, including [`RingElement`] implementation.
 
 impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RingElement
     for IntModCRT<N1, N2, N1_INV, N2_INV>
@@ -177,6 +184,20 @@ impl<
     }
 }
 
+/// Misc
+
+impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
+    IntModCRT<N1, N2, N1_INV, N2_INV>
+{
+    /// Maps `Z_N` into `Z_M` by rounding `0 <= a < N` to the nearest multiple of `N / M`, and
+    /// dividing. This function acts like an inverse of `scale_up_into`, with tolerance to additive noise. We require `N >= M`.
+    pub fn round_down_into<const M: u64>(self) -> IntMod<M> {
+        assert!(N1 * N2 >= M);
+        let ratio = N1 * N2 / M;
+        ((u64::from(self) + ratio / 2) / ratio).into()
+    }
+}
+
 /// Formatting
 
 impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> fmt::Debug
@@ -187,7 +208,7 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> fmt::De
     }
 }
 
-/// Math operations on borrows `&Z_N_CRT<N1, N2, N1_INV, N2_INV>`, including [`RingElementRef`] implementation.
+/// Math operations on borrows `&IntModCRT<N1, N2, N1_INV, N2_INV>`, including [`RingElementRef`] implementation.
 
 impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
     RingElementRef<IntModCRT<N1, N2, N1_INV, N2_INV>> for &IntModCRT<N1, N2, N1_INV, N2_INV>

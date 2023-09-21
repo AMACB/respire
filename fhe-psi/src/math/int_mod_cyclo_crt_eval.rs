@@ -71,6 +71,24 @@ impl<
         const N2_INV: u64,
         const W1: u64,
         const W2: u64,
+    > From<IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>>
+    for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+{
+    fn from(a: IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>) -> Self {
+        let p1_raw: IntModCyclo<D, N1> = a.p1.into();
+        let p2_raw: IntModCyclo<D, N2> = a.p2.into();
+        (p1_raw, p2_raw).into()
+    }
+}
+
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
         const N: u64,
     > From<&IntModCyclo<D, N>> for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
 {

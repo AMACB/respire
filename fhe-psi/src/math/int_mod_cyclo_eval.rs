@@ -9,6 +9,7 @@ use crate::math::ntt::*;
 use crate::math::number_theory::mod_pow;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
+use crate::math::utils::ceil_log;
 use rand::Rng;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::slice::Iter;
@@ -44,33 +45,29 @@ impl<const D: usize, const N: u64, const W: u64> From<[IntMod<N>; D]> for IntMod
     }
 }
 
+// TODO: this does a clone, which the user may not be aware about...
+impl<const D: usize, const N: u64, const W: u64> From<&IntModCycloEval<D, N, W>>
+    for IntModCyclo<D, N>
+{
+    fn from(a_eval: &IntModCycloEval<D, N, W>) -> Self {
+        (a_eval.clone()).into()
+    }
+}
+
 impl<const D: usize, const N: u64, const W: u64> From<IntModCyclo<D, N>>
     for IntModCycloEval<D, N, W>
 {
     fn from(a: IntModCyclo<D, N>) -> Self {
-        (&a).into()
-    }
-}
-
-impl<const D: usize, const N: u64, const W: u64> From<&IntModCyclo<D, N>>
-    for IntModCycloEval<D, N, W>
-{
-    fn from(a: &IntModCyclo<D, N>) -> Self {
         // TODO: this should be in the type, probably
-        let mut log_d = 1;
-        while (1 << log_d) < D {
-            log_d += 1;
-        }
+        let log_d = ceil_log(2, D as u64);
         assert_eq!(1 << log_d, D);
 
+        let mut points: [IntMod<N>; D] = a.coeff;
+
         let root: IntMod<N> = W.into();
-
         let mut root_power: IntMod<N> = 1u64.into();
-        let mut points: [IntMod<N>; D] = [0_u64.into(); D];
-        for (i, x) in a.coeff_iter().enumerate() {
-            points[i] = x.clone();
-
-            // negacyclic preprocessing
+        // negacyclic preprocessing
+        for i in 0..D {
             points[i] *= root_power;
             root_power *= root;
         }
@@ -78,7 +75,7 @@ impl<const D: usize, const N: u64, const W: u64> From<&IntModCyclo<D, N>>
         bit_reverse_order(&mut points, log_d);
         ntt(&mut points, root * root, log_d);
 
-        return Self { points };
+        return points.into();
     }
 }
 
