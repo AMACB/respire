@@ -379,7 +379,7 @@ impl<
     ) -> <Self as SPIRAL>::QueryExpanded {
         let do_expand_iter = |i: usize,
                               cts: &Vec<<Self as SPIRAL>::ScalarRegevCiphertext>|
-                              -> Vec<<Self as SPIRAL>::ScalarRegevCiphertext> {
+         -> Vec<<Self as SPIRAL>::ScalarRegevCiphertext> {
             let auto_key = &auto_keys[i];
             let new_len = 1 << i;
             let mut cts_new = Vec::with_capacity(new_len);
@@ -992,7 +992,10 @@ mod test {
                 eprintln!("  **** **** **** **** ERROR **** **** **** ****");
                 eprintln!("  protocol failed");
             }
-            eprintln!("  {:?} total", query_total + query_expand_total + answer_total + extract_total);
+            eprintln!(
+                "  {:?} total",
+                query_total + query_expand_total + answer_total + extract_total
+            );
             eprintln!("    {:?} to query", query_total);
             eprintln!("    {:?} to query expand", query_expand_total);
             eprintln!("    {:?} to answer", answer_total);
