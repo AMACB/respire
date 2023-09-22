@@ -115,7 +115,7 @@ impl<const N: u64> Add for IntMod<N> {
 
 impl<const N: u64> AddAssign for IntMod<N> {
     fn add_assign(&mut self, rhs: Self) {
-        self.a = (self.clone() + rhs).a;
+        self.a = (*self + rhs).a;
     }
 }
 
@@ -136,7 +136,7 @@ impl<const N: u64> Mul for IntMod<N> {
 
 impl<const N: u64> MulAssign for IntMod<N> {
     fn mul_assign(&mut self, rhs: Self) {
-        self.a = (self.clone() * rhs).a;
+        self.a = (*self * rhs).a;
     }
 }
 
@@ -149,7 +149,7 @@ impl<const N: u64> Sub for IntMod<N> {
 
 impl<const N: u64> SubAssign for IntMod<N> {
     fn sub_assign(&mut self, rhs: Self) {
-        self.a = (self.clone() - rhs).a
+        self.a = (*self - rhs).a
     }
 }
 
@@ -268,46 +268,46 @@ impl<const N: u64> RingElementRef<IntMod<N>> for &IntMod<N> {}
 impl<const N: u64> Neg for &IntMod<N> {
     type Output = IntMod<N>;
     fn neg(self) -> Self::Output {
-        -self.clone()
+        -*self
     }
 }
 
 impl<const N: u64> Add for &IntMod<N> {
     type Output = IntMod<N>;
     fn add(self, rhs: Self) -> Self::Output {
-        self.clone() + rhs.clone()
+        *self + *rhs
     }
 }
 
 impl<const N: u64> AddAssign<&IntMod<N>> for IntMod<N> {
     fn add_assign(&mut self, rhs: &Self) {
-        self.a = (self.clone() + rhs.clone()).a
+        self.a = (*self + *rhs).a
     }
 }
 
 impl<const N: u64> Sub for &IntMod<N> {
     type Output = IntMod<N>;
     fn sub(self, rhs: Self) -> Self::Output {
-        self.clone() - rhs.clone()
+        *self - *rhs
     }
 }
 
 impl<const N: u64> SubAssign<&IntMod<N>> for IntMod<N> {
     fn sub_assign(&mut self, rhs: &Self) {
-        self.a = (self.clone() - rhs.clone()).a
+        self.a = (*self - *rhs).a
     }
 }
 
 impl<const N: u64> Mul for &IntMod<N> {
     type Output = IntMod<N>;
     fn mul(self, rhs: Self) -> Self::Output {
-        self.clone() * rhs.clone()
+        *self * *rhs
     }
 }
 
 impl<const N: u64> MulAssign<&IntMod<N>> for IntMod<N> {
     fn mul_assign(&mut self, rhs: &Self) {
-        self.a = (self.clone() * rhs.clone()).a
+        self.a = (*self * *rhs).a
     }
 }
 
@@ -342,7 +342,7 @@ impl<const N: u64> NormedRingElement for IntMod<N> {
 /// Other methods
 impl<const N: u64> IntMod<N> {
     pub fn pow(&self, mut e: u64) -> IntMod<N> {
-        let mut val = self.clone();
+        let mut val = *self;
         let mut res = IntMod::one();
         while e > 0 {
             if (e & 1) == 1 {
@@ -351,13 +351,13 @@ impl<const N: u64> IntMod<N> {
             e >>= 1;
             val *= val;
         }
-        return res;
+        res
     }
 
     // TODO: this is not efficient, I think euclidean is faster
     // this also assumes N is prime
     pub fn inverse(&self) -> IntMod<N> {
-        return self.pow(N - 2);
+        self.pow(N - 2)
     }
 }
 

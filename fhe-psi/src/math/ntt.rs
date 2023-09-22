@@ -1,4 +1,4 @@
-use crate::math::int_mod::IntMod;
+use crate::math::int_mod::{IntMod, NoReduce};
 use crate::math::ring_elem::*;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -8,8 +8,8 @@ use std::sync::RwLock;
 /// Each key is (root, degree, modulus), which is likely overdescriptive.
 
 // TODO: currently, forward and reverse tables are computed separately. This isn't necessary since the reverse table is just the forward table, reversed.
-static ROOT_TABLES: Lazy<RwLock<HashMap<(u64, u64, usize), Vec<u64>>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
+type RootTables = HashMap<(u64, u64, usize), Vec<u64>>;
+static ROOT_TABLES: Lazy<RwLock<RootTables>> = Lazy::new(|| RwLock::new(HashMap::new()));
 
 pub fn ntt<const D: usize, const N: u64>(
     values: &mut [IntMod<N>; D],
@@ -18,15 +18,15 @@ pub fn ntt<const D: usize, const N: u64>(
 ) {
     // compute root table, if necessary
     // TODO: see above. This unnecessarily recomputes the reverse table.
-    let key = (root.into(), N, D);
-    if ROOT_TABLES.read().unwrap().get(&key) == None {
+    let key = (u64::from(root), N, D);
+    if ROOT_TABLES.read().unwrap().get(&key).is_none() {
         let mut table = vec![0; D];
         let mut cur = IntMod::one();
-        for i in 0..D {
-            table[i] = cur.into();
+        for entry in table.iter_mut() {
+            *entry = u64::from(cur);
             cur *= root;
         }
-        ROOT_TABLES.write().unwrap().insert(key.clone(), table);
+        ROOT_TABLES.write().unwrap().insert(key, table);
     }
 
     // get table
@@ -40,7 +40,7 @@ pub fn ntt<const D: usize, const N: u64>(
 
         for block_start in (0..D).step_by(prev_block_size * 2) {
             for i in 0..prev_block_size {
-                let w: IntMod<N> = table[s * i].into();
+                let w: IntMod<N> = IntMod::from(NoReduce(table[s * i]));
                 let x = values[block_start + i];
                 let y = w * (values[block_start + i + prev_block_size]);
                 values[block_start + i] = x + y;
@@ -82,8 +82,8 @@ mod test {
         bit_reverse_order(&mut coeff, LOG_D);
         ntt(&mut coeff, root.inverse(), LOG_D);
 
-        for i in 0..coeff.len() {
-            coeff[i] *= IntMod::<P>::from(D as u64).inverse();
+        for c in coeff.iter_mut() {
+            *c *= IntMod::<P>::from(D as u64).inverse();
         }
 
         assert_eq!(coeff, coeff_orig);
@@ -124,8 +124,8 @@ mod test {
         bit_reverse_order(&mut evaluated, LOG_D);
         ntt(&mut evaluated, root.inverse(), LOG_D);
 
-        for i in 0..evaluated.len() {
-            evaluated[i] *= IntMod::<P>::from(D as u64).inverse();
+        for c in evaluated.iter_mut() {
+            *c *= IntMod::<P>::from(D as u64).inverse();
         }
 
         let coeff: [IntMod<P>; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
@@ -159,9 +159,9 @@ mod test {
         bit_reverse_order(&mut coeff3, LOG_D);
         ntt(&mut coeff3, (root * root).inverse(), LOG_D);
 
-        for i in 0..coeff3.len() {
-            coeff3[i] *= IntMod::<P>::from(D as u64).inverse();
-            coeff3[i] *= root.pow(i as u64).inverse();
+        for (i, c) in coeff3.iter_mut().enumerate() {
+            *c *= IntMod::<P>::from(D as u64).inverse();
+            *c *= root.pow(i as u64).inverse();
         }
         assert_eq!(coeff3, ans);
     }
