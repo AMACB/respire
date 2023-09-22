@@ -1,5 +1,4 @@
 use crate::math::gadget::{IntModDecomposition, RingElementDecomposable};
-use crate::math::int_mod::IntMod;
 use crate::math::int_mod_crt::IntModCRT;
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt::IntModCycloCRT;
