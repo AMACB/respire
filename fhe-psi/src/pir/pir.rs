@@ -3,7 +3,7 @@ use std::cmp::max;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
-use crate::math::gadget::{build_gadget, gadget_inverse};
+use crate::math::gadget::{build_gadget, gadget_inverse, RingElementDecomposable};
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
@@ -718,14 +718,16 @@ impl<
     ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
         let c0 = &c[(0, 0)];
         let c1 = &c[(1, 0)];
-        let mut c0_ident = Matrix::<N, N, <Self as SPIRAL>::RingQFast>::zero();
-        for i in 0..N {
-            c0_ident[(i, i)] = c0.clone();
+
+        let mut g_inv_c0_ident = Matrix::<M_CONV, N, <Self as SPIRAL>::RingQFast>::zero();
+        <<Self as SPIRAL>::RingQFast as RingElementDecomposable<Z_CONV, T_CONV>>::decompose_into_mat(c0,&mut g_inv_c0_ident, 0, 0);
+        for i in 1..N {
+            for k in 0..T_CONV {
+                g_inv_c0_ident[(i * T_CONV + k, i)] = g_inv_c0_ident[(k, 0)].clone();
+            }
         }
-        let mut result = scal_to_mat_key
-            * &gadget_inverse::<<Self as SPIRAL>::RingQFast, N, M_CONV, N, Z_CONV, T_CONV>(
-                &c0_ident,
-            );
+
+        let mut result = scal_to_mat_key * &g_inv_c0_ident;
         for i in 0..N {
             result[(i + 1, i)] += &c1;
         }
