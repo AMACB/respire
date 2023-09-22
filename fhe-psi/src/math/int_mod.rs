@@ -164,6 +164,23 @@ impl<const N: u64> Neg for IntMod<N> {
     }
 }
 
+const fn max_positive(n: u64, base: u64, len: usize) -> u64 {
+    if n > base.pow(len as u32) {
+        panic!("RingElementDecomposable requires modulus <= base^len");
+    }
+
+    // Wrap if > threshold
+    let threshold = base / 2;
+    let mut i = 0;
+    let mut sum = 0;
+    while i < len {
+        sum *= base;
+        sum += threshold;
+        i += 1;
+    }
+    sum
+}
+
 impl<const NN: u64, const BASE: u64, const LEN: usize> RingElementDecomposable<BASE, LEN>
     for IntMod<NN>
 {
@@ -174,9 +191,22 @@ impl<const NN: u64, const BASE: u64, const LEN: usize> RingElementDecomposable<B
         j: usize,
     ) {
         let mut a = self.a;
+        let negate_all = a > max_positive(NN, BASE, LEN);
+        if negate_all {
+            a = NN - a;
+        }
         for k in 0..LEN {
-            mat[(i + k, j)] = (a % BASE).into();
+            let mut reduced = a % BASE;
             a /= BASE;
+            let subtract_base = reduced > BASE / 2;
+            if subtract_base {
+                a += 1;
+                reduced = NN - (BASE - reduced);
+            }
+            if negate_all {
+                reduced = NN - reduced;
+            }
+            mat[(i + k, j)] = IntMod::from(reduced);
         }
     }
 }
@@ -332,14 +362,16 @@ impl<const N: u64> RandDiscreteGaussianSampled for IntMod<N> {
     }
 }
 
-/// Other methods
-impl<const N: u64> IntMod<N> {
-    pub fn norm(&self) -> u64 {
+impl<const N: u64> NormedRingElement for IntMod<N> {
+    fn norm(&self) -> u64 {
         let pos: u64 = u64::from(*self);
         let neg: u64 = u64::from(-*self);
         min(pos, neg)
     }
+}
 
+/// Other methods
+impl<const N: u64> IntMod<N> {
     pub fn pow(&self, mut e: u64) -> IntMod<N> {
         let mut val = self.clone();
         let mut res = IntMod::one();
@@ -363,6 +395,8 @@ impl<const N: u64> IntMod<N> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::math::gadget::{build_gadget, gadget_inverse};
+    use crate::math::utils::ceil_log;
 
     #[test]
     fn test_from_into() {
@@ -519,6 +553,62 @@ mod test {
 
         let one_neg_big: ZBIG = (u64::MAX - 2).into();
         assert_eq!(one_neg_big.norm(), 1);
+    }
+
+    #[test]
+    fn test_decompose() {
+        fn test_decompose_modulus<const N: u64, const Z: u64, const T: usize>() {
+            let mut m = Matrix::<1, 1, IntMod<N>>::zero();
+            for i in 0..N {
+                m[(0, 0)] = IntMod::from(i);
+                let g_inv = gadget_inverse::<IntMod<N>, 1, T, 1, Z, T>(&m);
+                let g = build_gadget::<IntMod<N>, 1, T, Z, T>();
+                assert_eq!(&(&g * &g_inv), &m);
+                assert!(g_inv.norm() <= N / 2);
+            }
+        }
+
+        test_decompose_modulus::<2, 2, { ceil_log(2, 2) }>();
+        test_decompose_modulus::<3, 2, { ceil_log(2, 3) }>();
+        test_decompose_modulus::<4, 2, { ceil_log(2, 4) }>();
+        test_decompose_modulus::<5, 2, { ceil_log(2, 5) }>();
+        test_decompose_modulus::<6, 2, { ceil_log(2, 6) }>();
+        test_decompose_modulus::<20, 2, { ceil_log(2, 20) }>();
+        test_decompose_modulus::<31, 2, { ceil_log(2, 31) }>();
+        test_decompose_modulus::<32, 2, { ceil_log(2, 32) }>();
+
+        test_decompose_modulus::<2, 3, { ceil_log(3, 2) }>();
+        test_decompose_modulus::<3, 3, { ceil_log(3, 3) }>();
+        test_decompose_modulus::<4, 3, { ceil_log(3, 4) }>();
+        test_decompose_modulus::<5, 3, { ceil_log(3, 5) }>();
+        test_decompose_modulus::<8, 3, { ceil_log(3, 8) }>();
+        test_decompose_modulus::<9, 3, { ceil_log(3, 9) }>();
+        test_decompose_modulus::<20, 3, { ceil_log(3, 20) }>();
+        test_decompose_modulus::<26, 3, { ceil_log(3, 26) }>();
+        test_decompose_modulus::<27, 3, { ceil_log(3, 27) }>();
+        test_decompose_modulus::<28, 3, { ceil_log(3, 28) }>();
+
+        test_decompose_modulus::<2, 4, { ceil_log(4, 2) }>();
+        test_decompose_modulus::<3, 4, { ceil_log(4, 3) }>();
+        test_decompose_modulus::<4, 4, { ceil_log(4, 4) }>();
+        test_decompose_modulus::<5, 4, { ceil_log(4, 5) }>();
+        test_decompose_modulus::<63, 4, { ceil_log(4, 63) }>();
+        test_decompose_modulus::<64, 4, { ceil_log(4, 64) }>();
+        test_decompose_modulus::<65, 4, { ceil_log(4, 65) }>();
+        test_decompose_modulus::<256, 4, { ceil_log(4, 256) }>();
+        test_decompose_modulus::<257, 4, { ceil_log(4, 257) }>();
+
+        test_decompose_modulus::<5, 5, { ceil_log(5, 5) }>();
+        test_decompose_modulus::<6, 5, { ceil_log(5, 6) }>();
+        test_decompose_modulus::<20, 5, { ceil_log(5, 20) }>();
+        test_decompose_modulus::<24, 5, { ceil_log(5, 24) }>();
+        test_decompose_modulus::<25, 5, { ceil_log(5, 25) }>();
+
+        test_decompose_modulus::<{ 65 * 65 - 1 }, 65, 2>();
+        test_decompose_modulus::<{ 65 * 65 }, 65, 2>();
+        test_decompose_modulus::<{ 65 * 65 + 1 }, 65, 3>();
+
+        test_decompose_modulus::<3868, 16, { ceil_log(16, 3868) }>();
     }
 
     // #[test]
