@@ -1,5 +1,6 @@
 //! Gadget matrix and gadget inverse (n-ary decomposition).
 
+use crate::math::int_mod::IntMod;
 use crate::math::matrix::*;
 use crate::math::ring_elem::*;
 
@@ -45,6 +46,70 @@ where
         i: usize,
         j: usize,
     );
+}
+
+pub struct IntModDecomposition<const N: u64, const BASE: u64, const LEN: usize> {
+    a: u64,
+    negate_all: bool,
+    k: usize,
+}
+
+impl<const N: u64, const BASE: u64, const LEN: usize> IntModDecomposition<N, BASE, LEN> {
+    const fn max_positive() -> u64 {
+        if N > BASE.pow(LEN as u32) {
+            panic!("RingElementDecomposable requires modulus <= base^len");
+        }
+
+        // Wrap if > threshold
+        let threshold = BASE / 2;
+        let mut i = 0;
+        let mut sum = 0;
+        while i < LEN {
+            sum *= BASE;
+            sum += threshold;
+            i += 1;
+        }
+        sum
+    }
+
+    pub fn new(a: IntMod<N>) -> Self {
+        let mut a = u64::from(a);
+        let negate_all = a > Self::max_positive();
+        if negate_all {
+            a = N - a;
+        }
+        let k = 0;
+        Self { a, negate_all, k }
+    }
+}
+
+impl<const N: u64, const BASE: u64, const LEN: usize> Iterator
+    for IntModDecomposition<N, BASE, LEN>
+{
+    type Item = IntMod<N>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.k == LEN {
+            return None;
+        }
+
+        let mut reduced = self.a % BASE;
+        self.a /= BASE;
+        let subtract_base = reduced > BASE / 2;
+        if subtract_base {
+            self.a += 1;
+            reduced = N - (BASE - reduced);
+        }
+        if self.negate_all {
+            reduced = N - reduced;
+        }
+        self.k += 1;
+        Some(IntMod::from(reduced))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (LEN - self.k, Some(LEN - self.k))
+    }
 }
 
 /// Computes G^(-1) of an `N x K` matrix, producing an `M x K` matrix.

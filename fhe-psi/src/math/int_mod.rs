@@ -1,7 +1,7 @@
 //! The ring `Z_n` of integers modulo `n`.
 
 use crate::math::discrete_gaussian::DiscreteGaussian;
-use crate::math::gadget::RingElementDecomposable;
+use crate::math::gadget::{IntModDecomposition, RingElementDecomposable};
 use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
@@ -164,23 +164,6 @@ impl<const N: u64> Neg for IntMod<N> {
     }
 }
 
-const fn max_positive(n: u64, base: u64, len: usize) -> u64 {
-    if n > base.pow(len as u32) {
-        panic!("RingElementDecomposable requires modulus <= base^len");
-    }
-
-    // Wrap if > threshold
-    let threshold = base / 2;
-    let mut i = 0;
-    let mut sum = 0;
-    while i < len {
-        sum *= base;
-        sum += threshold;
-        i += 1;
-    }
-    sum
-}
-
 impl<const NN: u64, const BASE: u64, const LEN: usize> RingElementDecomposable<BASE, LEN>
     for IntMod<NN>
 {
@@ -190,23 +173,9 @@ impl<const NN: u64, const BASE: u64, const LEN: usize> RingElementDecomposable<B
         i: usize,
         j: usize,
     ) {
-        let mut a = self.a;
-        let negate_all = a > max_positive(NN, BASE, LEN);
-        if negate_all {
-            a = NN - a;
-        }
-        for k in 0..LEN {
-            let mut reduced = a % BASE;
-            a /= BASE;
-            let subtract_base = reduced > BASE / 2;
-            if subtract_base {
-                a += 1;
-                reduced = NN - (BASE - reduced);
-            }
-            if negate_all {
-                reduced = NN - reduced;
-            }
-            mat[(i + k, j)] = IntMod::from(reduced);
+        let decomp = IntModDecomposition::<NN, BASE, LEN>::new(*self);
+        for (k, u) in decomp.enumerate() {
+            mat[(i + k, j)] = u;
         }
     }
 }
