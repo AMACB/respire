@@ -47,6 +47,73 @@ where
     );
 }
 
+pub struct IntModDecomposition<const BASE: u64, const LEN: usize> {
+    a: u64,
+    negate_all: bool,
+    k: usize,
+    n: u64,
+}
+
+impl<const BASE: u64, const LEN: usize> IntModDecomposition<BASE, LEN> {
+    const fn max_positive(n: u64) -> u64 {
+        if n > BASE.pow(LEN as u32) {
+            panic!("RingElementDecomposable requires modulus <= base^len");
+        }
+
+        // Wrap if > threshold
+        let threshold = BASE / 2;
+        let mut i = 0;
+        let mut sum = 0;
+        while i < LEN {
+            sum *= BASE;
+            sum += threshold;
+            i += 1;
+        }
+        sum
+    }
+
+    pub fn new(mut a: u64, n: u64) -> Self {
+        let negate_all = a > Self::max_positive(n);
+        if negate_all {
+            a = n - a;
+        }
+        let k = 0;
+        Self {
+            a,
+            negate_all,
+            k,
+            n,
+        }
+    }
+}
+
+impl<const BASE: u64, const LEN: usize> Iterator for IntModDecomposition<BASE, LEN> {
+    type Item = u64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.k == LEN {
+            return None;
+        }
+
+        let mut reduced = self.a % BASE;
+        self.a /= BASE;
+        let subtract_base = reduced > BASE / 2;
+        if subtract_base {
+            self.a += 1;
+            reduced = self.n - (BASE - reduced);
+        }
+        if self.negate_all {
+            reduced = self.n - reduced;
+        }
+        self.k += 1;
+        Some(reduced)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (LEN - self.k, Some(LEN - self.k))
+    }
+}
+
 /// Computes G^(-1) of an `N x K` matrix, producing an `M x K` matrix.
 pub fn gadget_inverse<
     R: RingElementDecomposable<G_BASE, G_LEN>,

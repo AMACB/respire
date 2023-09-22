@@ -1,7 +1,7 @@
 //! The ring `Z_n` of integers modulo `n = n_1 * n_2`, internally represented by its residues modulo `n_1` and `n_2`.
 
 use crate::math::discrete_gaussian::DiscreteGaussian;
-use crate::math::gadget::RingElementDecomposable;
+use crate::math::gadget::{IntModDecomposition, RingElementDecomposable};
 use crate::math::int_mod::IntMod;
 use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::*;
@@ -16,8 +16,8 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 #[repr(C)]
 pub struct IntModCRT<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> {
-    a1: IntMod<N1>,
-    a2: IntMod<N2>,
+    pub(in crate::math) a1: IntMod<N1>,
+    pub(in crate::math) a2: IntMod<N2>,
 }
 
 /// Conversions
@@ -176,10 +176,9 @@ impl<
         i: usize,
         j: usize,
     ) {
-        let mut a: u64 = self.clone().into();
-        for k in 0..LEN {
-            mat[(i + k, j)] = (a % BASE).into();
-            a /= BASE;
+        let decomp = IntModDecomposition::<BASE, LEN>::new(u64::from(*self), N1 * N2);
+        for (k, u) in decomp.enumerate() {
+            mat[(i + k, j)] = Self::from(u);
         }
     }
 }

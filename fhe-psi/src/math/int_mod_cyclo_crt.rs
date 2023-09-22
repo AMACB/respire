@@ -1,7 +1,7 @@
 //! The cyclotomic ring `Z_n[x]/x^d + 1)`, where `n = n_1 * n_2` and `d` is assumed to be a power of `2`.
 
 use crate::math::discrete_gaussian::DiscreteGaussian;
-use crate::math::gadget::RingElementDecomposable;
+use crate::math::gadget::{IntModDecomposition, RingElementDecomposable};
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_crt::IntModCRT;
 use crate::math::int_mod_cyclo::IntModCyclo;
@@ -288,24 +288,24 @@ impl<
         i: usize,
         j: usize,
     ) {
-        let mut a: [u64; D] = [0; D];
-        for l in 0..D {
-            let coeff: IntModCRT<N1, N2, N1_INV, N2_INV> = (self.p1[l], self.p2[l]).into();
-            a[l] = coeff.into();
+        let mut decomps = Vec::<IntModDecomposition<BASE, LEN>>::with_capacity(D);
+        for coeff_idx in 0..D {
+            let coeff = u64::from(IntModCRT::<N1, N2, N1_INV, N2_INV>::from((
+                self.p1.coeff[coeff_idx],
+                self.p2.coeff[coeff_idx],
+            )));
+            decomps.push(IntModDecomposition::<BASE, LEN>::new(
+                u64::from(coeff),
+                N1 * N2,
+            ));
         }
         for k in 0..LEN {
-            let mut a1_rem: [IntMod<N1>; D] = [IntMod::zero(); D];
-            let mut a2_rem: [IntMod<N2>; D] = [IntMod::zero(); D];
-            for l in 0..D {
-                let x = a[l] % BASE;
-                a[l] /= BASE;
-
-                a1_rem[l] = x.into();
-                a2_rem[l] = x.into();
+            for coeff_idx in 0..D {
+                let result =
+                    IntModCRT::<N1, N2, N1_INV, N2_INV>::from(decomps[coeff_idx].next().unwrap());
+                mat[(i + k, j)].p1.coeff[coeff_idx] = result.a1;
+                mat[(i + k, j)].p2.coeff[coeff_idx] = result.a2;
             }
-            let p1 = a1_rem.into();
-            let p2 = a2_rem.into();
-            mat[(i + k, j)] = (p1, p2).into();
         }
     }
 }

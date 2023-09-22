@@ -266,6 +266,7 @@ pub type GSWTest = gsw_from_params!(GSW_TEST_PARAMS);
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::math::ring_elem::NormedRingElement;
 
     #[test]
     fn keygen_is_correct() {
