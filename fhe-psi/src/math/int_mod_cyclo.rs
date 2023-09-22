@@ -1,6 +1,6 @@
 //! The cyclotomic ring `Z_n[x]/x^d + 1)`. `d` is assumed to be a power of `2`.
 
-use crate::math::gadget::RingElementDecomposable;
+use crate::math::gadget::{IntModDecomposition, RingElementDecomposable};
 use crate::math::int_mod::{IntMod, NoReduce};
 use crate::math::int_mod_crt::IntModCRT;
 use crate::math::int_mod_cyclo_crt::IntModCycloCRT;
@@ -270,17 +270,17 @@ impl<const D: usize, const NN: u64, const BASE: u64, const LEN: usize>
         i: usize,
         j: usize,
     ) {
-        let mut a: [u64; D] = [0; D];
-        for l in 0..D {
-            a[l] = self.coeff[l].into();
+        let mut decomps = Vec::<IntModDecomposition<BASE, LEN>>::with_capacity(D);
+        for coeff_idx in 0..D {
+            decomps.push(IntModDecomposition::<BASE, LEN>::new(
+                u64::from(self.coeff[coeff_idx]),
+                NN,
+            ))
         }
         for k in 0..LEN {
-            let mut a_rem = IntModCyclo::zero();
-            for l in 0..D {
-                a_rem.coeff[l] = (a[l] % BASE).into();
-                a[l] /= BASE;
+            for coeff_idx in 0..D {
+                mat[(i + k, j)].coeff[coeff_idx] = IntMod::from(decomps[coeff_idx].next().unwrap());
             }
-            mat[(i + k, j)] = a_rem;
         }
     }
 }

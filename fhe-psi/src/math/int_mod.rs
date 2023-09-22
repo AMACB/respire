@@ -173,9 +173,9 @@ impl<const NN: u64, const BASE: u64, const LEN: usize> RingElementDecomposable<B
         i: usize,
         j: usize,
     ) {
-        let decomp = IntModDecomposition::<NN, BASE, LEN>::new(*self);
+        let decomp = IntModDecomposition::<BASE, LEN>::new(u64::from(*self), NN);
         for (k, u) in decomp.enumerate() {
-            mat[(i + k, j)] = u;
+            mat[(i + k, j)] = IntMod::from(u);
         }
     }
 }

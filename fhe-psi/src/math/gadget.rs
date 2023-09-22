@@ -1,6 +1,5 @@
 //! Gadget matrix and gadget inverse (n-ary decomposition).
 
-use crate::math::int_mod::IntMod;
 use crate::math::matrix::*;
 use crate::math::ring_elem::*;
 
@@ -48,15 +47,16 @@ where
     );
 }
 
-pub struct IntModDecomposition<const N: u64, const BASE: u64, const LEN: usize> {
+pub struct IntModDecomposition<const BASE: u64, const LEN: usize> {
     a: u64,
     negate_all: bool,
     k: usize,
+    n: u64,
 }
 
-impl<const N: u64, const BASE: u64, const LEN: usize> IntModDecomposition<N, BASE, LEN> {
-    const fn max_positive() -> u64 {
-        if N > BASE.pow(LEN as u32) {
+impl<const BASE: u64, const LEN: usize> IntModDecomposition<BASE, LEN> {
+    const fn max_positive(n: u64) -> u64 {
+        if n > BASE.pow(LEN as u32) {
             panic!("RingElementDecomposable requires modulus <= base^len");
         }
 
@@ -72,21 +72,23 @@ impl<const N: u64, const BASE: u64, const LEN: usize> IntModDecomposition<N, BAS
         sum
     }
 
-    pub fn new(a: IntMod<N>) -> Self {
-        let mut a = u64::from(a);
-        let negate_all = a > Self::max_positive();
+    pub fn new(mut a: u64, n: u64) -> Self {
+        let negate_all = a > Self::max_positive(n);
         if negate_all {
-            a = N - a;
+            a = n - a;
         }
         let k = 0;
-        Self { a, negate_all, k }
+        Self {
+            a,
+            negate_all,
+            k,
+            n,
+        }
     }
 }
 
-impl<const N: u64, const BASE: u64, const LEN: usize> Iterator
-    for IntModDecomposition<N, BASE, LEN>
-{
-    type Item = IntMod<N>;
+impl<const BASE: u64, const LEN: usize> Iterator for IntModDecomposition<BASE, LEN> {
+    type Item = u64;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.k == LEN {
@@ -98,13 +100,13 @@ impl<const N: u64, const BASE: u64, const LEN: usize> Iterator
         let subtract_base = reduced > BASE / 2;
         if subtract_base {
             self.a += 1;
-            reduced = N - (BASE - reduced);
+            reduced = self.n - (BASE - reduced);
         }
         if self.negate_all {
-            reduced = N - reduced;
+            reduced = self.n - reduced;
         }
         self.k += 1;
-        Some(IntMod::from(reduced))
+        Some(reduced)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

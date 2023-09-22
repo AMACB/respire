@@ -1,6 +1,6 @@
 //! The cyclotomic ring `Z_n[x]/x^d + 1)`, represented as its DFT. `d` is assumed to be a power of `2`.
 
-use crate::math::gadget::RingElementDecomposable;
+use crate::math::gadget::{IntModDecomposition, RingElementDecomposable};
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_poly::IntModPoly;
@@ -213,18 +213,20 @@ impl<const D: usize, const NN: u64, const W: u64, const BASE: u64, const LEN: us
         i: usize,
         j: usize,
     ) {
-        let self_raw = IntModCyclo::from(self);
-        let mut a: [u64; D] = [0; D];
-        for (l, coeff) in self_raw.coeff_iter().enumerate() {
-            a[l] = (*coeff).into();
+        let self_coeff = IntModCyclo::from(self);
+        let mut decomps = Vec::<IntModDecomposition<BASE, LEN>>::with_capacity(D);
+        for coeff_idx in 0..D {
+            decomps.push(IntModDecomposition::<BASE, LEN>::new(
+                u64::from(self_coeff.coeff[coeff_idx]),
+                NN,
+            ))
         }
         for k in 0..LEN {
-            let mut a_rem: [IntMod<NN>; D] = [0_u64.into(); D];
-            for l in 0..D {
-                a_rem[l] = (a[l] % BASE).into();
-                a[l] /= BASE;
+            let mut result_coeff = IntModCyclo::zero();
+            for coeff_idx in 0..D {
+                result_coeff.coeff[coeff_idx] = IntMod::from(decomps[coeff_idx].next().unwrap());
             }
-            mat[(i + k, j)] = IntModCycloEval::from(IntModCyclo::from(a_rem));
+            mat[(i + k, j)] = IntModCycloEval::from(result_coeff);
         }
     }
 }
