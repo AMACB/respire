@@ -36,7 +36,7 @@ pub fn ntt<const D: usize, const N: u64>(
     // Cooley Tukey
     for round in 0..log_d {
         let prev_block_size = 1 << round;
-        let s = (D as usize) >> (round + 1);
+        let s = D >> (round + 1);
 
         for block_start in (0..D).step_by(prev_block_size * 2) {
             for i in 0..prev_block_size {
@@ -55,9 +55,7 @@ pub fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [IntMod<N>; 
         let mut ri = i.reverse_bits();
         ri >>= (usize::BITS as usize) - log_d;
         if i < ri {
-            let tmp = values[ri];
-            values[ri] = values[i];
-            values[i] = tmp;
+            values.swap(ri, i);
         }
     }
 }
@@ -76,7 +74,7 @@ mod test {
     fn ntt_self_inverse() {
         let mut coeff: [IntMod<P>; 4] = [1u64.into(), 2u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
 
-        let coeff_orig = coeff.clone();
+        let coeff_orig = coeff;
         let root = IntMod::<P>::from(W).pow(1 << 14);
 
         bit_reverse_order(&mut coeff, LOG_D);

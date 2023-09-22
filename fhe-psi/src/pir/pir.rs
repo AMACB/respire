@@ -194,10 +194,7 @@ pub trait SPIRAL {
     fn setup() -> (Self::QueryKey, Self::PublicParams);
     fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
     fn query_expand(pp: &Self::PublicParams, q: &Self::Query) -> Self::QueryExpanded;
-    fn answer(
-        db: &Vec<Self::RecordPreprocessed>,
-        q_expanded: &Self::QueryExpanded,
-    ) -> Self::Response;
+    fn answer(db: &[Self::RecordPreprocessed], q_expanded: &Self::QueryExpanded) -> Self::Response;
     fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
     fn response_error(
         qk: &<Self as SPIRAL>::QueryKey,
@@ -392,7 +389,7 @@ impl<
             cts_new
         };
 
-        let regev_base = q + &Self::auto_hom(&auto_keys[0], &q);
+        let regev_base = q + &Self::auto_hom(&auto_keys[0], q);
         let mut regevs: Vec<Self::ScalarRegevCiphertext> = vec![regev_base];
         for i in 1..Self::REGEV_EXPAND_ITERS + 1 {
             regevs = do_expand_iter(i, &regevs);
@@ -401,10 +398,10 @@ impl<
 
         let regevs: Vec<Self::MatrixRegevCiphertext> = regevs
             .iter()
-            .map(|c| Self::scal_to_mat(&scal_to_mat_key, c))
+            .map(|c| Self::scal_to_mat(scal_to_mat_key, c))
             .collect();
 
-        let q_shifted = Self::scalar_regev_mul_x_pow(&q, 2 * D - 1);
+        let q_shifted = Self::scalar_regev_mul_x_pow(q, 2 * D - 1);
         let gsw_base = &q_shifted + &Self::auto_hom(&auto_keys[0], &q_shifted);
         let mut gsws = vec![gsw_base];
         for i in 1..Self::GSW_EXPAND_ITERS + 1 {
@@ -414,14 +411,14 @@ impl<
 
         let gsws: Vec<Self::GSWCiphertext> = gsws
             .chunks(T_GSW)
-            .map(|cs| Self::regev_to_gsw(&regev_to_gsw_key, cs))
+            .map(|cs| Self::regev_to_gsw(regev_to_gsw_key, cs))
             .collect();
 
         (regevs, gsws)
     }
 
     fn answer(
-        db: &Vec<<Self as SPIRAL>::RecordPreprocessed>,
+        db: &[<Self as SPIRAL>::RecordPreprocessed],
         (regevs, gsws): &<Self as SPIRAL>::QueryExpanded,
     ) -> <Self as SPIRAL>::Response {
         // First dimension processing
@@ -453,7 +450,7 @@ impl<
                     let c_i = &curr[i * curr_size / Z_FOLD + fold_idx];
                     let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
                     let b = &gsws[gsw_idx * (Z_FOLD - 1) + i - 1];
-                    let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, &b);
+                    let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, b);
                     curr[fold_idx] += &c_i_sub_c0_mul_b;
                 }
             }
@@ -475,7 +472,7 @@ impl<
         actual: &<Self as SPIRAL>::Record,
     ) -> f64 {
         let actual_scaled = actual.into_ring(|x| x.scale_up_into());
-        let decoded = Self::decode_matrix_regev(&s_mat, r);
+        let decoded = Self::decode_matrix_regev(s_mat, r);
         let diff = &actual_scaled - &decoded;
         (diff.norm() as f64) / (Q as f64)
         // let mut err = 0_f64;
@@ -634,8 +631,8 @@ impl<
         rhs: &<Self as SPIRAL>::MatrixQFast,
     ) -> <Self as SPIRAL>::MatrixRegevCiphertext0 {
         let mut result: <Self as SPIRAL>::MatrixRegevCiphertext0 = Matrix::zero();
-        lhs.mul_iter_do(&rhs, |(r, c), lhs_r, rhs_r| {
-            result[(r, c)].add_eq_mul(&lhs_r.convert_ref(), &rhs_r.convert_ref());
+        lhs.mul_iter_do(rhs, |(r, c), lhs_r, rhs_r| {
+            result[(r, c)].add_eq_mul(lhs_r.convert_ref(), rhs_r.convert_ref());
         });
         result
     }
@@ -729,7 +726,7 @@ impl<
 
         let mut result = scal_to_mat_key * &g_inv_c0_ident;
         for i in 0..N {
-            result[(i + 1, i)] += &c1;
+            result[(i + 1, i)] += c1;
         }
         result
     }
@@ -756,7 +753,7 @@ impl<
         bottom -= &(s_matrix * &s_scalar_tensor_g);
 
         let result = Matrix::stack(&a_t, &bottom);
-        let scal_to_mat_key = Self::scal_to_mat_setup(&s_scalar, &s_matrix);
+        let scal_to_mat_key = Self::scal_to_mat_setup(s_scalar, s_matrix);
         (result, scal_to_mat_key)
     }
 
@@ -780,7 +777,7 @@ impl<
             >(&c_hat);
         result.copy_into(&v_g_inv_c_hat, 0, 0);
         for i in 0..T_GSW {
-            let c_i_mat = Self::scal_to_mat(&scal_to_mat_key, &cs[i]);
+            let c_i_mat = Self::scal_to_mat(scal_to_mat_key, &cs[i]);
             result.copy_into(&c_i_mat, 0, T_GSW + N * i);
         }
 
@@ -957,8 +954,8 @@ mod test {
         let pre_start = Instant::now();
         let mut db_pre: Vec<<TheSPIRAL as SPIRAL>::RecordPreprocessed> =
             Vec::with_capacity(TheSPIRAL::DB_SIZE);
-        for i in 0..TheSPIRAL::DB_SIZE {
-            db_pre.push(TheSPIRAL::preprocess(&db[i]));
+        for db_elem in db.iter() {
+            db_pre.push(TheSPIRAL::preprocess(db_elem));
         }
         let pre_end = Instant::now();
         eprintln!("{:?} to preprocess", pre_end - pre_start);
@@ -990,7 +987,7 @@ mod test {
             let extract_end = Instant::now();
             let extract_total = extract_end - extract_start;
 
-            if &extracted != &db[idx] {
+            if extracted != db[idx] {
                 eprintln!("  **** **** **** **** ERROR **** **** **** ****");
                 eprintln!("  protocol failed");
             }

@@ -225,7 +225,7 @@ where
         let mut out = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                out[(r, c)] = &self[(r, c)] * &other;
+                out[(r, c)] = &self[(r, c)] * other;
             }
         }
         out
@@ -262,7 +262,7 @@ where
     fn mul(self, other: &Matrix<M, K, R>) -> Self::Output {
         let mut out = Matrix::zero();
         self.mul_iter_do(other, |(r, c), lhs, rhs| {
-            out[(r, c)].add_eq_mul(&lhs, &rhs);
+            out[(r, c)].add_eq_mul(lhs, rhs);
         });
         out
     }

@@ -54,6 +54,14 @@ where
     fn norm(&self) -> u64;
 }
 
+///
+/// # Safety
+///
+/// `R` is `RingCompatible<S>` implies that the underlying memory representation of `R` is compatible
+/// with that of `S`. This is typically enforced by using `repr(u64)` for `IntMod` and `repr(C)` for
+/// the various types containing `IntMod`s. (For example, `IntMod<7>` is `RingCompatible<IntMod<25>>`,
+/// since they are both represented by a transparent `u64`.)
+///
 pub unsafe trait RingCompatible<Other: RingElement>: RingElement
 where
     for<'a> &'a Self: RingElementRef<Self>,
