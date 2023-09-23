@@ -12,7 +12,7 @@ use crate::math::matrix::Matrix;
 use crate::math::number_theory::find_sqrt_primitive_root;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::ring_elem::{RingCompatible, RingElement};
-use crate::math::utils::{ceil_log, floor_log, mod_inverse};
+use crate::math::utils::{ceil_log, mod_inverse};
 
 pub struct SPIRALImpl<
     const N: usize,
@@ -49,10 +49,10 @@ pub struct SPIRALParamsRaw {
     pub Q_A: u64,
     pub Q_B: u64,
     pub D: usize,
-    pub Z_GSW: u64,
-    pub Z_COEFF_REGEV: u64,
-    pub Z_COEFF_GSW: u64,
-    pub Z_CONV: u64,
+    pub T_GSW: usize,
+    pub T_COEFF_REGEV: usize,
+    pub T_COEFF_GSW: usize,
+    pub T_CONV: usize,
     pub NOISE_WIDTH_MILLIONTHS: u64,
     pub P: u64,
     pub ETA1: usize,
@@ -61,12 +61,24 @@ pub struct SPIRALParamsRaw {
 }
 
 impl SPIRALParamsRaw {
+    const fn z_from_t(t: usize, q: u64) -> u64 {
+        // z = floor(q^(1/t)) + 1
+        let mut z: u128 = 2;
+        while z <= (1 << 20) {
+            if (z - 1).pow(t as u32) <= (q as u128) && (q as u128) < z.pow(t as u32) {
+                return z as u64;
+            }
+            z += 1;
+        }
+        panic!("z could not be computed from t (is it bigger than 2^20?)");
+    }
+
     pub const fn expand(&self) -> SPIRALParams {
         let q = self.Q_A * self.Q_B;
-        let t_gsw = floor_log(self.Z_GSW, q) + 1;
-        let t_coeff_regev = floor_log(self.Z_COEFF_REGEV, q) + 1;
-        let t_coeff_gsw = floor_log(self.Z_COEFF_GSW, q) + 1;
-        let t_conv = floor_log(self.Z_CONV, q) + 1;
+        let z_gsw = Self::z_from_t(self.T_GSW, q);
+        let z_coeff_regev = Self::z_from_t(self.T_COEFF_REGEV, q);
+        let z_coeff_gsw = Self::z_from_t(self.T_COEFF_GSW, q);
+        let z_conv = Self::z_from_t(self.T_CONV, q);
         SPIRALParams {
             N: self.N,
             N_PLUS_ONE: self.N + 1,
@@ -78,17 +90,17 @@ impl SPIRALParamsRaw {
             D: self.D,
             W_A: find_sqrt_primitive_root(self.D, self.Q_A),
             W_B: find_sqrt_primitive_root(self.D, self.Q_B),
-            Z_GSW: self.Z_GSW,
-            T_GSW: t_gsw,
-            Z_COEFF_REGEV: self.Z_COEFF_REGEV,
-            T_COEFF_REGEV: t_coeff_regev,
-            Z_COEFF_GSW: self.Z_COEFF_GSW,
-            T_COEFF_GSW: t_coeff_gsw,
-            Z_CONV: self.Z_CONV,
-            T_CONV: t_conv,
-            T_CONV_TIMES_TWO: t_conv * 2,
-            M_CONV: self.N * t_conv,
-            M: (self.N + 1) * t_gsw,
+            Z_GSW: z_gsw,
+            T_GSW: self.T_GSW,
+            Z_COEFF_REGEV: z_coeff_regev,
+            T_COEFF_REGEV: self.T_COEFF_REGEV,
+            Z_COEFF_GSW: z_coeff_gsw,
+            T_COEFF_GSW: self.T_COEFF_GSW,
+            Z_CONV: z_conv,
+            T_CONV: self.T_CONV,
+            T_CONV_TIMES_TWO: self.T_CONV * 2,
+            M_CONV: self.N * self.T_CONV,
+            M: (self.N + 1) * self.T_GSW,
             NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
             P: self.P,
             ETA1: self.ETA1,
@@ -897,10 +909,14 @@ mod test {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
-        Z_GSW: 75,
-        Z_COEFF_REGEV: 128,
-        Z_COEFF_GSW: 2,
-        Z_CONV: 16384,
+        T_GSW: 9,
+        T_CONV: 4,
+        T_COEFF_REGEV: 8,
+        T_COEFF_GSW: 56,
+        // Z_GSW: 75,
+        // Z_COEFF_REGEV: 127,
+        // Z_COEFF_GSW: 2,
+        // Z_CONV: 16088,
         NOISE_WIDTH_MILLIONTHS: 6_400_000,
         P: 1 << 8,
         ETA1: 9,
@@ -1024,6 +1040,7 @@ mod test {
             "Running SPIRAL test with database size {}",
             SPIRALTest::DB_SIZE
         );
+        eprintln!("Parameters: {:#?}", SPIRAL_TEST_PARAMS,);
         let mut db: Vec<<TheSPIRAL as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);
         for i in 0..TheSPIRAL::DB_SIZE as u64 {
             let mut record: <TheSPIRAL as SPIRAL>::Record = Matrix::zero();
