@@ -143,7 +143,11 @@ impl<const N: u64> MulAssign for IntMod<N> {
 impl<const N: u64> Sub for IntMod<N> {
     type Output = IntMod<N>;
     fn sub(self, rhs: Self) -> Self::Output {
-        self + (-rhs)
+        if self.a >= rhs.a {
+            Self::from(NoReduce(self.a - rhs.a))
+        } else {
+            Self::from(NoReduce(self.a + (N - rhs.a)))
+        }
     }
 }
 
