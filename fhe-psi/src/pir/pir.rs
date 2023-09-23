@@ -1020,6 +1020,10 @@ mod test {
     >(
         iter: I,
     ) {
+        eprintln!(
+            "Running SPIRAL test with database size {}",
+            SPIRALTest::DB_SIZE
+        );
         let mut db: Vec<<TheSPIRAL as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);
         for i in 0..TheSPIRAL::DB_SIZE as u64 {
             let mut record: <TheSPIRAL as SPIRAL>::Record = Matrix::zero();
@@ -1050,7 +1054,7 @@ mod test {
         eprintln!("{:?} to setup", setup_end - setup_start);
 
         let check = |idx: usize| {
-            eprintln!("Running with idx = {}", idx);
+            eprintln!("Testing record index {}", idx);
             let query_start = Instant::now();
             let q = TheSPIRAL::query(&qk, idx);
             let query_end = Instant::now();
