@@ -1,4 +1,5 @@
-use std::cmp::max;
+use libm::erfc;
+use std::cmp::{max, min};
 use std::slice;
 
 use rand::SeedableRng;
@@ -11,7 +12,7 @@ use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
 use crate::math::matrix::Matrix;
 use crate::math::number_theory::find_sqrt_primitive_root;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
-use crate::math::ring_elem::{RingCompatible, RingElement};
+use crate::math::ring_elem::{NormedRingElement, RingCompatible, RingElement};
 use crate::math::utils::{ceil_log, mod_inverse};
 
 pub struct SPIRALImpl<
@@ -221,11 +222,11 @@ pub trait SPIRAL {
     fn query_expand(pp: &Self::PublicParams, q: &Self::Query) -> Self::QueryExpanded;
     fn answer(db: &[Self::RecordPreprocessed], q_expanded: &Self::QueryExpanded) -> Self::Response;
     fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
-    fn response_error(
+    fn response_stats(
         qk: &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::Response,
         actual: &<Self as SPIRAL>::Record,
-    ) -> f64;
+    ) -> (f64, f64);
 }
 
 impl<
@@ -524,27 +525,39 @@ impl<
         Self::decode_matrix_regev(s_mat, r).into_ring(|x| x.round_down_into())
     }
 
-    fn response_error(
+    fn response_stats(
         (_, s_mat): &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::Response,
         actual: &<Self as SPIRAL>::Record,
-    ) -> f64 {
+    ) -> (f64, f64) {
         let actual_scaled = actual.into_ring(|x| x.scale_up_into());
         let decoded = Self::decode_matrix_regev(s_mat, r);
         let diff = &actual_scaled - &decoded;
-        (diff.norm() as f64) / (Q as f64)
-        // let mut err = 0_f64;
-        // let mut ct = 0_usize;
-        // for i in 0..N {
-        //     for j in 0..N {
-        //         for e in diff[(i, j)].coeff_iter() {
-        //             let rel_e = (u64::from(*e) as f64) / (Q as f64);
-        //             err += rel_e * rel_e;
-        //             ct += 1;
-        //         }
-        //     }
-        // }
-        // (err / (ct as f64)) * (Q as f64)
+
+        let mut sum = 0_f64;
+        let mut samples = 0_usize;
+
+        for r in 0..N {
+            for c in 0..N {
+                for e in diff[(r, c)].coeff_iter() {
+                    let e_sq = (e.norm() as f64) * (e.norm() as f64);
+                    sum += e_sq;
+                    samples += 1;
+                }
+            }
+        }
+
+        // sigma^2 is the variance of the relative noise (noise divided by Q) of the coefficients
+        let sigma = (sum / samples as f64).sqrt() / (Q as f64);
+
+        // We want to bound the probability that a single sample of relative noise has magnitude
+        // >= k. For decoding correctness, we use k = 1 / 2P. Assuming the relative noise is
+        // Gaussian, this is 1 - erf( k / (sigma * sqrt(2))).
+        let num_sigmas = 1_f64 / (sigma * 2_f64 * (P as f64));
+        let correctness_error = erfc(num_sigmas / 2_f64.sqrt());
+
+        // Multiply by the number of samples to union bound over all coefficients
+        (sigma, (correctness_error * samples as f64).min(1_f64))
     }
 }
 
@@ -1104,8 +1117,10 @@ mod test {
             eprintln!("    {:?} to query expand", query_expand_total);
             eprintln!("    {:?} to answer", answer_total);
             eprintln!("    {:?} to extract", extract_total);
-            let err = TheSPIRAL::response_error(&qk, &result, &db[idx]);
-            eprintln!("  relative error: 2^({})", err.log2());
+            let (rel_noise, correctness) = TheSPIRAL::response_stats(&qk, &result, &db[idx]);
+
+            eprintln!("  relative coefficient noise: 2^({})", rel_noise.log2());
+            eprintln!("  correctness probability: 1 - 2^({})", correctness.log2());
         };
 
         for i in iter {
