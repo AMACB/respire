@@ -1,5 +1,5 @@
 use libm::erfc;
-use std::cmp::{max, min};
+use std::cmp::max;
 use std::slice;
 
 use rand::SeedableRng;
@@ -140,6 +140,16 @@ pub struct SPIRALParams {
     pub ETA1: usize,
     pub ETA2: usize,
     pub Z_FOLD: usize,
+}
+
+impl SPIRALParams {
+    pub fn relative_noise_threshold(&self) -> f64 {
+        // erfc_inverse(2^-40 / N^2 / D)
+        assert_eq!(self.N, 2);
+        assert_eq!(self.D, 2048);
+        let erfc_inv = 5.863_584_748_755_167_6_f64;
+        1_f64 / (2_f64 * (self.P as f64) * 2_f64.sqrt() * erfc_inv)
+    }
 }
 
 #[macro_export]
@@ -1053,7 +1063,7 @@ mod test {
             "Running SPIRAL test with database size {}",
             SPIRALTest::DB_SIZE
         );
-        eprintln!("Parameters: {:#?}", SPIRAL_TEST_PARAMS,);
+        eprintln!("Parameters: {:#?}", SPIRAL_TEST_PARAMS);
         let mut db: Vec<<TheSPIRAL as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);
         for i in 0..TheSPIRAL::DB_SIZE as u64 {
             let mut record: <TheSPIRAL as SPIRAL>::Record = Matrix::zero();
@@ -1068,6 +1078,12 @@ mod test {
             record[(1, 1)] = (i * 37 % 256).into();
             db.push(record);
         }
+        eprintln!(
+            "Relative noise threshold: 2^({})",
+            SPIRAL_TEST_PARAMS.relative_noise_threshold().log2()
+        );
+
+        eprintln!();
 
         let pre_start = Instant::now();
         let mut db_pre: Vec<<TheSPIRAL as SPIRAL>::RecordPreprocessed> =
@@ -1119,8 +1135,14 @@ mod test {
             eprintln!("    {:?} to extract", extract_total);
             let (rel_noise, correctness) = TheSPIRAL::response_stats(&qk, &result, &db[idx]);
 
-            eprintln!("  relative coefficient noise: 2^({})", rel_noise.log2());
-            eprintln!("  correctness probability: 1 - 2^({})", correctness.log2());
+            eprintln!(
+                "  relative coefficient noise (sample): 2^({})",
+                rel_noise.log2()
+            );
+            eprintln!(
+                "  correctness probability (sample): 1 - 2^({})",
+                correctness.log2()
+            );
         };
 
         for i in iter {
