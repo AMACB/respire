@@ -366,6 +366,7 @@ impl<const N: u64> IntMod<N> {
 }
 
 #[derive(Clone)]
+/// FIXME: this is actually slower than just multiply, then reduce
 pub struct FastMul<const N: u64> {
     b: u64,
     ratio: u64,
