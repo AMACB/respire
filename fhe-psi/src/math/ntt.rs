@@ -12,7 +12,9 @@ type RootTables = HashMap<(u64, u64, usize), Vec<u64>>;
 static ROOT_TABLES: Lazy<RwLock<RootTables>> = Lazy::new(|| RwLock::new(HashMap::new()));
 
 pub enum NegacyclicType<const N: u64> {
-    None, Forward(IntMod<N>), Reverse(IntMod<N>),
+    None,
+    Forward(IntMod<N>),
+    Reverse(IntMod<N>),
 }
 
 pub fn ntt<const D: usize, const N: u64>(
@@ -79,7 +81,6 @@ pub fn ntt<const D: usize, const N: u64>(
             neg_root_power *= inv_neg_root;
         }
     }
-
 }
 
 pub fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [IntMod<N>; D], log_d: usize) {
@@ -189,7 +190,12 @@ mod test {
             coeff3[i] = coeff1[i] * coeff2[i];
         }
 
-        ntt(&mut coeff3, (root * root).inverse(), LOG_D, NegacyclicType::None);
+        ntt(
+            &mut coeff3,
+            (root * root).inverse(),
+            LOG_D,
+            NegacyclicType::None,
+        );
 
         for (i, c) in coeff3.iter_mut().enumerate() {
             *c *= IntMod::<P>::from(D as u64).inverse();
