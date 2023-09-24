@@ -257,7 +257,7 @@ unsafe impl<const N: u64, const M: u64> RingCompatible<IntMod<M>> for IntMod<N> 
 
 impl<const N: u64> fmt::Debug for IntMod<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.a <= 3 * N / 4 {
+        if self.a <= 3 * (N / 4) {
             write!(f, "{}", self.a)
         } else {
             write!(f, "-{}", N - self.a)
@@ -362,6 +362,38 @@ impl<const N: u64> IntMod<N> {
     // this also assumes N is prime
     pub fn inverse(&self) -> IntMod<N> {
         self.pow(N - 2)
+    }
+}
+
+#[derive(Clone)]
+pub struct FastMul<const N: u64> {
+    b: u64,
+    ratio: u64,
+}
+
+impl<const N: u64> FastMul<N> {
+    pub const fn new(b: IntMod<N>) -> Self {
+        if N >= (1 << 63) {
+            panic!("modulus too big for FastMul");
+        }
+        Self {
+            b: b.a,
+            ratio: ((b.a as u128) * (1_u128 << 64) / (N as u128)) as u64,
+        }
+    }
+}
+
+impl<const N: u64> Mul<&FastMul<N>> for IntMod<N> {
+    type Output = IntMod<N>;
+
+    fn mul(self, rhs: &FastMul<N>) -> Self::Output {
+        let mul = (self.a as u128) * (rhs.b as u128);
+        let approx = (((self.a as u128) * (rhs.ratio as u128)) >> 64) * (N as u128);
+        let mut reduced = (mul - approx) as u64;
+        if reduced >= N {
+            reduced -= N;
+        }
+        IntMod::from(NoReduce(reduced))
     }
 }
 
@@ -582,6 +614,56 @@ mod test {
         test_decompose_modulus::<{ 65 * 65 + 1 }, 65, 3>();
 
         test_decompose_modulus::<3868, 16, { ceil_log(16, 3868) }>();
+    }
+
+    #[test]
+    fn test_fast_mul() {
+        type ZQ = IntMod<268369921>;
+
+        for b in [
+            0_u64,
+            1_u64,
+            32198953_u64,
+            136694207_u64,
+            268369919_u64,
+            268369920_u64,
+        ] {
+            let b = ZQ::from(b);
+            let b_fast = FastMul::new(b);
+
+            for a in -128_i64..128 {
+                let a = ZQ::from(a);
+                let result_fast = a * &b_fast;
+                let result = a * b;
+                assert_eq!(result_fast, result);
+            }
+        }
+    }
+
+    #[test]
+    fn test_fast_mul_big() {
+        type ZBIG = IntMod<{ u64::MAX / 2 }>;
+
+        for b in [
+            0_u64,
+            1_u64,
+            32198953_u64,
+            u64::MAX / 6,
+            u64::MAX / 3,
+            u64::MAX / 2 - 2,
+            u64::MAX / 2 - 1,
+        ] {
+            let b = ZBIG::from(b);
+            let b_fast = FastMul::new(b);
+
+            for a in -128_i64..128 {
+                let a = ZBIG::from(a);
+                let result_fast = a * &b_fast;
+                let result = a * b;
+                dbg!(a, b, result, result_fast);
+                assert_eq!(result_fast, result);
+            }
+        }
     }
 
     // #[test]
