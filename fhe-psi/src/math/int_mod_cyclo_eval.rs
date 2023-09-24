@@ -64,14 +64,7 @@ impl<const D: usize, const N: u64, const W: u64> From<IntModCyclo<D, N>>
 
         let mut points: [IntMod<N>; D] = a.coeff;
         let root: IntMod<N> = W.into();
-
-        ntt(
-            &mut points,
-            root * root,
-            log_d,
-            NegacyclicType::Forward(root),
-        );
-
+        ntt_neg_forward(&mut points, root, log_d);
         IntModCycloEval::from(points)
     }
 }
