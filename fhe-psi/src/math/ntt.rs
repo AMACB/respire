@@ -5,36 +5,46 @@ use crate::math::utils::{floor_log, mod_inverse};
 struct NTTTable<const D: usize, const N: u64, const W: u64> {}
 
 impl<const D: usize, const N: u64, const W: u64> NTTTable<D, N, W> {
-    const ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(false);
-    const INV_ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(true);
+    const ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(false, true);
+    const INV_ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(true, true);
+    const SQRT_ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(false, false);
+    const INV_SQRT_ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(true, false);
     const LOG_D: usize = floor_log(2, D as u64);
+    const INV_D: IntMod<N> = IntMod::from_u64_const(mod_inverse(D as u64, N));
 }
 
-const fn get_table<const D: usize, const N: u64, const W: u64>(invert: bool) -> [IntMod<N>; D] {
-    let sqrt_root = if invert {
+const fn get_table<const D: usize, const N: u64, const W: u64>(
+    invert: bool,
+    square: bool,
+) -> [IntMod<N>; D] {
+    let root = if invert {
         IntMod::from_u64_const(mod_inverse(W, N))
     } else {
         IntMod::from_u64_const(W)
     };
-    let mut ntt_roots = [IntMod::from_u64_const(0_u64); D];
+
+    let root = if square {
+        IntMod::mul_const(root, root)
+    } else {
+        root
+    };
+
+    let mut table = [IntMod::from_u64_const(0_u64); D];
     let mut cur = IntMod::from_u64_const(1_u64);
-    let sqrt_root_sq = IntMod::mul_const(sqrt_root, sqrt_root);
     let mut idx = 0;
+
     while idx < D {
-        ntt_roots[idx] = cur;
-        cur = IntMod::mul_const(cur, sqrt_root_sq);
+        table[idx] = cur;
+        cur = IntMod::mul_const(cur, root);
         idx += 1
     }
-    ntt_roots
+    table
 }
 
 pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(values: &mut [IntMod<N>; D]) {
-    let sqrt_root = IntMod::from(W);
     // Preprocess
-    let mut neg_root_power: IntMod<N> = 1u64.into();
-    for p in values.iter_mut() {
-        *p *= neg_root_power;
-        neg_root_power *= sqrt_root;
+    for (value, sqrt_root_power) in values.iter_mut().zip(NTTTable::<D, N, W>::SQRT_ROOT_POWERS) {
+        *value *= sqrt_root_power;
     }
 
     // NTT
@@ -46,15 +56,12 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(values: &mut
     ntt_common::<D, N, W>(values, true);
 
     // Postprocess
-    let mut neg_root_power: IntMod<N> = 1u64.into();
-    let inv_sqrt_root = IntMod::from(W).inverse();
-    let inv_d = IntMod::<N>::from(D as u64).inverse();
-    for c in values.iter_mut() {
-        // divide by degree
-        *c *= inv_d;
-        // negacyclic post-processing
-        *c *= neg_root_power;
-        neg_root_power *= inv_sqrt_root;
+    for (value, inv_sqrt_root_power) in values
+        .iter_mut()
+        .zip(NTTTable::<D, N, W>::INV_SQRT_ROOT_POWERS)
+    {
+        *value *= NTTTable::<D, N, W>::INV_D;
+        *value *= inv_sqrt_root_power;
     }
 }
 
