@@ -5,15 +5,17 @@ use crate::math::utils::{floor_log, mod_inverse};
 struct NTTTable<const D: usize, const N: u64, const W: u64> {}
 
 impl<const D: usize, const N: u64, const W: u64> NTTTable<D, N, W> {
-    const ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(false, true);
-    const INV_ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(true, true);
-    const SQRT_ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(false, false);
-    const INV_SQRT_ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(true, false);
+    // Note: The ROOT_POWERS and INV_ROOT_POWERS tables are twice as long as they need to be. But
+    // it doesn't really hurt to have them (apart from possibly longer compile times).
+    const ROOT_POWERS: [IntMod<N>; D] = get_root_powers::<D, N, W>(false, true);
+    const INV_ROOT_POWERS: [IntMod<N>; D] = get_root_powers::<D, N, W>(true, true);
+    const SQRT_ROOT_POWERS: [IntMod<N>; D] = get_root_powers::<D, N, W>(false, false);
+    const INV_SQRT_ROOT_POWERS: [IntMod<N>; D] = get_root_powers::<D, N, W>(true, false);
     const LOG_D: usize = floor_log(2, D as u64);
     const INV_D: IntMod<N> = IntMod::from_u64_const(mod_inverse(D as u64, N));
 }
 
-const fn get_table<const D: usize, const N: u64, const W: u64>(
+const fn get_root_powers<const D: usize, const N: u64, const W: u64>(
     invert: bool,
     square: bool,
 ) -> [IntMod<N>; D] {
@@ -77,30 +79,49 @@ fn ntt_common<const D: usize, const N: u64, const W: u64>(
     values: &mut [IntMod<N>; D],
     invert: bool,
 ) {
+    assert_eq!(D & (D - 1), 0, "expected D to be power of two; got {}", D);
+
     bit_reverse_order(values, NTTTable::<D, N, W>::LOG_D);
 
     // Cooley Tukey
-    for round in 0..NTTTable::<D, N, W>::LOG_D {
-        let prev_block_size = 1 << round;
-        let s = D >> (round + 1);
+    let mut prev_block_size = 1_usize;
+    let mut s = D / 2;
 
+    // For the SAFETY below, we have the loop invariants:
+    // (i) prev_block_size * s == D / 2
+    // (ii) 1 <= prev_block_size <= D / 2
+    // (iii) 1 <= s <= D / 2
+    // (iv) prev_block_size, s are powers of 2
+    while s > 0 {
         for block_start in (0..D).step_by(prev_block_size * 2) {
             for i in 0..prev_block_size {
+                // SAFETY:
+                // `i < prev_block_size` ==> by (i), `s * i < D / 2 <= D`.
                 let w: IntMod<N> = if invert {
-                    NTTTable::<D, N, W>::INV_ROOT_POWERS[s * i]
+                    unsafe { *NTTTable::<D, N, W>::INV_ROOT_POWERS.get_unchecked(s * i) }
                 } else {
-                    NTTTable::<D, N, W>::ROOT_POWERS[s * i]
+                    unsafe { *NTTTable::<D, N, W>::ROOT_POWERS.get_unchecked(s * i) }
                 };
-                let x = values[block_start + i];
-                let y = w * (values[block_start + i + prev_block_size]);
-                values[block_start + i] = x + y;
-                values[block_start + i + prev_block_size] = x - y;
+
+                // SAFETY:
+                // Since `prev_block_size * 2` is a power of two (iv) and <= D (ii) which is also a
+                // power of two (iv), we know `prev_block_size * 2` divides `D`. Therefore, we have
+                // `0 <= block_start <= block_start + 2 * prev_block_size < D`.
+                unsafe {
+                    let x = *values.get_unchecked(block_start + i);
+                    let y = w * *values.get_unchecked(block_start + i + prev_block_size);
+                    *values.get_unchecked_mut(block_start + i) = x + y;
+                    *values.get_unchecked_mut(block_start + i + prev_block_size) = x - y;
+                }
             }
         }
+
+        prev_block_size *= 2;
+        s /= 2;
     }
 }
 
-pub fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [IntMod<N>; D], log_d: usize) {
+fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [IntMod<N>; D], log_d: usize) {
     for i in 0..D {
         let mut ri = i.reverse_bits();
         ri >>= (usize::BITS as usize) - log_d;
