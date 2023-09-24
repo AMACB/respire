@@ -63,6 +63,13 @@ pub fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [IntMod<N>; 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::math::int_mod_cyclo::IntModCyclo;
+    use crate::math::int_mod_cyclo_eval::IntModCycloEval;
+    use crate::math::number_theory::find_sqrt_primitive_root;
+    use crate::math::rand_sampled::RandUniformSampled;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+    use std::time::Instant;
 
     const D: usize = 4;
     const LOG_D: usize = 2;
@@ -164,5 +171,37 @@ mod test {
             *c *= root.pow(i as u64).inverse();
         }
         assert_eq!(coeff3, ans);
+    }
+
+    #[ignore]
+    #[test]
+    fn test_ntt_stress() {
+        const D: usize = 2048;
+        const P: u64 = 268369921;
+        type RCoeff = IntModCyclo<D, P>;
+        type REval = IntModCycloEval<D, P, { find_sqrt_primitive_root(D, P) }>;
+
+        const NUM_ITER: usize = 1 << 16;
+
+        let mut rng = ChaCha20Rng::from_entropy();
+        let mut elems = Vec::with_capacity(NUM_ITER);
+        for _ in 0..NUM_ITER {
+            elems.push(RCoeff::rand_uniform(&mut rng));
+        }
+        let elems_clone = elems.clone();
+
+        let start = Instant::now();
+        for (x_expected, x_test) in elems.into_iter().zip(elems_clone.into_iter()) {
+            let x_test_eval = REval::from(x_test);
+            let x_test = RCoeff::from(x_test_eval);
+            assert_eq!(x_expected, x_test);
+        }
+        let end = Instant::now();
+        eprintln!(
+            "took {:?} to do {} iterations ({:?} / iter)",
+            end - start,
+            NUM_ITER,
+            (end - start) / NUM_ITER as u32
+        );
     }
 }
