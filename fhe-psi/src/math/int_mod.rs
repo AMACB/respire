@@ -345,7 +345,7 @@ impl<const N: u64> NormedRingElement for IntMod<N> {
 
 /// Other methods
 impl<const N: u64> IntMod<N> {
-    pub fn pow(&self, mut e: u64) -> IntMod<N> {
+    pub fn pow(&self, mut e: u64) -> Self {
         let mut val = *self;
         let mut res = IntMod::one();
         while e > 0 {
@@ -360,8 +360,18 @@ impl<const N: u64> IntMod<N> {
 
     // TODO: this is not efficient, I think euclidean is faster
     // this also assumes N is prime
-    pub fn inverse(&self) -> IntMod<N> {
+    pub fn inverse(&self) -> Self {
         self.pow(N - 2)
+    }
+
+    // Const functions
+    pub const fn from_u64_const(a: u64) -> Self {
+        Self { a: a % N }
+    }
+
+    pub const fn mul_const(lhs: Self, rhs: Self) -> Self {
+        let result = (lhs.a as u128) * (rhs.a as u128);
+        Self::from_u64_const(result as u64)
     }
 }
 

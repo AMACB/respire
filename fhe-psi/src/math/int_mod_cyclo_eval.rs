@@ -63,8 +63,7 @@ impl<const D: usize, const N: u64, const W: u64> From<IntModCyclo<D, N>>
         debug_assert_eq!(1 << log_d, D);
 
         let mut points: [IntMod<N>; D] = a.coeff;
-        let root: IntMod<N> = W.into();
-        ntt_neg_forward(&mut points, root, log_d);
+        ntt_neg_forward::<D, N, W>(&mut points, log_d);
         IntModCycloEval::from(points)
     }
 }

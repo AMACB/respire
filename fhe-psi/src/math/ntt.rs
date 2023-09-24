@@ -1,19 +1,15 @@
-use crate::math::int_mod::{IntMod, NoReduce};
-use crate::math::ring_elem::*;
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
-use std::mem::transmute;
-use std::sync::RwLock;
+use crate::math::int_mod::IntMod;
+use crate::math::utils::mod_inverse;
 
 /// Memoization table for discrete gaussian sampling.
 /// Each key is (root, degree, modulus), which is likely overdescriptive.
 
-type RootTablesKey = (u64, u64, usize);
-struct RootTable {
-    ntt_roots: Vec<u64>,
+struct RootTable<const D: usize, const N: u64, const W: u64> {}
+
+impl<const D: usize, const N: u64, const W: u64> RootTable<D, N, W> {
+    const ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(false);
+    const INV_ROOT_POWERS: [IntMod<N>; D] = get_table::<D, N, W>(true);
 }
-type RootTables = HashMap<RootTablesKey, RootTable>;
-static ROOT_TABLES: Lazy<RwLock<RootTables>> = Lazy::new(|| RwLock::new(HashMap::new()));
 
 #[repr(u8)]
 pub enum NegacyclicType {
@@ -22,36 +18,29 @@ pub enum NegacyclicType {
     Reverse,
 }
 
-fn get_table<const D: usize, const N: u64>(sqrt_root: IntMod<N>) -> &'static RootTable {
-    let key = (u64::from(sqrt_root), N, D);
-
-    // Compute root table, if necessary
-    if ROOT_TABLES.read().unwrap().get(&key).is_none() {
-        let mut ntt_roots = vec![0; D];
-        let mut cur = IntMod::one();
-        let sqrt_root_sq = sqrt_root * sqrt_root;
-        for entry in ntt_roots.iter_mut() {
-            *entry = u64::from(cur);
-            cur *= sqrt_root_sq;
-        }
-        ROOT_TABLES
-            .write()
-            .unwrap()
-            .insert(key, RootTable { ntt_roots });
+const fn get_table<const D: usize, const N: u64, const W: u64>(invert: bool) -> [IntMod<N>; D] {
+    let sqrt_root = if invert {
+        IntMod::from_u64_const(mod_inverse(W, N))
+    } else {
+        IntMod::from_u64_const(W)
+    };
+    let mut ntt_roots = [IntMod::from_u64_const(0_u64); D];
+    let mut cur = IntMod::from_u64_const(1_u64);
+    let sqrt_root_sq = IntMod::mul_const(sqrt_root, sqrt_root);
+    let mut idx = 0;
+    while idx < D {
+        ntt_roots[idx] = cur;
+        cur = IntMod::mul_const(cur, sqrt_root_sq);
+        idx += 1
     }
-
-    let guard = ROOT_TABLES.read().unwrap();
-    // FIXME: this is unsound if the reference's lifetime overlaps with a write to ROOT_TABLES
-    unsafe { transmute(guard.get(&key).unwrap()) }
+    ntt_roots
 }
 
-pub fn ntt_neg_forward<const D: usize, const N: u64>(
+pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     values: &mut [IntMod<N>; D],
-    sqrt_root: IntMod<N>,
     log_d: usize,
 ) {
-    let table = get_table::<D, N>(sqrt_root);
-
+    let sqrt_root = IntMod::from(W);
     // Preprocess
     let mut neg_root_power: IntMod<N> = 1u64.into();
     for p in values.iter_mut() {
@@ -60,44 +49,47 @@ pub fn ntt_neg_forward<const D: usize, const N: u64>(
     }
 
     // NTT
-    ntt_common(values, log_d, table);
+    ntt_common::<D, N, W>(values, log_d, false);
 }
 
-pub fn ntt_neg_reverse<const D: usize, const N: u64>(
+pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
     values: &mut [IntMod<N>; D],
-    sqrt_root: IntMod<N>,
     log_d: usize,
 ) {
-    let table = get_table::<D, N>(sqrt_root);
-
     // NTT
-    ntt_common(values, log_d, table);
+    ntt_common::<D, N, W>(values, log_d, true);
 
     // Postprocess
     let mut neg_root_power: IntMod<N> = 1u64.into();
+    let inv_sqrt_root = IntMod::from(W).inverse();
     let inv_d = IntMod::<N>::from(D as u64).inverse();
     for c in values.iter_mut() {
         // divide by degree
         *c *= inv_d;
         // negacyclic post-processing
         *c *= neg_root_power;
-        neg_root_power *= sqrt_root;
+        neg_root_power *= inv_sqrt_root;
     }
 }
 
-pub fn ntt<const D: usize, const N: u64>(
+pub fn ntt_forward<const D: usize, const N: u64, const W: u64>(
     values: &mut [IntMod<N>; D],
-    sqrt_root: IntMod<N>,
     log_d: usize,
 ) {
-    let table = get_table::<D, N>(sqrt_root);
-    ntt_common(values, log_d, table);
+    ntt_common::<D, N, W>(values, log_d, false);
 }
 
-fn ntt_common<const D: usize, const N: u64>(
+pub fn ntt_backward<const D: usize, const N: u64, const W: u64>(
     values: &mut [IntMod<N>; D],
     log_d: usize,
-    table: &RootTable,
+) {
+    ntt_common::<D, N, W>(values, log_d, true);
+}
+
+fn ntt_common<const D: usize, const N: u64, const W: u64>(
+    values: &mut [IntMod<N>; D],
+    log_d: usize,
+    invert: bool,
 ) {
     // Cooley Tukey
     bit_reverse_order(values, log_d);
@@ -107,7 +99,11 @@ fn ntt_common<const D: usize, const N: u64>(
 
         for block_start in (0..D).step_by(prev_block_size * 2) {
             for i in 0..prev_block_size {
-                let w: IntMod<N> = IntMod::from(NoReduce(table.ntt_roots[s * i]));
+                let w: IntMod<N> = if invert {
+                    RootTable::<D, N, W>::INV_ROOT_POWERS[s * i]
+                } else {
+                    RootTable::<D, N, W>::ROOT_POWERS[s * i]
+                };
                 let x = values[block_start + i];
                 let y = w * (values[block_start + i + prev_block_size]);
                 values[block_start + i] = x + y;
@@ -134,6 +130,7 @@ mod test {
     use crate::math::int_mod_cyclo_eval::IntModCycloEval;
     use crate::math::number_theory::find_sqrt_primitive_root;
     use crate::math::rand_sampled::RandUniformSampled;
+    use crate::math::ring_elem::RingElement;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use std::time::Instant;
@@ -141,7 +138,7 @@ mod test {
     const D: usize = 4;
     const LOG_D: usize = 2;
     const P: u64 = 268369921u64;
-    const W: u64 = 180556700u64; // order = 1 << 16
+    const W: u64 = find_sqrt_primitive_root(D, P);
 
     // TODO: add more tests.
     #[test]
@@ -149,10 +146,9 @@ mod test {
         let mut coeff: [IntMod<P>; 4] = [1u64.into(), 2u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
 
         let coeff_orig = coeff;
-        let sqrt_root = IntMod::<P>::from(W).pow(1 << 13);
 
-        ntt(&mut coeff, sqrt_root, LOG_D);
-        ntt(&mut coeff, sqrt_root.inverse(), LOG_D);
+        ntt_forward::<D, P, W>(&mut coeff, LOG_D);
+        ntt_backward::<D, P, W>(&mut coeff, LOG_D);
 
         for c in coeff.iter_mut() {
             *c *= IntMod::<P>::from(D as u64).inverse();
@@ -165,10 +161,10 @@ mod test {
     fn forward_ntt() {
         let mut coeff: [IntMod<P>; 4] = [1u64.into(), 1u64.into(), 0u64.into(), 0u64.into()]; // 1 + x
 
-        let sqrt_root = IntMod::<P>::from(W).pow(1 << 13);
+        let sqrt_root = IntMod::<P>::from(W);
         let root = sqrt_root * sqrt_root;
 
-        ntt(&mut coeff, sqrt_root, LOG_D);
+        ntt_forward::<D, P, W>(&mut coeff, LOG_D);
 
         let one = IntMod::one();
         let evaluated = [
@@ -183,7 +179,7 @@ mod test {
 
     #[test]
     fn backward_ntt() {
-        let sqrt_root = IntMod::<P>::from(W).pow(1 << 13);
+        let sqrt_root = IntMod::<P>::from(W);
         let root = sqrt_root * sqrt_root;
         let one = IntMod::one();
 
@@ -194,7 +190,7 @@ mod test {
             root * root * root + one,
         ];
 
-        ntt(&mut evaluated, sqrt_root.inverse(), LOG_D);
+        ntt_backward::<D, P, W>(&mut evaluated, LOG_D);
 
         for c in evaluated.iter_mut() {
             *c *= IntMod::<P>::from(D as u64).inverse();
@@ -211,22 +207,22 @@ mod test {
         let mut coeff2: [IntMod<P>; D] = [1u64.into(), 1u64.into(), 1u64.into(), 1u64.into()];
         let ans: [IntMod<P>; D] = [(P - 8).into(), (P - 4).into(), 2u64.into(), 10u64.into()];
 
-        let sqrt_root = IntMod::<P>::from(W).pow(1 << 13);
+        let sqrt_root = IntMod::<P>::from(W);
 
         for i in 0..coeff1.len() {
             coeff1[i] *= sqrt_root.pow(i as u64);
             coeff2[i] *= sqrt_root.pow(i as u64);
         }
 
-        ntt(&mut coeff1, sqrt_root, LOG_D);
-        ntt(&mut coeff2, sqrt_root, LOG_D);
+        ntt_forward::<D, P, W>(&mut coeff1, LOG_D);
+        ntt_forward::<D, P, W>(&mut coeff2, LOG_D);
 
         let mut coeff3 = [0u64.into(); 4];
         for i in 0..coeff1.len() {
             coeff3[i] = coeff1[i] * coeff2[i];
         }
 
-        ntt(&mut coeff3, sqrt_root.inverse(), LOG_D);
+        ntt_backward::<D, P, W>(&mut coeff3, LOG_D);
 
         for (i, c) in coeff3.iter_mut().enumerate() {
             *c *= IntMod::<P>::from(D as u64).inverse();
