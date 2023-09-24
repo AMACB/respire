@@ -142,21 +142,9 @@ impl<const D: usize, const N: u64, const W: u64> From<IntModCycloEval<D, N, W>>
         debug_assert_eq!(1 << log_d, D);
 
         let mut coeff: [IntMod<N>; D] = a_eval.points;
-        bit_reverse_order(&mut coeff, log_d);
-
         let root: IntMod<N> = W.into();
-        ntt(&mut coeff, (root * root).inverse(), log_d);
 
-        let mut inv_root_pow: IntMod<N> = 1u64.into();
-        let inv_root = root.inverse();
-        let inv_d = IntMod::<N>::from(D as u64).inverse();
-        for c in coeff.iter_mut() {
-            // divide by degree
-            *c *= inv_d;
-            // negacyclic post-processing
-            *c *= inv_root_pow;
-            inv_root_pow *= inv_root;
-        }
+        ntt(&mut coeff, (root * root).inverse(), log_d, NegacyclicType::Reverse(root));
 
         IntModCyclo::from(coeff)
     }

@@ -11,10 +11,15 @@ use std::sync::RwLock;
 type RootTables = HashMap<(u64, u64, usize), Vec<u64>>;
 static ROOT_TABLES: Lazy<RwLock<RootTables>> = Lazy::new(|| RwLock::new(HashMap::new()));
 
+pub enum NegacyclicType<const N: u64> {
+    None, Forward(IntMod<N>), Reverse(IntMod<N>),
+}
+
 pub fn ntt<const D: usize, const N: u64>(
     values: &mut [IntMod<N>; D],
     root: IntMod<N>,
     log_d: usize,
+    negacyclic: NegacyclicType<N>,
 ) {
     // compute root table, if necessary
     // TODO: see above. This unnecessarily recomputes the reverse table.
@@ -33,6 +38,18 @@ pub fn ntt<const D: usize, const N: u64>(
     let table_map = ROOT_TABLES.read().unwrap();
     let table = table_map.get(&key).unwrap();
 
+    if let NegacyclicType::Forward(neg_root) = negacyclic {
+        // Pre-process, if we are doing a forward NTT
+        let mut neg_root_power: IntMod<N> = 1u64.into();
+        // negacyclic preprocessing
+        for p in values.iter_mut() {
+            *p *= neg_root_power;
+            neg_root_power *= neg_root;
+        }
+    }
+
+    bit_reverse_order(values, log_d);
+
     // Cooley Tukey
     for round in 0..log_d {
         let prev_block_size = 1 << round;
@@ -48,6 +65,21 @@ pub fn ntt<const D: usize, const N: u64>(
             }
         }
     }
+
+    if let NegacyclicType::Reverse(neg_root) = negacyclic {
+        // Post-process, if we are doing a reverse NTT
+        let mut neg_root_power: IntMod<N> = 1u64.into();
+        let inv_neg_root = neg_root.inverse();
+        let inv_d = IntMod::<N>::from(D as u64).inverse();
+        for c in values.iter_mut() {
+            // divide by degree
+            *c *= inv_d;
+            // negacyclic post-processing
+            *c *= neg_root_power;
+            neg_root_power *= inv_neg_root;
+        }
+    }
+
 }
 
 pub fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [IntMod<N>; D], log_d: usize) {
@@ -84,10 +116,8 @@ mod test {
         let coeff_orig = coeff;
         let root = IntMod::<P>::from(W).pow(1 << 14);
 
-        bit_reverse_order(&mut coeff, LOG_D);
-        ntt(&mut coeff, root, LOG_D);
-        bit_reverse_order(&mut coeff, LOG_D);
-        ntt(&mut coeff, root.inverse(), LOG_D);
+        ntt(&mut coeff, root, LOG_D, NegacyclicType::None);
+        ntt(&mut coeff, root.inverse(), LOG_D, NegacyclicType::None);
 
         for c in coeff.iter_mut() {
             *c *= IntMod::<P>::from(D as u64).inverse();
@@ -102,8 +132,7 @@ mod test {
 
         let root = IntMod::<P>::from(W).pow(1 << 14);
 
-        bit_reverse_order(&mut coeff, LOG_D);
-        ntt(&mut coeff, root, LOG_D);
+        ntt(&mut coeff, root, LOG_D, NegacyclicType::None);
 
         let one = IntMod::one();
         let evaluated = [
@@ -128,8 +157,7 @@ mod test {
             root * root * root + one,
         ];
 
-        bit_reverse_order(&mut evaluated, LOG_D);
-        ntt(&mut evaluated, root.inverse(), LOG_D);
+        ntt(&mut evaluated, root.inverse(), LOG_D, NegacyclicType::None);
 
         for c in evaluated.iter_mut() {
             *c *= IntMod::<P>::from(D as u64).inverse();
@@ -153,18 +181,15 @@ mod test {
             coeff2[i] *= root.pow(i as u64);
         }
 
-        bit_reverse_order(&mut coeff1, LOG_D);
-        ntt(&mut coeff1, root * root, LOG_D);
-        bit_reverse_order(&mut coeff2, LOG_D);
-        ntt(&mut coeff2, root * root, LOG_D);
+        ntt(&mut coeff1, root * root, LOG_D, NegacyclicType::None);
+        ntt(&mut coeff2, root * root, LOG_D, NegacyclicType::None);
 
         let mut coeff3 = [0u64.into(); 4];
         for i in 0..coeff1.len() {
             coeff3[i] = coeff1[i] * coeff2[i];
         }
 
-        bit_reverse_order(&mut coeff3, LOG_D);
-        ntt(&mut coeff3, (root * root).inverse(), LOG_D);
+        ntt(&mut coeff3, (root * root).inverse(), LOG_D, NegacyclicType::None);
 
         for (i, c) in coeff3.iter_mut().enumerate() {
             *c *= IntMod::<P>::from(D as u64).inverse();
