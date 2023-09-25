@@ -115,7 +115,7 @@ impl<const N: u64> Add for IntMod<N> {
 
 impl<const N: u64> AddAssign for IntMod<N> {
     fn add_assign(&mut self, rhs: Self) {
-        self.a = (self.clone() + rhs).a;
+        self.a = (*self + rhs).a;
     }
 }
 
@@ -136,20 +136,24 @@ impl<const N: u64> Mul for IntMod<N> {
 
 impl<const N: u64> MulAssign for IntMod<N> {
     fn mul_assign(&mut self, rhs: Self) {
-        self.a = (self.clone() * rhs).a;
+        self.a = (*self * rhs).a;
     }
 }
 
 impl<const N: u64> Sub for IntMod<N> {
     type Output = IntMod<N>;
     fn sub(self, rhs: Self) -> Self::Output {
-        self + (-rhs)
+        if self.a >= rhs.a {
+            Self::from(NoReduce(self.a - rhs.a))
+        } else {
+            Self::from(NoReduce(self.a + (N - rhs.a)))
+        }
     }
 }
 
 impl<const N: u64> SubAssign for IntMod<N> {
     fn sub_assign(&mut self, rhs: Self) {
-        self.a = (self.clone() - rhs).a
+        self.a = (*self - rhs).a
     }
 }
 
@@ -253,7 +257,7 @@ unsafe impl<const N: u64, const M: u64> RingCompatible<IntMod<M>> for IntMod<N> 
 
 impl<const N: u64> fmt::Debug for IntMod<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.a <= 3 * N / 4 {
+        if self.a <= 3 * (N / 4) {
             write!(f, "{}", self.a)
         } else {
             write!(f, "-{}", N - self.a)
@@ -268,46 +272,46 @@ impl<const N: u64> RingElementRef<IntMod<N>> for &IntMod<N> {}
 impl<const N: u64> Neg for &IntMod<N> {
     type Output = IntMod<N>;
     fn neg(self) -> Self::Output {
-        -self.clone()
+        -*self
     }
 }
 
 impl<const N: u64> Add for &IntMod<N> {
     type Output = IntMod<N>;
     fn add(self, rhs: Self) -> Self::Output {
-        self.clone() + rhs.clone()
+        *self + *rhs
     }
 }
 
 impl<const N: u64> AddAssign<&IntMod<N>> for IntMod<N> {
     fn add_assign(&mut self, rhs: &Self) {
-        self.a = (self.clone() + rhs.clone()).a
+        self.a = (*self + *rhs).a
     }
 }
 
 impl<const N: u64> Sub for &IntMod<N> {
     type Output = IntMod<N>;
     fn sub(self, rhs: Self) -> Self::Output {
-        self.clone() - rhs.clone()
+        *self - *rhs
     }
 }
 
 impl<const N: u64> SubAssign<&IntMod<N>> for IntMod<N> {
     fn sub_assign(&mut self, rhs: &Self) {
-        self.a = (self.clone() - rhs.clone()).a
+        self.a = (*self - *rhs).a
     }
 }
 
 impl<const N: u64> Mul for &IntMod<N> {
     type Output = IntMod<N>;
     fn mul(self, rhs: Self) -> Self::Output {
-        self.clone() * rhs.clone()
+        *self * *rhs
     }
 }
 
 impl<const N: u64> MulAssign<&IntMod<N>> for IntMod<N> {
     fn mul_assign(&mut self, rhs: &Self) {
-        self.a = (self.clone() * rhs.clone()).a
+        self.a = (*self * *rhs).a
     }
 }
 
@@ -341,8 +345,8 @@ impl<const N: u64> NormedRingElement for IntMod<N> {
 
 /// Other methods
 impl<const N: u64> IntMod<N> {
-    pub fn pow(&self, mut e: u64) -> IntMod<N> {
-        let mut val = self.clone();
+    pub fn pow(&self, mut e: u64) -> Self {
+        let mut val = *self;
         let mut res = IntMod::one();
         while e > 0 {
             if (e & 1) == 1 {
@@ -351,13 +355,56 @@ impl<const N: u64> IntMod<N> {
             e >>= 1;
             val *= val;
         }
-        return res;
+        res
     }
 
     // TODO: this is not efficient, I think euclidean is faster
     // this also assumes N is prime
-    pub fn inverse(&self) -> IntMod<N> {
-        return self.pow(N - 2);
+    pub fn inverse(&self) -> Self {
+        self.pow(N - 2)
+    }
+
+    // Const functions
+    pub const fn from_u64_const(a: u64) -> Self {
+        Self { a: a % N }
+    }
+
+    pub const fn mul_const(lhs: Self, rhs: Self) -> Self {
+        let result = (lhs.a as u128) * (rhs.a as u128);
+        Self::from_u64_const(result as u64)
+    }
+}
+
+#[derive(Clone)]
+/// FIXME: this is actually slower than just multiply, then reduce
+pub struct FastMul<const N: u64> {
+    b: u64,
+    ratio: u64,
+}
+
+impl<const N: u64> FastMul<N> {
+    pub const fn new(b: IntMod<N>) -> Self {
+        if N >= (1 << 63) {
+            panic!("modulus too big for FastMul");
+        }
+        Self {
+            b: b.a,
+            ratio: ((b.a as u128) * (1_u128 << 64) / (N as u128)) as u64,
+        }
+    }
+}
+
+impl<const N: u64> Mul<&FastMul<N>> for IntMod<N> {
+    type Output = IntMod<N>;
+
+    fn mul(self, rhs: &FastMul<N>) -> Self::Output {
+        let mul = (self.a as u128) * (rhs.b as u128);
+        let approx = (((self.a as u128) * (rhs.ratio as u128)) >> 64) * (N as u128);
+        let mut reduced = (mul - approx) as u64;
+        if reduced >= N {
+            reduced -= N;
+        }
+        IntMod::from(NoReduce(reduced))
     }
 }
 
@@ -578,6 +625,56 @@ mod test {
         test_decompose_modulus::<{ 65 * 65 + 1 }, 65, 3>();
 
         test_decompose_modulus::<3868, 16, { ceil_log(16, 3868) }>();
+    }
+
+    #[test]
+    fn test_fast_mul() {
+        type ZQ = IntMod<268369921>;
+
+        for b in [
+            0_u64,
+            1_u64,
+            32198953_u64,
+            136694207_u64,
+            268369919_u64,
+            268369920_u64,
+        ] {
+            let b = ZQ::from(b);
+            let b_fast = FastMul::new(b);
+
+            for a in -128_i64..128 {
+                let a = ZQ::from(a);
+                let result_fast = a * &b_fast;
+                let result = a * b;
+                assert_eq!(result_fast, result);
+            }
+        }
+    }
+
+    #[test]
+    fn test_fast_mul_big() {
+        type ZBIG = IntMod<{ u64::MAX / 2 }>;
+
+        for b in [
+            0_u64,
+            1_u64,
+            32198953_u64,
+            u64::MAX / 6,
+            u64::MAX / 3,
+            u64::MAX / 2 - 2,
+            u64::MAX / 2 - 1,
+        ] {
+            let b = ZBIG::from(b);
+            let b_fast = FastMul::new(b);
+
+            for a in -128_i64..128 {
+                let a = ZBIG::from(a);
+                let result_fast = a * &b_fast;
+                let result = a * b;
+                dbg!(a, b, result, result_fast);
+                assert_eq!(result_fast, result);
+            }
+        }
     }
 
     // #[test]

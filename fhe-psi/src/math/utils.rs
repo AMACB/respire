@@ -15,6 +15,11 @@ pub const fn ceil_log(base: u64, x: u64) -> usize {
     e
 }
 
+pub const fn reverse_bits<const MAX: usize>(a: usize) -> usize {
+    let width = ceil_log(2, MAX as u64 - 1);
+    a.reverse_bits() >> ((usize::BITS as usize) - width)
+}
+
 pub const fn floor_log(base: u64, mut x: u64) -> usize {
     assert!(base > 1);
     assert!(x > 0);

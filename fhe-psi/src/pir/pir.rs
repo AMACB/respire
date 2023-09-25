@@ -1,17 +1,19 @@
+use libm::erfc;
 use std::cmp::max;
+use std::slice;
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
-use crate::math::gadget::{build_gadget, gadget_inverse};
+use crate::math::gadget::{build_gadget, gadget_inverse, RingElementDecomposable};
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
 use crate::math::matrix::Matrix;
 use crate::math::number_theory::find_sqrt_primitive_root;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
-use crate::math::ring_elem::{RingCompatible, RingElement};
-use crate::math::utils::{ceil_log, floor_log, mod_inverse};
+use crate::math::ring_elem::{NormedRingElement, RingCompatible, RingElement};
+use crate::math::utils::{ceil_log, mod_inverse};
 
 pub struct SPIRALImpl<
     const N: usize,
@@ -26,8 +28,10 @@ pub struct SPIRALImpl<
     const W_B: u64,
     const Z_GSW: u64,
     const T_GSW: usize,
-    const Z_COEFF: u64,
-    const T_COEFF: usize,
+    const Z_COEFF_REGEV: u64,
+    const T_COEFF_REGEV: usize,
+    const Z_COEFF_GSW: u64,
+    const T_COEFF_GSW: usize,
     const Z_CONV: u64,
     const T_CONV: usize,
     const T_CONV_TIMES_TWO: usize,
@@ -46,9 +50,10 @@ pub struct SPIRALParamsRaw {
     pub Q_A: u64,
     pub Q_B: u64,
     pub D: usize,
-    pub Z_GSW: u64,
-    pub Z_COEFF: u64,
-    pub Z_CONV: u64,
+    pub T_GSW: usize,
+    pub T_COEFF_REGEV: usize,
+    pub T_COEFF_GSW: usize,
+    pub T_CONV: usize,
     pub NOISE_WIDTH_MILLIONTHS: u64,
     pub P: u64,
     pub ETA1: usize,
@@ -57,11 +62,24 @@ pub struct SPIRALParamsRaw {
 }
 
 impl SPIRALParamsRaw {
+    const fn z_from_t(t: usize, q: u64) -> u64 {
+        // z = floor(q^(1/t)) + 1
+        let mut z: u128 = 2;
+        while z <= (1 << 20) {
+            if (z - 1).pow(t as u32) <= (q as u128) && (q as u128) < z.pow(t as u32) {
+                return z as u64;
+            }
+            z += 1;
+        }
+        panic!("z could not be computed from t (is it bigger than 2^20?)");
+    }
+
     pub const fn expand(&self) -> SPIRALParams {
         let q = self.Q_A * self.Q_B;
-        let t_gsw = floor_log(self.Z_GSW, q) + 1;
-        let t_coeff = floor_log(self.Z_COEFF, q) + 1;
-        let t_conv = floor_log(self.Z_CONV, q) + 1;
+        let z_gsw = Self::z_from_t(self.T_GSW, q);
+        let z_coeff_regev = Self::z_from_t(self.T_COEFF_REGEV, q);
+        let z_coeff_gsw = Self::z_from_t(self.T_COEFF_GSW, q);
+        let z_conv = Self::z_from_t(self.T_CONV, q);
         SPIRALParams {
             N: self.N,
             N_PLUS_ONE: self.N + 1,
@@ -73,15 +91,17 @@ impl SPIRALParamsRaw {
             D: self.D,
             W_A: find_sqrt_primitive_root(self.D, self.Q_A),
             W_B: find_sqrt_primitive_root(self.D, self.Q_B),
-            Z_GSW: self.Z_GSW,
-            T_GSW: t_gsw,
-            Z_COEFF: self.Z_COEFF,
-            T_COEFF: t_coeff,
-            Z_CONV: self.Z_CONV,
-            T_CONV: t_conv,
-            T_CONV_TIMES_TWO: t_conv * 2,
-            M_CONV: self.N * t_conv,
-            M: (self.N + 1) * t_gsw,
+            Z_GSW: z_gsw,
+            T_GSW: self.T_GSW,
+            Z_COEFF_REGEV: z_coeff_regev,
+            T_COEFF_REGEV: self.T_COEFF_REGEV,
+            Z_COEFF_GSW: z_coeff_gsw,
+            T_COEFF_GSW: self.T_COEFF_GSW,
+            Z_CONV: z_conv,
+            T_CONV: self.T_CONV,
+            T_CONV_TIMES_TWO: self.T_CONV * 2,
+            M_CONV: self.N * self.T_CONV,
+            M: (self.N + 1) * self.T_GSW,
             NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
             P: self.P,
             ETA1: self.ETA1,
@@ -106,8 +126,10 @@ pub struct SPIRALParams {
     pub W_B: u64,
     pub Z_GSW: u64,
     pub T_GSW: usize,
-    pub Z_COEFF: u64,
-    pub T_COEFF: usize,
+    pub Z_COEFF_REGEV: u64,
+    pub T_COEFF_REGEV: usize,
+    pub Z_COEFF_GSW: u64,
+    pub T_COEFF_GSW: usize,
     pub Z_CONV: u64,
     pub T_CONV: usize,
     pub T_CONV_TIMES_TWO: usize,
@@ -118,6 +140,16 @@ pub struct SPIRALParams {
     pub ETA1: usize,
     pub ETA2: usize,
     pub Z_FOLD: usize,
+}
+
+impl SPIRALParams {
+    pub fn relative_noise_threshold(&self) -> f64 {
+        // erfc_inverse(2^-40 / N^2 / D)
+        assert_eq!(self.N, 2);
+        assert_eq!(self.D, 2048);
+        let erfc_inv = 5.863_584_748_755_167_6_f64;
+        1_f64 / (2_f64 * (self.P as f64) * 2_f64.sqrt() * erfc_inv)
+    }
 }
 
 #[macro_export]
@@ -136,8 +168,10 @@ macro_rules! spiral {
             {$params.W_B},
             {$params.Z_GSW},
             {$params.T_GSW},
-            {$params.Z_COEFF},
-            {$params.T_COEFF},
+            {$params.Z_COEFF_REGEV},
+            {$params.T_COEFF_REGEV},
+            {$params.Z_COEFF_GSW},
+            {$params.T_COEFF_GSW},
             {$params.Z_CONV},
             {$params.T_CONV},
             {$params.T_CONV_TIMES_TWO},
@@ -168,7 +202,9 @@ pub trait SPIRAL {
     type GSWCiphertext;
     type ScalarKey;
     type MatrixKey;
-    type AutoKey;
+    type AutoKey<const T: usize>;
+    type AutoKeyRegev;
+    type AutoKeyGSW;
     type ScalToMatKey;
     type RegevToGSWKey;
 
@@ -194,16 +230,13 @@ pub trait SPIRAL {
     fn setup() -> (Self::QueryKey, Self::PublicParams);
     fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
     fn query_expand(pp: &Self::PublicParams, q: &Self::Query) -> Self::QueryExpanded;
-    fn answer(
-        db: &Vec<Self::RecordPreprocessed>,
-        q_expanded: &Self::QueryExpanded,
-    ) -> Self::Response;
+    fn answer(db: &[Self::RecordPreprocessed], q_expanded: &Self::QueryExpanded) -> Self::Response;
     fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
-    fn response_error(
+    fn response_stats(
         qk: &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::Response,
         actual: &<Self as SPIRAL>::Record,
-    ) -> f64;
+    ) -> (f64, f64);
 }
 
 impl<
@@ -219,8 +252,10 @@ impl<
         const W_B: u64,
         const Z_GSW: u64,
         const T_GSW: usize,
-        const Z_COEFF: u64,
-        const T_COEFF: usize,
+        const Z_COEFF_REGEV: u64,
+        const T_COEFF_REGEV: usize,
+        const Z_COEFF_GSW: u64,
+        const T_COEFF_GSW: usize,
         const Z_CONV: u64,
         const T_CONV: usize,
         const T_CONV_TIMES_TWO: usize,
@@ -245,8 +280,10 @@ impl<
         W_B,
         Z_GSW,
         T_GSW,
-        Z_COEFF,
-        T_COEFF,
+        Z_COEFF_REGEV,
+        T_COEFF_REGEV,
+        Z_COEFF_GSW,
+        T_COEFF_GSW,
         Z_CONV,
         T_CONV,
         T_CONV_TIMES_TWO,
@@ -275,7 +312,9 @@ impl<
 
     type ScalarKey = Self::RingQFast;
     type MatrixKey = Matrix<N, 1, Self::RingQFast>;
-    type AutoKey = (Matrix<2, T_COEFF, Self::RingQFast>, usize);
+    type AutoKey<const T: usize> = (Matrix<2, T, Self::RingQFast>, usize);
+    type AutoKeyRegev = Self::AutoKey<T_COEFF_REGEV>;
+    type AutoKeyGSW = Self::AutoKey<T_COEFF_GSW>;
     type ScalToMatKey = Matrix<N_PLUS_ONE, M_CONV, Self::RingQFast>;
     type RegevToGSWKey = (
         Matrix<N_PLUS_ONE, T_CONV_TIMES_TWO, Self::RingQFast>,
@@ -284,7 +323,15 @@ impl<
 
     // Associated types
     type QueryKey = (Self::ScalarKey, Self::MatrixKey);
-    type PublicParams = (Vec<Self::AutoKey>, Self::ScalToMatKey, Self::RegevToGSWKey);
+    type PublicParams = (
+        (
+            Self::AutoKeyGSW,
+            Vec<Self::AutoKeyRegev>,
+            Vec<Self::AutoKeyGSW>,
+        ),
+        Self::ScalToMatKey,
+        Self::RegevToGSWKey,
+    );
     type Query = Self::ScalarRegevCiphertext;
     type QueryExpanded = (Vec<Self::MatrixRegevCiphertext>, Vec<Self::GSWCiphertext>);
     type Response = Self::MatrixRegevCiphertext;
@@ -313,11 +360,23 @@ impl<
         let s_matrix = Self::matrix_regev_setup();
 
         // Automorphism keys
-        let auto_key_ct = 1 + max(Self::REGEV_EXPAND_ITERS, Self::GSW_EXPAND_ITERS);
-        let mut auto_keys: Vec<<Self as SPIRAL>::AutoKey> = Vec::with_capacity(auto_key_ct);
-        for i in 0..auto_key_ct {
+        let auto_key_first = Self::auto_setup::<T_COEFF_GSW, Z_COEFF_GSW>(D + 1, &s_scalar);
+
+        let mut auto_keys_regev: Vec<<Self as SPIRAL>::AutoKeyRegev> =
+            Vec::with_capacity(Self::REGEV_EXPAND_ITERS);
+        for i in 1..Self::REGEV_EXPAND_ITERS + 1 {
             let tau_power = (D >> i) + 1;
-            auto_keys.push(Self::auto_setup(tau_power, &s_scalar));
+            auto_keys_regev.push(Self::auto_setup::<T_COEFF_REGEV, Z_COEFF_REGEV>(
+                tau_power, &s_scalar,
+            ));
+        }
+        let mut auto_keys_gsw: Vec<<Self as SPIRAL>::AutoKeyGSW> =
+            Vec::with_capacity(Self::GSW_EXPAND_ITERS);
+        for i in 1..Self::GSW_EXPAND_ITERS + 1 {
+            let tau_power = (D >> i) + 1;
+            auto_keys_gsw.push(Self::auto_setup::<T_COEFF_GSW, Z_COEFF_GSW>(
+                tau_power, &s_scalar,
+            ));
         }
 
         // Scalar to matrix key. Technically, this could be shared by the regev to GSW key.
@@ -328,7 +387,11 @@ impl<
 
         (
             (s_scalar, s_matrix),
-            (auto_keys, scal_to_mat_key, regev_to_gsw_key),
+            (
+                (auto_key_first, auto_keys_regev, auto_keys_gsw),
+                scal_to_mat_key,
+                regev_to_gsw_key,
+            ),
         )
     }
 
@@ -374,58 +437,61 @@ impl<
     }
 
     fn query_expand(
-        (auto_keys, scal_to_mat_key, regev_to_gsw_key): &<Self as SPIRAL>::PublicParams,
+        ((auto_key_first, auto_keys_regev, auto_keys_gsw), scal_to_mat_key, regev_to_gsw_key): &<Self as SPIRAL>::PublicParams,
         q: &<Self as SPIRAL>::Query,
     ) -> <Self as SPIRAL>::QueryExpanded {
-        let do_expand_iter = |i: usize,
-                              cts: &Vec<<Self as SPIRAL>::ScalarRegevCiphertext>|
-         -> Vec<<Self as SPIRAL>::ScalarRegevCiphertext> {
-            let auto_key = &auto_keys[i];
-            let new_len = 1 << i;
-            let mut cts_new = Vec::with_capacity(new_len);
-            cts_new.resize(new_len, Matrix::zero());
-            for j in 0..new_len / 2 {
-                let shifted = Self::scalar_regev_mul_x_pow(&cts[j], 2 * D - (1 << i));
-                cts_new[j] = &cts[j] + &Self::auto_hom(auto_key, &cts[j]);
-                cts_new[j + new_len / 2] = &shifted + &Self::auto_hom(auto_key, &shifted);
-            }
-            cts_new
-        };
+        assert_eq!(auto_keys_regev.len(), Self::REGEV_EXPAND_ITERS);
+        assert_eq!(auto_keys_gsw.len(), Self::GSW_EXPAND_ITERS);
 
-        let regev_base = q + &Self::auto_hom(&auto_keys[0], &q);
+        let first = Self::do_coeff_expand_iter::<T_COEFF_GSW, Z_COEFF_GSW>(
+            0,
+            slice::from_ref(q),
+            auto_key_first,
+        );
+        let [regev_base, gsw_base]: [_; 2] = first.try_into().unwrap();
+
         let mut regevs: Vec<Self::ScalarRegevCiphertext> = vec![regev_base];
-        for i in 1..Self::REGEV_EXPAND_ITERS + 1 {
-            regevs = do_expand_iter(i, &regevs);
+        for (i, auto_key_regev) in auto_keys_regev.iter().enumerate() {
+            regevs = Self::do_coeff_expand_iter::<T_COEFF_REGEV, Z_COEFF_REGEV>(
+                i + 1,
+                regevs.as_slice(),
+                auto_key_regev,
+            );
         }
         regevs.truncate(1 << Self::ETA1);
 
         let regevs: Vec<Self::MatrixRegevCiphertext> = regevs
             .iter()
-            .map(|c| Self::scal_to_mat(&scal_to_mat_key, c))
+            .map(|c| Self::scal_to_mat(scal_to_mat_key, c))
             .collect();
 
-        let q_shifted = Self::scalar_regev_mul_x_pow(&q, 2 * D - 1);
-        let gsw_base = &q_shifted + &Self::auto_hom(&auto_keys[0], &q_shifted);
         let mut gsws = vec![gsw_base];
-        for i in 1..Self::GSW_EXPAND_ITERS + 1 {
-            gsws = do_expand_iter(i, &gsws);
+        for (i, auto_key_gsw) in auto_keys_gsw.iter().enumerate() {
+            gsws = Self::do_coeff_expand_iter::<T_COEFF_GSW, Z_COEFF_GSW>(
+                i + 1,
+                gsws.as_slice(),
+                auto_key_gsw,
+            );
         }
         gsws.truncate(Self::ETA2 * (Z_FOLD - 1) * T_GSW);
 
         let gsws: Vec<Self::GSWCiphertext> = gsws
-            .chunks(T_GSW)
-            .map(|cs| Self::regev_to_gsw(&regev_to_gsw_key, cs))
+            .chunks_exact(T_GSW)
+            .map(|cs| Self::regev_to_gsw(regev_to_gsw_key, cs))
             .collect();
 
         (regevs, gsws)
     }
 
     fn answer(
-        db: &Vec<<Self as SPIRAL>::RecordPreprocessed>,
+        db: &[<Self as SPIRAL>::RecordPreprocessed],
         (regevs, gsws): &<Self as SPIRAL>::QueryExpanded,
     ) -> <Self as SPIRAL>::Response {
-        // First dimension processing
         let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
+        assert_eq!(regevs.len(), 1 << ETA1);
+        assert_eq!(gsws.len(), Self::ETA2 * (Z_FOLD - 1));
+
+        // First dimension processing
         let db_at = |i: usize, j: usize| &db[i * fold_size + j];
         let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(fold_size);
         for j in 0..fold_size {
@@ -453,7 +519,7 @@ impl<
                     let c_i = &curr[i * curr_size / Z_FOLD + fold_idx];
                     let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
                     let b = &gsws[gsw_idx * (Z_FOLD - 1) + i - 1];
-                    let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, &b);
+                    let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, b);
                     curr[fold_idx] += &c_i_sub_c0_mul_b;
                 }
             }
@@ -469,27 +535,39 @@ impl<
         Self::decode_matrix_regev(s_mat, r).into_ring(|x| x.round_down_into())
     }
 
-    fn response_error(
+    fn response_stats(
         (_, s_mat): &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::Response,
         actual: &<Self as SPIRAL>::Record,
-    ) -> f64 {
+    ) -> (f64, f64) {
         let actual_scaled = actual.into_ring(|x| x.scale_up_into());
-        let decoded = Self::decode_matrix_regev(&s_mat, r);
+        let decoded = Self::decode_matrix_regev(s_mat, r);
         let diff = &actual_scaled - &decoded;
-        (diff.norm() as f64) / (Q as f64)
-        // let mut err = 0_f64;
-        // let mut ct = 0_usize;
-        // for i in 0..N {
-        //     for j in 0..N {
-        //         for e in diff[(i, j)].coeff_iter() {
-        //             let rel_e = (u64::from(*e) as f64) / (Q as f64);
-        //             err += rel_e * rel_e;
-        //             ct += 1;
-        //         }
-        //     }
-        // }
-        // (err / (ct as f64)) * (Q as f64)
+
+        let mut sum = 0_f64;
+        let mut samples = 0_usize;
+
+        for r in 0..N {
+            for c in 0..N {
+                for e in diff[(r, c)].coeff_iter() {
+                    let e_sq = (e.norm() as f64) * (e.norm() as f64);
+                    sum += e_sq;
+                    samples += 1;
+                }
+            }
+        }
+
+        // sigma^2 is the variance of the relative noise (noise divided by Q) of the coefficients
+        let sigma = (sum / samples as f64).sqrt() / (Q as f64);
+
+        // We want to bound the probability that a single sample of relative noise has magnitude
+        // >= k. For decoding correctness, we use k = 1 / 2P. Assuming the relative noise is
+        // Gaussian, this is 1 - erf( k / (sigma * sqrt(2))).
+        let num_sigmas = 1_f64 / (sigma * 2_f64 * (P as f64));
+        let correctness_error = erfc(num_sigmas / 2_f64.sqrt());
+
+        // Multiply by the number of samples to union bound over all coefficients
+        (sigma, (correctness_error * samples as f64).min(1_f64))
     }
 }
 
@@ -506,8 +584,10 @@ impl<
         const W_B: u64,
         const Z_GSW: u64,
         const T_GSW: usize,
-        const Z_COEFF: u64,
-        const T_COEFF: usize,
+        const Z_COEFF_REGEV: u64,
+        const T_COEFF_REGEV: usize,
+        const Z_COEFF_GSW: u64,
+        const T_COEFF_GSW: usize,
         const Z_CONV: u64,
         const T_CONV: usize,
         const T_CONV_TIMES_TWO: usize,
@@ -532,8 +612,10 @@ impl<
         W_B,
         Z_GSW,
         T_GSW,
-        Z_COEFF,
-        T_COEFF,
+        Z_COEFF_REGEV,
+        T_COEFF_REGEV,
+        Z_COEFF_GSW,
+        T_COEFF_GSW,
         Z_CONV,
         T_CONV,
         T_CONV_TIMES_TWO,
@@ -634,8 +716,8 @@ impl<
         rhs: &<Self as SPIRAL>::MatrixQFast,
     ) -> <Self as SPIRAL>::MatrixRegevCiphertext0 {
         let mut result: <Self as SPIRAL>::MatrixRegevCiphertext0 = Matrix::zero();
-        lhs.mul_iter_do(&rhs, |(r, c), lhs_r, rhs_r| {
-            result[(r, c)].add_eq_mul(&lhs_r.convert_ref(), &rhs_r.convert_ref());
+        lhs.mul_iter_do(rhs, |(r, c), lhs_r, rhs_r| {
+            result[(r, c)].add_eq_mul(lhs_r.convert_ref(), rhs_r.convert_ref());
         });
         result
     }
@@ -665,33 +747,60 @@ impl<
             .into_ring(|x| <Self as SPIRAL>::RingQ::from(x))
     }
 
-    fn auto_setup(
+    fn auto_setup<const LEN: usize, const BASE: u64>(
         tau_power: usize,
         s_scalar: &<Self as SPIRAL>::RingQFast,
-    ) -> <Self as SPIRAL>::AutoKey {
+    ) -> <Self as SPIRAL>::AutoKey<LEN> {
         let mut rng = ChaCha20Rng::from_entropy();
-        let a_t: Matrix<1, T_COEFF, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
-        let e_t: Matrix<1, T_COEFF, <Self as SPIRAL>::RingQFast> =
+        let a_t: Matrix<1, LEN, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
+        let e_t: Matrix<1, LEN, <Self as SPIRAL>::RingQFast> =
             Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
         let mut bottom = &a_t * s_scalar;
         bottom += &e_t;
-        bottom -= &(&build_gadget::<<Self as SPIRAL>::RingQFast, 1, T_COEFF, Z_COEFF, T_COEFF>()
+        bottom -= &(&build_gadget::<<Self as SPIRAL>::RingQFast, 1, LEN, BASE, LEN>()
             * &s_scalar.auto(tau_power));
         (Matrix::stack(&a_t, &bottom), tau_power)
     }
 
-    fn auto_hom(
-        (w_mat, tau_power): &<Self as SPIRAL>::AutoKey,
+    fn auto_hom<const LEN: usize, const BASE: u64>(
+        (w_mat, tau_power): &<Self as SPIRAL>::AutoKey<LEN>,
         c: &<Self as SPIRAL>::ScalarRegevCiphertext,
     ) -> <Self as SPIRAL>::ScalarRegevCiphertext {
         let c0 = &c[(0, 0)];
         let c1 = &c[(1, 0)];
         let mut tau_c0_mat: Matrix<1, 1, _> = Matrix::zero();
         tau_c0_mat[(0, 0)] = c0.auto(*tau_power);
-        let g_inv_tau_c0 = gadget_inverse::<_, 1, T_COEFF, 1, Z_COEFF, T_COEFF>(&tau_c0_mat);
+        let g_inv_tau_c0 = gadget_inverse::<_, 1, LEN, 1, BASE, LEN>(&tau_c0_mat);
         let mut result = w_mat * &g_inv_tau_c0;
         result[(1, 0)] += &c1.auto(*tau_power);
         result
+    }
+
+    ///
+    /// Perform a single iteration of the coefficient expansion algorithm, doubling the length of the
+    /// input ciphertexts.
+    ///
+    /// # Parameters
+    /// * `which_iter`: the zero-indexed iteration number; the ciphertexts are assumed to be
+    ///   encryptions of plaintexts that only have coefficients of degree divisible `2^which_iter`.
+    /// * `cts`: the input ciphertexts
+    /// * `auto_key`: the automorphism key, which should have power equal to `D / 2^which_iter + 1`
+    ///
+    fn do_coeff_expand_iter<const LEN: usize, const BASE: u64>(
+        which_iter: usize,
+        cts: &[<Self as SPIRAL>::ScalarRegevCiphertext],
+        auto_key: &<Self as SPIRAL>::AutoKey<LEN>,
+    ) -> Vec<<Self as SPIRAL>::ScalarRegevCiphertext> {
+        debug_assert_eq!(auto_key.1, D / (1 << which_iter) + 1);
+        let len = cts.len();
+        let mut cts_new = Vec::with_capacity(2 * len);
+        cts_new.resize(2 * len, Matrix::zero());
+        for (j, ct) in cts.iter().enumerate() {
+            let shifted = Self::scalar_regev_mul_x_pow(ct, 2 * D - (1 << which_iter));
+            cts_new[j] = ct + &Self::auto_hom::<LEN, BASE>(auto_key, ct);
+            cts_new[j + len] = &shifted + &Self::auto_hom::<LEN, BASE>(auto_key, &shifted);
+        }
+        cts_new
     }
 
     fn scal_to_mat_setup(
@@ -718,16 +827,25 @@ impl<
     ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
         let c0 = &c[(0, 0)];
         let c1 = &c[(1, 0)];
-        let mut c0_ident = Matrix::<N, N, <Self as SPIRAL>::RingQFast>::zero();
-        for i in 0..N {
-            c0_ident[(i, i)] = c0.clone();
+
+        let mut g_inv_c0_ident = Matrix::<T_CONV, 1, <Self as SPIRAL>::RingQFast>::zero();
+        <<Self as SPIRAL>::RingQFast as RingElementDecomposable<Z_CONV, T_CONV>>::decompose_into_mat(c0,&mut g_inv_c0_ident, 0, 0);
+
+        let mut result = Matrix::<N_PLUS_ONE, N, <Self as SPIRAL>::RingQFast>::zero();
+
+        for r in 0..N_PLUS_ONE {
+            for c in 0..N {
+                for k_off in 0..T_CONV {
+                    let k = c * T_CONV + k_off;
+                    result[(r, c)]
+                        .add_eq_mul(&scal_to_mat_key[(r, k)], &g_inv_c0_ident[(k_off, 0)]);
+                }
+            }
         }
-        let mut result = scal_to_mat_key
-            * &gadget_inverse::<<Self as SPIRAL>::RingQFast, N, M_CONV, N, Z_CONV, T_CONV>(
-                &c0_ident,
-            );
+
+        // let mut result = scal_to_mat_key * &g_inv_c0_ident;
         for i in 0..N {
-            result[(i + 1, i)] += &c1;
+            result[(i + 1, i)] += c1;
         }
         result
     }
@@ -754,7 +872,7 @@ impl<
         bottom -= &(s_matrix * &s_scalar_tensor_g);
 
         let result = Matrix::stack(&a_t, &bottom);
-        let scal_to_mat_key = Self::scal_to_mat_setup(&s_scalar, &s_matrix);
+        let scal_to_mat_key = Self::scal_to_mat_setup(s_scalar, s_matrix);
         (result, scal_to_mat_key)
     }
 
@@ -767,18 +885,18 @@ impl<
         for i in 0..T_GSW {
             c_hat.copy_into(&cs[i], 0, i);
         }
-        let v_g_inv_c_hat = v_mat
-            * &gadget_inverse::<
-                <Self as SPIRAL>::RingQFast,
-                2,
-                T_CONV_TIMES_TWO,
-                T_GSW,
-                Z_CONV,
-                T_CONV,
-            >(&c_hat);
+        let g_inv_c_hat = gadget_inverse::<
+            <Self as SPIRAL>::RingQFast,
+            2,
+            T_CONV_TIMES_TWO,
+            T_GSW,
+            Z_CONV,
+            T_CONV,
+        >(&c_hat);
+        let v_g_inv_c_hat = v_mat * &g_inv_c_hat;
         result.copy_into(&v_g_inv_c_hat, 0, 0);
         for i in 0..T_GSW {
-            let c_i_mat = Self::scal_to_mat(&scal_to_mat_key, &cs[i]);
+            let c_i_mat = Self::scal_to_mat(scal_to_mat_key, &cs[i]);
             result.copy_into(&c_i_mat, 0, T_GSW + N * i);
         }
 
@@ -821,9 +939,14 @@ mod test {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
-        Z_GSW: 75,
-        Z_COEFF: 128,
-        Z_CONV: 16384,
+        T_GSW: 9,
+        T_CONV: 4,
+        T_COEFF_REGEV: 8,
+        T_COEFF_GSW: 56,
+        // Z_GSW: 75,
+        // Z_COEFF_REGEV: 127,
+        // Z_COEFF_GSW: 2,
+        // Z_CONV: 16088,
         NOISE_WIDTH_MILLIONTHS: 6_400_000,
         P: 1 << 8,
         ETA1: 9,
@@ -859,10 +982,16 @@ mod test {
     #[test]
     fn test_auto_hom() {
         let s = SPIRALTest::scalar_regev_setup();
-        let auto_key = SPIRALTest::auto_setup(3, &s);
+        let auto_key = SPIRALTest::auto_setup::<
+            { SPIRAL_TEST_PARAMS.T_COEFF_REGEV },
+            { SPIRAL_TEST_PARAMS.Z_COEFF_REGEV },
+        >(3, &s);
         let x = <SPIRALTest as SPIRAL>::RingP::from(IntModPoly::x());
         let encrypt = SPIRALTest::encode_scalar_regev(&s, &x.scale_up_into());
-        let encrypt_auto = SPIRALTest::auto_hom(&auto_key, &encrypt);
+        let encrypt_auto = SPIRALTest::auto_hom::<
+            { SPIRAL_TEST_PARAMS.T_COEFF_REGEV },
+            { SPIRAL_TEST_PARAMS.Z_COEFF_REGEV },
+        >(&auto_key, &encrypt);
         let decrypt: <SPIRALTest as SPIRAL>::RingP =
             SPIRALTest::decode_scalar_regev(&s, &encrypt_auto).round_down_into();
         assert_eq!(decrypt, &(&x * &x) * &x);
@@ -937,6 +1066,11 @@ mod test {
     >(
         iter: I,
     ) {
+        eprintln!(
+            "Running SPIRAL test with database size {}",
+            SPIRALTest::DB_SIZE
+        );
+        eprintln!("Parameters: {:#?}", SPIRAL_TEST_PARAMS);
         let mut db: Vec<<TheSPIRAL as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);
         for i in 0..TheSPIRAL::DB_SIZE as u64 {
             let mut record: <TheSPIRAL as SPIRAL>::Record = Matrix::zero();
@@ -951,12 +1085,18 @@ mod test {
             record[(1, 1)] = (i * 37 % 256).into();
             db.push(record);
         }
+        eprintln!(
+            "Relative noise threshold: 2^({})",
+            SPIRAL_TEST_PARAMS.relative_noise_threshold().log2()
+        );
+
+        eprintln!();
 
         let pre_start = Instant::now();
         let mut db_pre: Vec<<TheSPIRAL as SPIRAL>::RecordPreprocessed> =
             Vec::with_capacity(TheSPIRAL::DB_SIZE);
-        for i in 0..TheSPIRAL::DB_SIZE {
-            db_pre.push(TheSPIRAL::preprocess(&db[i]));
+        for db_elem in db.iter() {
+            db_pre.push(TheSPIRAL::preprocess(db_elem));
         }
         let pre_end = Instant::now();
         eprintln!("{:?} to preprocess", pre_end - pre_start);
@@ -967,7 +1107,7 @@ mod test {
         eprintln!("{:?} to setup", setup_end - setup_start);
 
         let check = |idx: usize| {
-            eprintln!("Running with idx = {}", idx);
+            eprintln!("Testing record index {}", idx);
             let query_start = Instant::now();
             let q = TheSPIRAL::query(&qk, idx);
             let query_end = Instant::now();
@@ -988,7 +1128,7 @@ mod test {
             let extract_end = Instant::now();
             let extract_total = extract_end - extract_start;
 
-            if &extracted != &db[idx] {
+            if extracted != db[idx] {
                 eprintln!("  **** **** **** **** ERROR **** **** **** ****");
                 eprintln!("  protocol failed");
             }
@@ -1000,8 +1140,16 @@ mod test {
             eprintln!("    {:?} to query expand", query_expand_total);
             eprintln!("    {:?} to answer", answer_total);
             eprintln!("    {:?} to extract", extract_total);
-            let err = TheSPIRAL::response_error(&qk, &result, &db[idx]);
-            eprintln!("  relative error: 2^({})", err.log2());
+            let (rel_noise, correctness) = TheSPIRAL::response_stats(&qk, &result, &db[idx]);
+
+            eprintln!(
+                "  relative coefficient noise (sample): 2^({})",
+                rel_noise.log2()
+            );
+            eprintln!(
+                "  correctness probability (sample): 1 - 2^({})",
+                correctness.log2()
+            );
         };
 
         for i in iter {

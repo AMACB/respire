@@ -1,4 +1,5 @@
 use crate::math::gadget::{IntModDecomposition, RingElementDecomposable};
+use crate::math::int_mod::IntMod;
 use crate::math::int_mod_crt::IntModCRT;
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt::IntModCycloCRT;
@@ -528,8 +529,8 @@ impl<
 {
     pub fn reduce_mod(a: &mut IntModCycloCRTEval<D, 0, 0, 0, 0, 0, 0>) {
         for i in 0..D {
-            a.p1.points[i] = (u64::from(a.p1.points[i]) % N1).into();
-            a.p2.points[i] = (u64::from(a.p2.points[i]) % N2).into();
+            a.p1.points[i] = IntMod::<N1>::from(u64::from(a.p1.points[i])).convert();
+            a.p2.points[i] = IntMod::<N2>::from(u64::from(a.p2.points[i])).convert();
         }
     }
 
