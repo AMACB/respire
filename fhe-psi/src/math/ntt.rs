@@ -57,14 +57,10 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(values: &mut 
             }
         }
     }
-
-    bit_reverse_order(values);
 }
 
 pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(values: &mut [IntMod<N>; D]) {
     // Algorithm 3 of https://arxiv.org/pdf/2103.16400.pdf
-    bit_reverse_order(values);
-
     for round in 0..NTTTable::<D, N, W>::LOG_D {
         let block_count = D >> (1_usize + round);
         let block_half_stride = 1 << round;
@@ -94,15 +90,6 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(values: &mut
 
     for value in values.iter_mut() {
         *value *= NTTTable::<D, N, W>::INV_D;
-    }
-}
-
-fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [IntMod<N>; D]) {
-    for i in 0..D {
-        let ri = reverse_bits::<D>(i);
-        if i < ri {
-            values.swap(ri, i);
-        }
     }
 }
 

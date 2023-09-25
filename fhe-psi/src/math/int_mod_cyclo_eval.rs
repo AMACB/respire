@@ -9,9 +9,9 @@ use crate::math::ntt::*;
 use crate::math::number_theory::mod_pow;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
+use crate::math::utils::reverse_bits;
 use rand::Rng;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-use std::slice::Iter;
 
 // TODO
 // We need a way to bind a root of the right order to the type.
@@ -19,7 +19,8 @@ use std::slice::Iter;
 
 /// The DFT (pointwise evaluations) representation of an element of a cyclotomic ring.
 ///
-/// Internally, this is an array of evaluations, where the `i`th index corresponds to `f(w^{2*i+1})`. `w` here is the `2*D`th root of unity.
+/// Internally, this is an array of evaluations, where the `i`th index corresponds to `f(w^{2*bit_reverse(i)+1})`.
+/// `w` here is the `2*D`th root of unity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct IntModCycloEval<const D: usize, const N: u64, const W: u64> {
@@ -246,16 +247,14 @@ impl<const D: usize, const N: u64, const W: u64> RandDiscreteGaussianSampled
 /// Other operations.
 
 impl<const D: usize, const N: u64, const W: u64> IntModCycloEval<D, N, W> {
-    pub fn points_iter(&self) -> Iter<'_, IntMod<{ N }>> {
-        self.points.iter()
-    }
-
     /// Compute the automorphism x --> x^k. This only makes sense for odd `k`.
     pub fn auto(&self, k: usize) -> Self {
         let mut result = Self::zero();
         let k_half = (k - 1) / 2;
         for i in 0..D {
-            result.points[i] = self.points[(2 * k_half * i + k_half + i) % D];
+            let to = i;
+            let from = (2 * k_half * i + k_half + i) % D;
+            result.points[reverse_bits::<D>(to)] = self.points[reverse_bits::<D>(from)];
         }
         result
     }
@@ -266,7 +265,8 @@ impl<const D: usize, const N: u64, const W: u64> IntModCycloEval<D, N, W> {
         let mut w_curr = IntMod::from(mod_pow(W, k as u64, N));
         let w_k_sq = w_curr * w_curr;
         for i in 0..D {
-            result.points[i] = self.points[i] * w_curr;
+            let i_rev = reverse_bits::<D>(i);
+            result.points[i_rev] = self.points[i_rev] * w_curr;
             w_curr *= w_k_sq;
         }
         result
