@@ -1,17 +1,17 @@
 use crate::math::int_mod::IntMod;
-use crate::math::utils::{floor_log, mod_inverse};
+use crate::math::utils::{floor_log, mod_inverse, reverse_bits};
 
 /// Compile time lookup table for NTT-related operations
 struct NTTTable<const D: usize, const N: u64, const W: u64> {}
 
 impl<const D: usize, const N: u64, const W: u64> NTTTable<D, N, W> {
-    const W_POWERS: [IntMod<N>; D] = get_root_powers::<D, N, W>(false);
-    const W_INV_POWERS: [IntMod<N>; D] = get_root_powers::<D, N, W>(true);
+    const W_POWERS_BIT_REVERSED: [IntMod<N>; D] = get_powers_bit_reversed::<D, N, W>(false);
+    const W_INV_POWERS_BIT_REVERSED: [IntMod<N>; D] = get_powers_bit_reversed::<D, N, W>(true);
     const LOG_D: usize = floor_log(2, D as u64);
     const INV_D: IntMod<N> = IntMod::from_u64_const(mod_inverse(D as u64, N));
 }
 
-const fn get_root_powers<const D: usize, const N: u64, const W: u64>(
+const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
     invert: bool,
 ) -> [IntMod<N>; D] {
     let root = if invert {
@@ -25,7 +25,7 @@ const fn get_root_powers<const D: usize, const N: u64, const W: u64>(
     let mut idx = 0;
 
     while idx < D {
-        table[idx] = cur;
+        table[reverse_bits::<D>(idx)] = cur;
         cur = IntMod::mul_const(cur, root);
         idx += 1
     }
@@ -42,10 +42,9 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(values: &mut 
             let block_left_half_range =
                 (block_idx * block_stride)..(block_idx * block_stride + block_half_stride);
 
-            let idx = block_count + block_idx;
-            let idx_rev = idx.reverse_bits() >> (usize::BITS as usize - NTTTable::<D, N, W>::LOG_D);
-            let w: IntMod<N> = unsafe { *NTTTable::<D, N, W>::W_POWERS.get_unchecked(idx_rev) };
-
+            let w: IntMod<N> = unsafe {
+                *NTTTable::<D, N, W>::W_POWERS_BIT_REVERSED.get_unchecked(block_count + block_idx)
+            };
             for left_idx in block_left_half_range {
                 let right_idx = left_idx + block_half_stride;
                 unsafe {
@@ -59,12 +58,13 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(values: &mut 
         }
     }
 
-    bit_reverse_order(values, NTTTable::<D, N, W>::LOG_D);
+    bit_reverse_order(values);
 }
 
 pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(values: &mut [IntMod<N>; D]) {
     // Algorithm 3 of https://arxiv.org/pdf/2103.16400.pdf
-    bit_reverse_order(values, NTTTable::<D, N, W>::LOG_D);
+    bit_reverse_order(values);
+
     for round in 0..NTTTable::<D, N, W>::LOG_D {
         let block_count = D >> (1_usize + round);
         let block_half_stride = 1 << round;
@@ -74,9 +74,10 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(values: &mut
             let block_left_half_range =
                 (block_idx * block_stride)..(block_idx * block_stride + block_half_stride);
 
-            let idx = block_count + block_idx;
-            let idx_rev = idx.reverse_bits() >> (usize::BITS as usize - NTTTable::<D, N, W>::LOG_D);
-            let w: IntMod<N> = unsafe { *NTTTable::<D, N, W>::W_INV_POWERS.get_unchecked(idx_rev) };
+            let w: IntMod<N> = unsafe {
+                *NTTTable::<D, N, W>::W_INV_POWERS_BIT_REVERSED
+                    .get_unchecked(block_count + block_idx)
+            };
 
             for left_idx in block_left_half_range {
                 let right_idx = left_idx + block_half_stride;
@@ -96,10 +97,9 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(values: &mut
     }
 }
 
-fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [IntMod<N>; D], log_d: usize) {
+fn bit_reverse_order<const D: usize, const N: u64>(values: &mut [IntMod<N>; D]) {
     for i in 0..D {
-        let mut ri = i.reverse_bits();
-        ri >>= (usize::BITS as usize) - log_d;
+        let ri = reverse_bits::<D>(i);
         if i < ri {
             values.swap(ri, i);
         }
