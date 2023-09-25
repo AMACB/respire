@@ -79,20 +79,21 @@ fn ntt_common<const D: usize, const N: u64, const W: u64>(
     values: &mut [IntMod<N>; D],
     invert: bool,
 ) {
+    assert_ne!(D, 0, "expected D to be non-zero");
     assert_eq!(D & (D - 1), 0, "expected D to be power of two; got {}", D);
 
     bit_reverse_order(values, NTTTable::<D, N, W>::LOG_D);
 
     // Cooley Tukey
-    let mut prev_block_size = 1_usize;
-    let mut s = D / 2;
 
     // For the SAFETY below, we have the loop invariants:
     // (i) prev_block_size * s == D / 2
     // (ii) 1 <= prev_block_size <= D / 2
     // (iii) 1 <= s <= D / 2
     // (iv) prev_block_size, s are powers of 2
-    while s > 0 {
+    for round in 0..NTTTable::<D, N, W>::LOG_D {
+        let prev_block_size = 1 << round;
+        let s = D >> (1 + round);
         for block_start in (0..D).step_by(prev_block_size * 2) {
             for i in 0..prev_block_size {
                 // SAFETY:
@@ -115,9 +116,6 @@ fn ntt_common<const D: usize, const N: u64, const W: u64>(
                 }
             }
         }
-
-        prev_block_size *= 2;
-        s /= 2;
     }
 }
 
