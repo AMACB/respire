@@ -14,7 +14,7 @@ use std::slice::Iter;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct IntModPoly<const N: u64> {
-    coeff: Vec<IntMod<N>>,
+    pub(in crate::math) coeff: Vec<IntMod<N>>,
 }
 
 /// Conversions
