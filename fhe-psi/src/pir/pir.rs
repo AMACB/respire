@@ -828,15 +828,22 @@ impl<
         let c0 = &c[(0, 0)];
         let c1 = &c[(1, 0)];
 
-        let mut g_inv_c0_ident = Matrix::<M_CONV, N, <Self as SPIRAL>::RingQFast>::zero();
+        let mut g_inv_c0_ident = Matrix::<T_CONV, 1, <Self as SPIRAL>::RingQFast>::zero();
         <<Self as SPIRAL>::RingQFast as RingElementDecomposable<Z_CONV, T_CONV>>::decompose_into_mat(c0,&mut g_inv_c0_ident, 0, 0);
-        for i in 1..N {
-            for k in 0..T_CONV {
-                g_inv_c0_ident[(i * T_CONV + k, i)] = g_inv_c0_ident[(k, 0)].clone();
+
+        let mut result = Matrix::<N_PLUS_ONE, N, <Self as SPIRAL>::RingQFast>::zero();
+
+        for r in 0..N_PLUS_ONE {
+            for c in 0..N {
+                for k_off in 0..T_CONV {
+                    let k = c * T_CONV + k_off;
+                    result[(r, c)]
+                        .add_eq_mul(&scal_to_mat_key[(r, k)], &g_inv_c0_ident[(k_off, 0)]);
+                }
             }
         }
 
-        let mut result = scal_to_mat_key * &g_inv_c0_ident;
+        // let mut result = scal_to_mat_key * &g_inv_c0_ident;
         for i in 0..N {
             result[(i + 1, i)] += c1;
         }
@@ -878,15 +885,15 @@ impl<
         for i in 0..T_GSW {
             c_hat.copy_into(&cs[i], 0, i);
         }
-        let v_g_inv_c_hat = v_mat
-            * &gadget_inverse::<
-                <Self as SPIRAL>::RingQFast,
-                2,
-                T_CONV_TIMES_TWO,
-                T_GSW,
-                Z_CONV,
-                T_CONV,
-            >(&c_hat);
+        let g_inv_c_hat = gadget_inverse::<
+            <Self as SPIRAL>::RingQFast,
+            2,
+            T_CONV_TIMES_TWO,
+            T_GSW,
+            Z_CONV,
+            T_CONV,
+        >(&c_hat);
+        let v_g_inv_c_hat = v_mat * &g_inv_c_hat;
         result.copy_into(&v_g_inv_c_hat, 0, 0);
         for i in 0..T_GSW {
             let c_i_mat = Self::scal_to_mat(scal_to_mat_key, &cs[i]);
