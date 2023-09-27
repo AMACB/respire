@@ -365,32 +365,21 @@ impl<
 
             unsafe {
                 for i in 0..D / 4 {
+                    let a_p1_ptr =
+                        a.p1.points.get_unchecked(4 * i) as *const IntMod<N1> as *const __m256i;
+                    let b_p1_ptr =
+                        b.p1.points.get_unchecked(4 * i) as *const IntMod<N1> as *const __m256i;
                     let self_p1_ptr =
                         self.p1.points.get_unchecked_mut(4 * i) as *mut IntMod<N1> as *mut __m256i;
+                    ptr_add_eq_mul64(self_p1_ptr, a_p1_ptr, b_p1_ptr);
+
+                    let a_p2_ptr =
+                        a.p2.points.get_unchecked(4 * i) as *const IntMod<N2> as *const __m256i;
+                    let b_p2_ptr =
+                        b.p2.points.get_unchecked(4 * i) as *const IntMod<N2> as *const __m256i;
                     let self_p2_ptr =
                         self.p2.points.get_unchecked_mut(4 * i) as *mut IntMod<N2> as *mut __m256i;
-
-                    let a_p1 = _mm256_load_si256(a.p1.points.get_unchecked(4 * i)
-                        as *const IntMod<N1>
-                        as *const __m256i);
-                    let b_p1 = _mm256_load_si256(b.p1.points.get_unchecked(4 * i)
-                        as *const IntMod<N1>
-                        as *const __m256i);
-                    let self_p1 = _mm256_load_si256(self_p1_ptr);
-
-                    let a_p2 = _mm256_load_si256(a.p2.points.get_unchecked(4 * i)
-                        as *const IntMod<N2>
-                        as *const __m256i);
-                    let b_p2 = _mm256_load_si256(b.p2.points.get_unchecked(4 * i)
-                        as *const IntMod<N2>
-                        as *const __m256i);
-                    let self_p2 = _mm256_load_si256(self_p2_ptr);
-
-                    let result1 = _mm256_add_epi64(self_p1, _mm256_mul_epu32(a_p1, b_p1));
-                    let result2 = _mm256_add_epi64(self_p2, _mm256_mul_epu32(a_p2, b_p2));
-
-                    _mm256_store_si256(self_p1_ptr, result1);
-                    _mm256_store_si256(self_p2_ptr, result2);
+                    ptr_add_eq_mul64(self_p2_ptr, a_p2_ptr, b_p2_ptr);
                 }
             }
         } else {
