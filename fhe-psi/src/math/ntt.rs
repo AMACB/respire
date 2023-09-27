@@ -1,4 +1,4 @@
-use crate::math::int_mod::IntMod;
+use crate::math::int_mod::{IntMod, NoReduce};
 use crate::math::utils::{floor_log, mod_inverse, reverse_bits};
 use std::num::Wrapping;
 
@@ -60,9 +60,16 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
 pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
 ) {
+    // TODO: require feature avx
+    use std::arch::x86_64::*;
+
     let values = values as *mut Aligned64<[IntMod<N>; D]>;
     let values = values as *mut Aligned64<[u64; D]>;
     let values = unsafe { &mut *values };
+
+    let modulus = unsafe { _mm256_set1_epi64x(N as i64) };
+    let double_modulus = unsafe { _mm256_set1_epi64x(2 * N as i64) };
+    let neg_modulus = unsafe { _mm256_set1_epi64x(-(N as i64)) };
 
     // Algorithm 2 of https://arxiv.org/pdf/2103.16400.pdf
     for round in 0..NTTTable::<D, N, W>::LOG_D {
@@ -101,12 +108,9 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                 }
             } else {
                 unsafe {
-                    // TODO: require feature avx
-                    use std::arch::x86_64::*;
                     let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
                     let ratio = _mm256_set1_epi64x(w_table.ratio32 as i64);
-                    let double_modulus = _mm256_set1_epi64x(2 * N as i64);
-                    let neg_modulus = _mm256_set1_epi64x(-(N as i64));
+
                     for left_idx in block_left_half_range.step_by(4) {
                         let right_idx = left_idx + block_half_stride;
                         let left_ptr =
@@ -137,12 +141,15 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
         }
     }
 
-    for i in 0..D {
-        if values.0[i] >= 2 * N {
-            values.0[i] -= 2 * N;
-        }
-        if values.0[i] >= N {
-            values.0[i] -= N;
+    unsafe {
+        for i in (0..D).step_by(4) {
+            let val = _mm256_load_si256(*values.0.get_unchecked(i) as *const u64 as *const __m256i);
+            let val = _mm256_min_epu32(val, _mm256_sub_epi32(val, double_modulus));
+            let val = _mm256_min_epu32(val, _mm256_sub_epi32(val, modulus));
+            _mm256_store_si256(
+                *values.0.get_unchecked_mut(i) as *mut u64 as *mut __m256i,
+                val,
+            );
         }
     }
 }
