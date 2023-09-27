@@ -22,7 +22,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 /// Internally, this is an array of evaluations, where the `i`th index corresponds to `f(w^{2*bit_reverse(i)+1})`.
 /// `w` here is the `2*D`th root of unity.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C)]
+#[repr(C, align(64))]
 pub struct IntModCycloEval<const D: usize, const N: u64, const W: u64> {
     pub(in crate::math) points: [IntMod<N>; D],
 }

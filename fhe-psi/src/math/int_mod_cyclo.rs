@@ -21,7 +21,7 @@ use std::slice::Iter;
 ///
 /// Internally, this is an array of coefficients where the `i`th index corresponds to `x^i`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C)]
+#[repr(C, align(64))]
 pub struct IntModCyclo<const D: usize, const N: u64> {
     pub(in crate::math) coeff: [IntMod<N>; D],
 }

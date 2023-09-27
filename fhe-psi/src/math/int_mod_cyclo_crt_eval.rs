@@ -14,7 +14,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 // TODO: documentation
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C)]
+#[repr(C, align(64))]
 pub struct IntModCycloCRTEval<
     const D: usize,
     const N1: u64,
@@ -334,10 +334,68 @@ impl<
         }
     }
 
+    #[cfg(not(target_feature = "avx2"))]
     fn add_eq_mul(&mut self, a: &Self, b: &Self) {
         for i in 0..D {
             self.p1.points[i] += a.p1.points[i] * b.p1.points[i];
             self.p2.points[i] += a.p2.points[i] * b.p2.points[i];
+        }
+    }
+
+    #[cfg(target_feature = "avx2")]
+    fn add_eq_mul(&mut self, a: &Self, b: &Self) {
+        if N1 == 0 && N2 == 0 && D % 4 == 0 {
+            use std::arch::x86_64::*;
+            // Compute s + a*b, with 4 x 64 bit lanes
+            unsafe fn mul64(a: __m256i, b: __m256i) -> __m256i {
+                // 64 bit multiplication based on:
+                // https://github.com/vectorclass/version2/blob/9d324e13457cf67b44be04f49a4a0036bb188a89/vectori256.h#L3353
+                let bswap = _mm256_shuffle_epi32::<0xb1>(b);
+                let prod_lh = _mm256_mullo_epi32(a, bswap);
+                let zero = _mm256_setzero_si256();
+                let prod_lh2 = _mm256_hadd_epi32(prod_lh, zero);
+                let prod_lh3 = _mm256_shuffle_epi32::<0x73>(prod_lh2);
+                let prod_ll = _mm256_mul_epu32(a, b);
+                _mm256_add_epi64(prod_ll, prod_lh3)
+            }
+
+            unsafe fn ptr_add_eq_mul64(
+                s_ptr: *mut __m256i,
+                a_ptr: *const __m256i,
+                b_ptr: *const __m256i,
+            ) {
+                let a = _mm256_load_si256(a_ptr);
+                let b = _mm256_load_si256(b_ptr);
+                let s = _mm256_load_si256(s_ptr);
+                let prod = mul64(a, b);
+                let sum_prod = _mm256_add_epi64(s, prod);
+                _mm256_store_si256(s_ptr, sum_prod);
+            }
+
+            unsafe {
+                for i in 0..D / 4 {
+                    let a_p1_ptr =
+                        a.p1.points.get_unchecked(4 * i) as *const IntMod<N1> as *const __m256i;
+                    let b_p1_ptr =
+                        b.p1.points.get_unchecked(4 * i) as *const IntMod<N1> as *const __m256i;
+                    let self_p1_ptr =
+                        self.p1.points.get_unchecked_mut(4 * i) as *mut IntMod<N1> as *mut __m256i;
+                    ptr_add_eq_mul64(self_p1_ptr, a_p1_ptr, b_p1_ptr);
+
+                    let a_p2_ptr =
+                        a.p2.points.get_unchecked(4 * i) as *const IntMod<N2> as *const __m256i;
+                    let b_p2_ptr =
+                        b.p2.points.get_unchecked(4 * i) as *const IntMod<N2> as *const __m256i;
+                    let self_p2_ptr =
+                        self.p2.points.get_unchecked_mut(4 * i) as *mut IntMod<N2> as *mut __m256i;
+                    ptr_add_eq_mul64(self_p2_ptr, a_p2_ptr, b_p2_ptr);
+                }
+            }
+        } else {
+            for i in 0..D {
+                self.p1.points[i] += a.p1.points[i] * b.p1.points[i];
+                self.p2.points[i] += a.p2.points[i] * b.p2.points[i];
+            }
         }
     }
 }
