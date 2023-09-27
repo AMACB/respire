@@ -334,30 +334,18 @@ impl<
         }
     }
 
-    #[cfg(not(target_feature = "avx2"))]
-    fn add_eq_mul(&mut self, a: &Self, b: &Self) {
-        for i in 0..D {
-            self.p1.points[i] += a.p1.points[i] * b.p1.points[i];
-            self.p2.points[i] += a.p2.points[i] * b.p2.points[i];
-        }
-    }
+    // #[cfg(not(target_feature = "avx2"))]
+    // fn add_eq_mul(&mut self, a: &Self, b: &Self) {
+    //     for i in 0..D {
+    //         self.p1.points[i] += a.p1.points[i] * b.p1.points[i];
+    //         self.p2.points[i] += a.p2.points[i] * b.p2.points[i];
+    //     }
+    // }
 
-    #[cfg(target_feature = "avx2")]
+    // #[cfg(target_feature = "avx2")]
     fn add_eq_mul(&mut self, a: &Self, b: &Self) {
         if N1 == 0 && N2 == 0 && D % 4 == 0 {
             use std::arch::x86_64::*;
-            // Compute s + a*b, with 4 x 64 bit lanes
-            unsafe fn mul64(a: __m256i, b: __m256i) -> __m256i {
-                // 64 bit multiplication based on:
-                // https://github.com/vectorclass/version2/blob/9d324e13457cf67b44be04f49a4a0036bb188a89/vectori256.h#L3353
-                let bswap = _mm256_shuffle_epi32::<0xb1>(b);
-                let prod_lh = _mm256_mullo_epi32(a, bswap);
-                let zero = _mm256_setzero_si256();
-                let prod_lh2 = _mm256_hadd_epi32(prod_lh, zero);
-                let prod_lh3 = _mm256_shuffle_epi32::<0x73>(prod_lh2);
-                let prod_ll = _mm256_mul_epu32(a, b);
-                _mm256_add_epi64(prod_ll, prod_lh3)
-            }
 
             unsafe fn ptr_add_eq_mul64(
                 s_ptr: *mut __m256i,
@@ -367,7 +355,10 @@ impl<
                 let a = _mm256_load_si256(a_ptr);
                 let b = _mm256_load_si256(b_ptr);
                 let s = _mm256_load_si256(s_ptr);
-                let prod = mul64(a, b);
+                // Note: this assumes the inputs are 32 bit. For now this is fine, since this is
+                // only used for "fresh" elements which come directly from CRT (and the CRT moduli
+                // are 32 bit).
+                let prod = _mm256_mul_epu32(a, b);
                 let sum_prod = _mm256_add_epi64(s, prod);
                 _mm256_store_si256(s_ptr, sum_prod);
             }
