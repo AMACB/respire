@@ -106,7 +106,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                     let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
                     let ratio = _mm256_set1_epi64x(w_table.ratio32 as i64);
                     let double_modulus = _mm256_set1_epi64x(2 * N as i64);
-                    let modulus = _mm256_set1_epi64x(N as i64);
+                    let neg_modulus = _mm256_set1_epi64x(-(N as i64));
                     for left_idx in block_left_half_range.step_by(4) {
                         let right_idx = left_idx + block_half_stride;
                         let left_ptr =
@@ -118,18 +118,18 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                         // Butterfly
                         let x = _mm256_load_si256(left_ptr);
                         let y = _mm256_load_si256(right_ptr);
-                        dbg!(x, y, w, ratio, double_modulus, modulus, N);
+                        dbg!(x, y, w, ratio, double_modulus, neg_modulus, N);
 
                         // This works because the upper 32 bits of each 64 bit are zero
                         let x = _mm256_min_epu32(x, _mm256_sub_epi32(x, double_modulus));
                         dbg!(x);
                         let quotient = _mm256_srli_epi64::<32>(_mm256_mul_epu32(ratio, y));
                         dbg!(quotient);
-                        let w_times_y = _mm256_mul_epu32(w, y);
+                        let w_times_y = _mm256_mullo_epi32(w, y);
                         dbg!(w_times_y);
-                        let modulus_times_quotient = _mm256_mul_epu32(modulus, quotient);
-                        dbg!(modulus_times_quotient);
-                        let product = _mm256_sub_epi32(w_times_y, modulus_times_quotient);
+                        let neg_modulus_times_quotient = _mm256_mullo_epi32(neg_modulus, quotient);
+                        dbg!(neg_modulus_times_quotient);
+                        let product = _mm256_add_epi32(w_times_y, neg_modulus_times_quotient);
                         dbg!(product);
 
                         let x_new_vec = _mm256_add_epi64(x, product);
