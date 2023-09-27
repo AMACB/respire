@@ -58,8 +58,7 @@ impl<const D: usize, const N: u64, const W: u64> From<IntModCyclo<D, N>>
     for IntModCycloEval<D, N, W>
 {
     fn from(a: IntModCyclo<D, N>) -> Self {
-        let mut points: [IntMod<N>; D] = a.coeff;
-        ntt_neg_forward::<D, N, W>(&mut points);
+        let points = ntt_neg_forward::<D, N, W>(a.coeff);
         IntModCycloEval::from(points)
     }
 }

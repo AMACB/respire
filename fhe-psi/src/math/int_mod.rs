@@ -369,6 +369,10 @@ impl<const N: u64> IntMod<N> {
         Self { a: a % N }
     }
 
+    pub const fn into_u64_const(self) -> u64 {
+        self.a
+    }
+
     pub const fn mul_const(lhs: Self, rhs: Self) -> Self {
         let result = (lhs.a as u128) * (rhs.a as u128);
         Self::from_u64_const(result as u64)

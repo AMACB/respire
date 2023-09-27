@@ -11,7 +11,6 @@ use crate::math::matrix::Matrix;
 use crate::math::ntt::*;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
-use crate::math::utils::ceil_log;
 use rand::Rng;
 use std::cmp::max;
 use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -137,12 +136,7 @@ impl<const D: usize, const N: u64, const W: u64> From<IntModCycloEval<D, N, W>>
     for IntModCyclo<D, N>
 {
     fn from(a_eval: IntModCycloEval<D, N, W>) -> Self {
-        // TODO: this should be in the type, probably
-        let log_d = ceil_log(2, D as u64);
-        debug_assert_eq!(1 << log_d, D);
-
-        let mut coeff: [IntMod<N>; D] = a_eval.points;
-        ntt_neg_backward::<D, N, W>(&mut coeff);
+        let coeff = ntt_neg_backward::<D, N, W>(a_eval.points);
         IntModCyclo::from(coeff)
     }
 }
