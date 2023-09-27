@@ -114,38 +114,23 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                         let right_ptr =
                             values.0.get_unchecked(right_idx) as *const u64 as *const __m256i;
 
-                        eprintln!("Butterflying...");
                         // Butterfly
                         let x = _mm256_load_si256(left_ptr);
                         let y = _mm256_load_si256(right_ptr);
-                        dbg!(x, y, w, ratio, double_modulus, modulus, N);
-
-                        eprintln!("modifying x artificially");
-                        let x = _mm256_add_epi64(x, double_modulus);
-                        dbg!(x);
 
                         // This works because the upper 32 bits of each 64 bit are zero
                         let x = _mm256_min_epu32(x, _mm256_sub_epi32(x, double_modulus));
-                        dbg!(x);
                         let quotient = _mm256_srli_epi64::<32>(_mm256_mul_epu32(ratio, y));
-                        dbg!(quotient);
                         let w_times_y = _mm256_mul_epu32(w, y);
-                        dbg!(w_times_y);
                         let modulus_times_quotient = _mm256_mul_epu32(modulus, quotient);
-                        dbg!(modulus_times_quotient);
                         let product = _mm256_sub_epi32(w_times_y, modulus_times_quotient);
-                        dbg!(product);
 
                         let x_new_vec = _mm256_add_epi64(x, product);
-                        dbg!(x_new_vec);
                         let y_new_vec =
                             _mm256_add_epi64(x, _mm256_sub_epi64(double_modulus, product));
-                        dbg!(y_new_vec);
 
                         _mm256_store_si256(left_ptr as *mut __m256i, x_new_vec);
                         _mm256_store_si256(right_ptr as *mut __m256i, y_new_vec);
-
-                        panic!("stop!");
                     }
                 }
             }
