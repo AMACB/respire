@@ -27,6 +27,12 @@ pub struct IntModCycloEval<const D: usize, const N: u64, const W: u64> {
     pub(in crate::math) points: [IntMod<N>; D],
 }
 
+impl<const D: usize, const N: u64, const W: u64> IntModCycloEval<D, N, W> {
+    pub fn into_aligned(self) -> Aligned64<[IntMod<N>; D]> {
+        Aligned64 { 0: self.points }
+    }
+}
+
 /// Conversions
 
 impl<const D: usize, const N: u64, const W: u64> From<u64> for IntModCycloEval<D, N, W> {
@@ -58,8 +64,9 @@ impl<const D: usize, const N: u64, const W: u64> From<IntModCyclo<D, N>>
     for IntModCycloEval<D, N, W>
 {
     fn from(a: IntModCyclo<D, N>) -> Self {
-        let points = ntt_neg_forward::<D, N, W>(a.coeff);
-        IntModCycloEval::from(points)
+        let mut values_aligned = a.into_aligned();
+        ntt_neg_forward::<D, N, W>(&mut values_aligned);
+        IntModCycloEval::from(values_aligned.0)
     }
 }
 

@@ -1,10 +1,13 @@
 use crate::math::int_mod::IntMod;
 use crate::math::utils::{floor_log, mod_inverse, reverse_bits};
 use std::num::Wrapping;
-use std::ptr;
 
 /// Compile time lookup table for NTT-related operations
 struct NTTTable<const D: usize, const N: u64, const W: u64> {}
+
+#[repr(C, align(64))]
+#[derive(Clone)]
+pub struct Aligned64<T>(pub T);
 
 #[derive(Copy, Clone)]
 struct MulTable<const N: u64> {
@@ -55,8 +58,8 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
 }
 
 pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
-    values: [IntMod<N>; D],
-) -> [IntMod<N>; D] {
+    values: &mut Aligned64<[IntMod<N>; D]>,
+) {
     fn butterfly32<const N: u64>(x: u64, y: u64, w: u64, ratio: u64) -> (u64, u64) {
         let x = if x >= 2 * N { x - 2 * N } else { x };
         let quotient = (ratio * y) >> 32;
@@ -66,8 +69,9 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
         (x + product as u64, x + (2 * N - product as u64))
     }
 
-    let mut values: [u64; D] =
-        unsafe { ptr::read(&values as *const [IntMod<N>; D] as *const [u64; D]) };
+    let values = values as *mut Aligned64<[IntMod<N>; D]>;
+    let values = values as *mut Aligned64<[u64; D]>;
+    let values = unsafe { &mut *values };
 
     // Algorithm 2 of https://arxiv.org/pdf/2103.16400.pdf
     for round in 0..NTTTable::<D, N, W>::LOG_D {
@@ -88,13 +92,13 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                     unsafe {
                         // Butterfly
                         let (x_new, y_new) = butterfly32::<N>(
-                            *values.get_unchecked(left_idx),
-                            *values.get_unchecked(right_idx),
+                            *values.0.get_unchecked(left_idx),
+                            *values.0.get_unchecked(right_idx),
                             w_table.value.into_u64_const(),
                             w_table.ratio32,
                         );
-                        *values.get_unchecked_mut(left_idx) = x_new;
-                        *values.get_unchecked_mut(right_idx) = y_new;
+                        *values.0.get_unchecked_mut(left_idx) = x_new;
+                        *values.0.get_unchecked_mut(right_idx) = y_new;
                     }
                 }
             } else {
@@ -107,9 +111,9 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                     for left_idx in block_left_half_range.step_by(4) {
                         let right_idx = left_idx + block_half_stride;
                         let left_ptr =
-                            values.get_unchecked(left_idx) as *const u64 as *const __m256i;
+                            values.0.get_unchecked(left_idx) as *const u64 as *const __m256i;
                         let right_ptr =
-                            values.get_unchecked(right_idx) as *const u64 as *const __m256i;
+                            values.0.get_unchecked(right_idx) as *const u64 as *const __m256i;
 
                         // Butterfly
                         let x = _mm256_load_si256(left_ptr);
@@ -133,23 +137,18 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     }
 
     for i in 0..D {
-        if values[i] >= 2 * N {
-            values[i] -= 2 * N;
+        if values.0[i] >= 2 * N {
+            values.0[i] -= 2 * N;
         }
-        if values[i] >= N {
-            values[i] -= N;
+        if values.0[i] >= N {
+            values.0[i] -= N;
         }
     }
-
-    let values: [IntMod<N>; D] =
-        unsafe { ptr::read(&values as *const [u64; D] as *const [IntMod<N>; D]) };
-
-    values
 }
 
 pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
-    mut values: [IntMod<N>; D],
-) -> [IntMod<N>; D] {
+    values: &mut Aligned64<[IntMod<N>; D]>,
+) {
     // Algorithm 3 of https://arxiv.org/pdf/2103.16400.pdf
     for round in 0..NTTTable::<D, N, W>::LOG_D {
         let block_count = D >> (1_usize + round);
@@ -170,20 +169,18 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
                 let right_idx = left_idx + block_half_stride;
                 unsafe {
                     // Butterfly
-                    let x = *values.get_unchecked(left_idx);
-                    let y = *values.get_unchecked(right_idx);
-                    *values.get_unchecked_mut(left_idx) = x + y;
-                    *values.get_unchecked_mut(right_idx) = (x - y) * w;
+                    let x = *values.0.get_unchecked(left_idx);
+                    let y = *values.0.get_unchecked(right_idx);
+                    *values.0.get_unchecked_mut(left_idx) = x + y;
+                    *values.0.get_unchecked_mut(right_idx) = (x - y) * w;
                 }
             }
         }
     }
 
-    for value in values.iter_mut() {
+    for value in values.0.iter_mut() {
         *value *= NTTTable::<D, N, W>::INV_D;
     }
-
-    values
 }
 
 #[cfg(test)]
@@ -206,12 +203,14 @@ mod test {
 
     #[test]
     fn test_ntt_neg_forward() {
-        let coeff: [IntMod<P>; 4] = [1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()];
+        let mut values: Aligned64<[IntMod<P>; 4]> = Aligned64 {
+            0: [1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()],
+        };
         let coeff_poly = IntModPoly::from(vec![1_u64, 2_u64, 3_u64, 4_u64]);
 
         let w = IntMod::from(W);
 
-        let points = ntt_neg_forward::<D, P, W>(coeff);
+        ntt_neg_forward::<D, P, W>(&mut values);
         let expected = [
             coeff_poly.eval(w),
             coeff_poly.eval(w.pow(5)), // swapped, since order is bit reversed
@@ -219,34 +218,42 @@ mod test {
             coeff_poly.eval(w.pow(7)),
         ];
 
-        assert_eq!(points, expected);
+        assert_eq!(values.0, expected);
     }
 
     #[test]
     fn test_ntt_neg_inverses() {
-        let coeff: [IntMod<P>; 4] = [1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()];
-        let expected = coeff;
+        let mut values: Aligned64<[IntMod<P>; 4]> = Aligned64 {
+            0: [1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()],
+        };
+        let expected = values.0.clone();
 
-        let points = ntt_neg_forward::<D, P, W>(coeff);
-        let coeff = ntt_neg_backward::<D, P, W>(points);
+        ntt_neg_forward::<D, P, W>(&mut values);
+        ntt_neg_backward::<D, P, W>(&mut values);
 
-        assert_eq!(coeff, expected);
+        assert_eq!(values.0, expected);
     }
 
     #[test]
     fn test_ntt_neg_mul() {
-        let coeff1: [IntMod<P>; 4] = [1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()];
-        let coeff2: [IntMod<P>; 4] = [5_u64.into(), 6_u64.into(), 7_u64.into(), 8_u64.into()];
+        let mut values1: Aligned64<[IntMod<P>; 4]> = Aligned64 {
+            0: [1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()],
+        };
+        let mut values2: Aligned64<[IntMod<P>; 4]> = Aligned64 {
+            0: [5_u64.into(), 6_u64.into(), 7_u64.into(), 8_u64.into()],
+        };
 
-        let points1 = ntt_neg_forward::<D, P, W>(coeff1);
-        let points2 = ntt_neg_forward::<D, P, W>(coeff2);
-        let result_points = [
-            points1[0] * points2[0],
-            points1[1] * points2[1],
-            points1[2] * points2[2],
-            points1[3] * points2[3],
-        ];
-        let result_coeff = ntt_neg_backward::<D, P, W>(result_points);
+        ntt_neg_forward::<D, P, W>(&mut values1);
+        ntt_neg_forward::<D, P, W>(&mut values2);
+        let mut result_points = Aligned64 {
+            0: [
+                values1.0[0] * values2.0[0],
+                values1.0[1] * values2.0[1],
+                values1.0[2] * values2.0[2],
+                values1.0[3] * values2.0[3],
+            ],
+        };
+        ntt_neg_backward::<D, P, W>(&mut result_points);
 
         let coeff1_poly = IntModPoly::from(vec![1_u64, 2_u64, 3_u64, 4_u64]);
         let coeff2_poly = IntModPoly::from(vec![5_u64, 6_u64, 7_u64, 8_u64]);
@@ -260,7 +267,7 @@ mod test {
             .map(|(x, y)| x - y)
             .collect();
 
-        assert_eq!(expected, result_coeff);
+        assert_eq!(expected, result_points.0);
     }
 
     #[ignore]
