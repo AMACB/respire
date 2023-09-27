@@ -265,90 +265,50 @@ mod test {
         assert_eq!(expected, result_points.0);
     }
 
-    #[test]
-    fn test_ntt_forward_8() {
-        const DD: usize = 8;
-        const WW: u64 = find_sqrt_primitive_root(DD, P);
-        let mut values: Aligned64<[IntMod<P>; DD]> = Aligned64([
-            1_u64.into(),
-            2_u64.into(),
-            3_u64.into(),
-            4_u64.into(),
-            5_u64.into(),
-            6_u64.into(),
-            7_u64.into(),
-            8_u64.into(),
-        ]);
-        let coeff_poly =
-            IntModPoly::<P>::from(vec![1_u64, 2_u64, 3_u64, 4_u64, 5_u64, 6_u64, 7_u64, 8_u64]);
+    fn test_ntt_forward_size<const DD: usize, const WW: u64>() {
+        let mut vec_mod = vec![];
+        for i in 0..DD as u64 {
+            vec_mod.push(IntMod::from(i + 1));
+        }
+
+        let mut values: Aligned64<[IntMod<P>; DD]> = Aligned64(vec_mod.clone().try_into().unwrap());
+        let coeff_poly = IntModPoly::<P>::from(vec_mod);
 
         let w = IntMod::from(WW);
 
         ntt_neg_forward::<DD, P, WW>(&mut values);
-        let expected = [
-            coeff_poly.eval(w),
-            coeff_poly.eval(w.pow(9)),
-            coeff_poly.eval(w.pow(5)),
-            coeff_poly.eval(w.pow(13)),
-            coeff_poly.eval(w.pow(3)),
-            coeff_poly.eval(w.pow(11)),
-            coeff_poly.eval(w.pow(7)),
-            coeff_poly.eval(w.pow(15)),
-        ];
+        let mut expected = vec![];
+        expected.resize(DD, IntMod::zero());
+        for i in 0..DD {
+            expected[reverse_bits::<DD>(i)] = coeff_poly.eval(w.pow(2 * (i as u64) + 1));
+        }
 
-        assert_eq!(values.0, expected);
+        assert_eq!(values.0, expected.as_slice());
+    }
+
+    #[test]
+    fn test_ntt_forward_8() {
+        test_ntt_forward_size::<8, { find_sqrt_primitive_root(8, P) }>();
     }
 
     #[test]
     fn test_ntt_forward_16() {
-        const DD: usize = 16;
-        const WW: u64 = find_sqrt_primitive_root(DD, P);
-        let mut values: Aligned64<[IntMod<P>; DD]> = Aligned64([
-            1_u64.into(),
-            2_u64.into(),
-            3_u64.into(),
-            4_u64.into(),
-            5_u64.into(),
-            6_u64.into(),
-            7_u64.into(),
-            8_u64.into(),
-            9_u64.into(),
-            10_u64.into(),
-            11_u64.into(),
-            12_u64.into(),
-            13_u64.into(),
-            14_u64.into(),
-            15_u64.into(),
-            16_u64.into(),
-        ]);
-        let coeff_poly = IntModPoly::<P>::from(vec![
-            1_u64, 2_u64, 3_u64, 4_u64, 5_u64, 6_u64, 7_u64, 8_u64, 9_u64, 10_u64, 11_u64, 12_u64,
-            13_u64, 14_u64, 15_u64, 16_u64,
-        ]);
+        test_ntt_forward_size::<16, { find_sqrt_primitive_root(16, P) }>();
+    }
 
-        let w = IntMod::from(WW);
+    #[test]
+    fn test_ntt_forward_32() {
+        test_ntt_forward_size::<32, { find_sqrt_primitive_root(32, P) }>();
+    }
 
-        ntt_neg_forward::<DD, P, WW>(&mut values);
-        let expected = [
-            coeff_poly.eval(w),
-            coeff_poly.eval(w.pow(17)),
-            coeff_poly.eval(w.pow(9)),
-            coeff_poly.eval(w.pow(25)),
-            coeff_poly.eval(w.pow(5)),
-            coeff_poly.eval(w.pow(21)),
-            coeff_poly.eval(w.pow(13)),
-            coeff_poly.eval(w.pow(29)),
-            coeff_poly.eval(w.pow(3)),
-            coeff_poly.eval(w.pow(19)),
-            coeff_poly.eval(w.pow(11)),
-            coeff_poly.eval(w.pow(27)),
-            coeff_poly.eval(w.pow(7)),
-            coeff_poly.eval(w.pow(23)),
-            coeff_poly.eval(w.pow(15)),
-            coeff_poly.eval(w.pow(31)),
-        ];
+    #[test]
+    fn test_ntt_forward_64() {
+        test_ntt_forward_size::<64, { find_sqrt_primitive_root(64, P) }>();
+    }
 
-        assert_eq!(values.0, expected);
+    #[test]
+    fn test_ntt_forward_128() {
+        test_ntt_forward_size::<128, { find_sqrt_primitive_root(128, P) }>();
     }
 
     #[ignore]
