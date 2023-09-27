@@ -60,15 +60,6 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
 pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
 ) {
-    fn butterfly32<const N: u64>(x: u64, y: u64, w: u64, ratio: u64) -> (u64, u64) {
-        let x = if x >= 2 * N { x - 2 * N } else { x };
-        let quotient = (ratio * y) >> 32;
-        let product = (Wrapping(w as u32) * Wrapping(y as u32)
-            - Wrapping(N as u32) * Wrapping(quotient as u32))
-        .0;
-        (x + product as u64, x + (2 * N - product as u64))
-    }
-
     let values = values as *mut Aligned64<[IntMod<N>; D]>;
     let values = values as *mut Aligned64<[u64; D]>;
     let values = unsafe { &mut *values };
@@ -90,24 +81,32 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                 for left_idx in block_left_half_range {
                     let right_idx = left_idx + block_half_stride;
                     unsafe {
+                        let x = *values.0.get_unchecked(left_idx);
+                        let y = *values.0.get_unchecked(right_idx);
+                        let w = w_table.value.into_u64_const();
+                        let ratio = w_table.ratio32;
+
                         // Butterfly
-                        let (x_new, y_new) = butterfly32::<N>(
-                            *values.0.get_unchecked(left_idx),
-                            *values.0.get_unchecked(right_idx),
-                            w_table.value.into_u64_const(),
-                            w_table.ratio32,
-                        );
+                        let x = if x >= 2 * N { x - 2 * N } else { x };
+                        let quotient = (ratio * y) >> 32;
+                        let product = (Wrapping(w as u32) * Wrapping(y as u32)
+                            - Wrapping(N as u32) * Wrapping(quotient as u32))
+                        .0;
+                        let x_new = x + product as u64;
+                        let y_new = x + (2 * N - product as u64);
+
                         *values.0.get_unchecked_mut(left_idx) = x_new;
                         *values.0.get_unchecked_mut(right_idx) = y_new;
                     }
                 }
             } else {
                 unsafe {
+                    // TODO: require feature avx
                     use std::arch::x86_64::*;
                     let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
                     let ratio = _mm256_set1_epi64x(w_table.ratio32 as i64);
                     let double_modulus = _mm256_set1_epi64x(2 * N as i64);
-                    let neg_modulus = _mm256_set1_epi64x(-(N as i64));
+                    let modulus = _mm256_set1_epi64x(N as i64);
                     for left_idx in block_left_half_range.step_by(4) {
                         let right_idx = left_idx + block_half_stride;
                         let left_ptr =
@@ -115,21 +114,38 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                         let right_ptr =
                             values.0.get_unchecked(right_idx) as *const u64 as *const __m256i;
 
+                        eprintln!("Butterflying...");
                         // Butterfly
                         let x = _mm256_load_si256(left_ptr);
                         let y = _mm256_load_si256(right_ptr);
+                        dbg!(x, y, w, ratio, double_modulus, modulus, N);
+
+                        eprintln!("modifying x artificially");
+                        let x = _mm256_add_epi64(x, double_modulus);
+                        dbg!(x);
+
                         // This works because the upper 32 bits of each 64 bit are zero
                         let x = _mm256_min_epu32(x, _mm256_sub_epi32(x, double_modulus));
+                        dbg!(x);
                         let quotient = _mm256_srli_epi64::<32>(_mm256_mul_epu32(ratio, y));
-                        let w_times_y = _mm256_mullo_epi32(w, y);
-                        let product =
-                            _mm256_add_epi64(w_times_y, _mm256_mul_epu32(neg_modulus, quotient));
+                        dbg!(quotient);
+                        let w_times_y = _mm256_mul_epu32(w, y);
+                        dbg!(w_times_y);
+                        let modulus_times_quotient = _mm256_mul_epu32(modulus, quotient);
+                        dbg!(modulus_times_quotient);
+                        let product = _mm256_sub_epi32(w_times_y, modulus_times_quotient);
+                        dbg!(product);
+
                         let x_new_vec = _mm256_add_epi64(x, product);
+                        dbg!(x_new_vec);
                         let y_new_vec =
                             _mm256_add_epi64(x, _mm256_sub_epi64(double_modulus, product));
+                        dbg!(y_new_vec);
 
                         _mm256_store_si256(left_ptr as *mut __m256i, x_new_vec);
                         _mm256_store_si256(right_ptr as *mut __m256i, y_new_vec);
+
+                        panic!("stop!");
                     }
                 }
             }
@@ -203,9 +219,8 @@ mod test {
 
     #[test]
     fn test_ntt_neg_forward() {
-        let mut values: Aligned64<[IntMod<P>; 4]> = Aligned64 {
-            0: [1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()],
-        };
+        let mut values: Aligned64<[IntMod<P>; 4]> =
+            Aligned64([1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()]);
         let coeff_poly = IntModPoly::from(vec![1_u64, 2_u64, 3_u64, 4_u64]);
 
         let w = IntMod::from(W);
@@ -223,10 +238,9 @@ mod test {
 
     #[test]
     fn test_ntt_neg_inverses() {
-        let mut values: Aligned64<[IntMod<P>; 4]> = Aligned64 {
-            0: [1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()],
-        };
-        let expected = values.0.clone();
+        let mut values: Aligned64<[IntMod<P>; 4]> =
+            Aligned64([1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()]);
+        let expected = values.0;
 
         ntt_neg_forward::<D, P, W>(&mut values);
         ntt_neg_backward::<D, P, W>(&mut values);
@@ -236,23 +250,19 @@ mod test {
 
     #[test]
     fn test_ntt_neg_mul() {
-        let mut values1: Aligned64<[IntMod<P>; 4]> = Aligned64 {
-            0: [1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()],
-        };
-        let mut values2: Aligned64<[IntMod<P>; 4]> = Aligned64 {
-            0: [5_u64.into(), 6_u64.into(), 7_u64.into(), 8_u64.into()],
-        };
+        let mut values1: Aligned64<[IntMod<P>; 4]> =
+            Aligned64([1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()]);
+        let mut values2: Aligned64<[IntMod<P>; 4]> =
+            Aligned64([5_u64.into(), 6_u64.into(), 7_u64.into(), 8_u64.into()]);
 
         ntt_neg_forward::<D, P, W>(&mut values1);
         ntt_neg_forward::<D, P, W>(&mut values2);
-        let mut result_points = Aligned64 {
-            0: [
-                values1.0[0] * values2.0[0],
-                values1.0[1] * values2.0[1],
-                values1.0[2] * values2.0[2],
-                values1.0[3] * values2.0[3],
-            ],
-        };
+        let mut result_points = Aligned64([
+            values1.0[0] * values2.0[0],
+            values1.0[1] * values2.0[1],
+            values1.0[2] * values2.0[2],
+            values1.0[3] * values2.0[3],
+        ]);
         ntt_neg_backward::<D, P, W>(&mut result_points);
 
         let coeff1_poly = IntModPoly::from(vec![1_u64, 2_u64, 3_u64, 4_u64]);
