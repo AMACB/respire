@@ -257,11 +257,12 @@ unsafe impl<const N: u64, const M: u64> RingCompatible<IntMod<M>> for IntMod<N> 
 
 impl<const N: u64> fmt::Debug for IntMod<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.a <= 3 * (N / 4) {
-            write!(f, "{}", self.a)
-        } else {
-            write!(f, "-{}", N - self.a)
-        }
+        write!(f, "{}", self.a)
+        // if self.a <= 3 * (N / 4) {
+        //     write!(f, "{}", self.a)
+        // } else {
+        //     write!(f, "-{}", N - self.a)
+        // }
     }
 }
 

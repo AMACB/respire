@@ -120,10 +120,6 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                         let y = _mm256_load_si256(right_ptr);
                         dbg!(x, y, w, ratio, double_modulus, modulus, N);
 
-                        eprintln!("modifying x artificially");
-                        let x = _mm256_add_epi64(x, double_modulus);
-                        dbg!(x);
-
                         // This works because the upper 32 bits of each 64 bit are zero
                         let x = _mm256_min_epu32(x, _mm256_sub_epi32(x, double_modulus));
                         dbg!(x);
