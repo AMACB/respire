@@ -265,6 +265,40 @@ mod test {
         assert_eq!(expected, result_points.0);
     }
 
+    #[test]
+    fn test_ntt_forward_medium() {
+        const DD: usize = 8;
+        const WW: u64 = find_sqrt_primitive_root(DD, P);
+        let mut values: Aligned64<[IntMod<P>; DD]> = Aligned64([
+            1_u64.into(),
+            2_u64.into(),
+            3_u64.into(),
+            4_u64.into(),
+            5_u64.into(),
+            6_u64.into(),
+            7_u64.into(),
+            8_u64.into(),
+        ]);
+        let coeff_poly =
+            IntModPoly::<P>::from(vec![1_u64, 2_u64, 3_u64, 4_u64, 5_u64, 6_u64, 7_u64, 8_u64]);
+
+        let w = IntMod::from(WW);
+
+        ntt_neg_forward::<DD, P, WW>(&mut values);
+        let expected = [
+            coeff_poly.eval(w),
+            coeff_poly.eval(w.pow(9)),
+            coeff_poly.eval(w.pow(5)),
+            coeff_poly.eval(w.pow(13)),
+            coeff_poly.eval(w.pow(3)),
+            coeff_poly.eval(w.pow(11)),
+            coeff_poly.eval(w.pow(7)),
+            coeff_poly.eval(w.pow(15)),
+        ];
+
+        assert_eq!(values.0, expected);
+    }
+
     #[ignore]
     #[test]
     fn test_ntt_stress() {
