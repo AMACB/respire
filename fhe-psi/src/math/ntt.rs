@@ -1,6 +1,5 @@
 use crate::math::int_mod::IntMod;
 use crate::math::utils::{floor_log, get_ratio32, mod_inverse, reverse_bits};
-use std::num::Wrapping;
 
 /// Compile time lookup table for NTT-related operations
 struct NTTTable<const D: usize, const N: u64, const W: u64> {}
@@ -58,20 +57,45 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
     table
 }
 
-// #[cfg(not(target_feature = "avx2"))]
-// pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
-//     values: &mut Aligned64<[IntMod<N>; D]>,
-// ) {
-//     let _ = values;
-//     todo!();
-// }
+#[cfg(not(target_feature = "avx2"))]
+pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
+    values: &mut Aligned64<[IntMod<N>; D]>,
+) {
+    // Algorithm 2 of https://arxiv.org/pdf/2103.16400.pdf
+    for round in 0..NTTTable::<D, N, W>::LOG_D {
+        let block_count = 1_usize << round;
+        let block_half_stride = D >> (1_usize + round);
+        let block_stride = 2 * block_half_stride;
+        for block_idx in 0..block_count {
+            let block_left_half_range =
+                (block_idx * block_stride)..(block_idx * block_stride + block_half_stride);
 
-// #[cfg(target_feature = "avx2")]
+            let w: IntMod<N> = unsafe {
+                NTTTable::<D, N, W>::W_POWERS_BIT_REVERSED
+                    .get_unchecked(block_count + block_idx)
+                    .value
+            };
+            for left_idx in block_left_half_range {
+                let right_idx = left_idx + block_half_stride;
+                unsafe {
+                    // Butterfly
+                    let x = *values.0.get_unchecked(left_idx);
+                    let y = w * *values.0.get_unchecked(right_idx);
+                    *values.0.get_unchecked_mut(left_idx) = x + y;
+                    *values.0.get_unchecked_mut(right_idx) = x - y;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_feature = "avx2")]
 pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
 ) {
     use crate::math::simd_utils::*;
     use std::arch::x86_64::*;
+    use std::num::Wrapping;
 
     let values = values as *mut Aligned64<[IntMod<N>; D]>;
     let values = values as *mut Aligned64<[u64; D]>;
@@ -90,14 +114,16 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
             let block_left_half_range =
                 (block_idx * block_stride)..(block_idx * block_stride + block_half_stride);
 
-            let w_table = unsafe {
-                *NTTTable::<D, N, W>::W_POWERS_BIT_REVERSED.get_unchecked(block_count + block_idx)
-            };
+            unsafe {
+                let w_table = *NTTTable::<D, N, W>::W_POWERS_BIT_REVERSED
+                    .get_unchecked(block_count + block_idx);
 
-            if block_left_half_range.len() < 4 {
-                for left_idx in block_left_half_range {
-                    let right_idx = left_idx + block_half_stride;
-                    unsafe {
+                let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
+                let w_ratio32 = _mm256_set1_epi64x(w_table.ratio32 as i64);
+
+                if block_left_half_range.len() == 1 {
+                    for left_idx in block_left_half_range {
+                        let right_idx = left_idx + block_half_stride;
                         let x = *values.0.get_unchecked(left_idx);
                         let y = *values.0.get_unchecked(right_idx);
                         let w = w_table.value.into_u64_const();
@@ -115,12 +141,8 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                         *values.0.get_unchecked_mut(left_idx) = x_new;
                         *values.0.get_unchecked_mut(right_idx) = y_new;
                     }
-                }
-            } else {
-                unsafe {
-                    let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
-                    let w_ratio32 = _mm256_set1_epi64x(w_table.ratio32 as i64);
-
+                } else if block_left_half_range.len() == 2 {
+                } else {
                     for left_idx in block_left_half_range.step_by(4) {
                         let right_idx = left_idx + block_half_stride;
                         let left_ptr =
@@ -157,20 +179,51 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     }
 }
 
-// #[cfg(not(target_feature = "avx2"))]
-// pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
-//     values: &mut Aligned64<[IntMod<N>; D]>,
-// ) {
-//     let _ = values;
-//     todo!();
-// }
+#[cfg(not(target_feature = "avx2"))]
+pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
+    values: &mut Aligned64<[IntMod<N>; D]>,
+) {
+    // Algorithm 3 of https://arxiv.org/pdf/2103.16400.pdf
+    for round in 0..NTTTable::<D, N, W>::LOG_D {
+        let block_count = D >> (1_usize + round);
+        let block_half_stride = 1 << round;
+        let block_stride = 2 * block_half_stride;
 
-// #[cfg(target_feature = "avx2")]
+        for block_idx in 0..block_count {
+            let block_left_half_range =
+                (block_idx * block_stride)..(block_idx * block_stride + block_half_stride);
+
+            let w: IntMod<N> = unsafe {
+                NTTTable::<D, N, W>::W_INV_POWERS_BIT_REVERSED
+                    .get_unchecked(block_count + block_idx)
+                    .value
+            };
+
+            for left_idx in block_left_half_range {
+                let right_idx = left_idx + block_half_stride;
+                unsafe {
+                    // Butterfly
+                    let x = *values.0.get_unchecked(left_idx);
+                    let y = *values.0.get_unchecked(right_idx);
+                    *values.0.get_unchecked_mut(left_idx) = x + y;
+                    *values.0.get_unchecked_mut(right_idx) = (x - y) * w;
+                }
+            }
+        }
+    }
+
+    for value in values.0.iter_mut() {
+        *value *= NTTTable::<D, N, W>::INV_D;
+    }
+}
+
+#[cfg(target_feature = "avx2")]
 pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
 ) {
     use crate::math::simd_utils::*;
     use std::arch::x86_64::*;
+    use std::num::Wrapping;
 
     let values = values as *mut Aligned64<[IntMod<N>; D]>;
     let values = values as *mut Aligned64<[u64; D]>;

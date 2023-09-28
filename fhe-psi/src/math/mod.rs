@@ -13,5 +13,7 @@ pub mod ntt;
 pub mod number_theory;
 pub mod rand_sampled;
 pub mod ring_elem;
-pub mod simd_utils;
 pub mod utils;
+
+#[cfg(target_feature = "avx2")]
+pub mod simd_utils;

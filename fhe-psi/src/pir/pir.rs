@@ -1060,6 +1060,16 @@ mod test {
     //     extract_time: Duration,
     // }
 
+    #[cfg(not(target_feature = "avx2"))]
+    fn has_avx2() -> bool {
+        false
+    }
+
+    #[cfg(target_feature = "avx2")]
+    fn has_avx2() -> bool {
+        true
+    }
+
     fn run_spiral<
         TheSPIRAL: SPIRAL<Record = Matrix<2, 2, IntModCyclo<2048, 256>>>,
         I: Iterator<Item = usize>,
@@ -1069,6 +1079,14 @@ mod test {
         eprintln!(
             "Running SPIRAL test with database size {}",
             SPIRALTest::DB_SIZE
+        );
+        eprintln!(
+            "AVX2 is {}",
+            if has_avx2() {
+                "enabled"
+            } else {
+                "not enabled "
+            }
         );
         eprintln!("Parameters: {:#?}", SPIRAL_TEST_PARAMS);
         let mut db: Vec<<TheSPIRAL as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);

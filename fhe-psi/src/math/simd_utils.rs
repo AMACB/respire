@@ -1,3 +1,4 @@
+#![allow(clippy::missing_safety_doc)]
 use std::arch::x86_64::*;
 
 ///
