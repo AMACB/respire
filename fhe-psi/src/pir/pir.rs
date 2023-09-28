@@ -628,17 +628,17 @@ impl<
         Z_FOLD,
     >
 {
-    fn scalar_regev_setup() -> <Self as SPIRAL>::RingQFast {
+    pub fn scalar_regev_setup() -> <Self as SPIRAL>::RingQFast {
         let mut rng = ChaCha20Rng::from_entropy();
         <Self as SPIRAL>::RingQFast::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng)
     }
 
-    fn matrix_regev_setup() -> Matrix<N, 1, <Self as SPIRAL>::RingQFast> {
+    pub fn matrix_regev_setup() -> Matrix<N, 1, <Self as SPIRAL>::RingQFast> {
         let mut rng = ChaCha20Rng::from_entropy();
         Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng)
     }
 
-    fn encode_scalar_regev(
+    pub fn encode_scalar_regev(
         s_scalar: &<Self as SPIRAL>::ScalarKey,
         mu: &<Self as SPIRAL>::RingQ,
     ) -> <Self as SPIRAL>::ScalarRegevCiphertext {
@@ -655,15 +655,14 @@ impl<
         c
     }
 
-    #[allow(unused)]
-    fn decode_scalar_regev(
+    pub fn decode_scalar_regev(
         s_scalar: &<Self as SPIRAL>::ScalarKey,
         c: &<Self as SPIRAL>::ScalarRegevCiphertext,
     ) -> <Self as SPIRAL>::RingQ {
         <Self as SPIRAL>::RingQ::from(&(&c[(1, 0)] - &(&c[(0, 0)] * s_scalar)))
     }
 
-    fn scalar_regev_mul_x_pow(
+    pub fn scalar_regev_mul_x_pow(
         c: &<Self as SPIRAL>::ScalarRegevCiphertext,
         k: usize,
     ) -> <Self as SPIRAL>::ScalarRegevCiphertext {
@@ -673,8 +672,7 @@ impl<
         result
     }
 
-    #[allow(unused)]
-    fn encode_gsw(
+    pub fn encode_gsw(
         s_mat: &<Self as SPIRAL>::MatrixKey,
         mu: &<Self as SPIRAL>::RingQ,
     ) -> <Self as SPIRAL>::GSWCiphertext {
@@ -689,8 +687,7 @@ impl<
         c_mat
     }
 
-    #[allow(unused)]
-    fn decode_gsw_scaled(
+    pub fn decode_gsw_scaled(
         s_mat: &<Self as SPIRAL>::MatrixKey,
         c: &<Self as SPIRAL>::GSWCiphertext,
         scale: &<Self as SPIRAL>::RingQFast,
@@ -707,14 +704,14 @@ impl<
         <Self as SPIRAL>::RingQ::from(result_q)
     }
 
-    fn regev_sub_hom(
+    pub fn regev_sub_hom(
         lhs: &<Self as SPIRAL>::MatrixRegevCiphertext,
         rhs: &<Self as SPIRAL>::MatrixRegevCiphertext,
     ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
         lhs - rhs
     }
 
-    fn regev_mul_scalar_no_reduce(
+    pub fn regev_mul_scalar_no_reduce(
         lhs: &<Self as SPIRAL>::MatrixRegevCiphertext,
         rhs: &<Self as SPIRAL>::MatrixQFast,
     ) -> <Self as SPIRAL>::MatrixRegevCiphertext0 {
@@ -725,7 +722,7 @@ impl<
         result
     }
 
-    fn regev_add_eq_mul_scalar_no_reduce(
+    pub fn regev_add_eq_mul_scalar_no_reduce(
         lhs: &mut <Self as SPIRAL>::MatrixRegevCiphertext0,
         rhs_a: &<Self as SPIRAL>::MatrixRegevCiphertext,
         rhs_b: &<Self as SPIRAL>::MatrixQFast,
@@ -735,14 +732,14 @@ impl<
         });
     }
 
-    fn hybrid_mul_hom(
+    pub fn hybrid_mul_hom(
         regev: &<Self as SPIRAL>::MatrixRegevCiphertext,
         gsw: &<Self as SPIRAL>::GSWCiphertext,
     ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
         gsw * &gadget_inverse::<<Self as SPIRAL>::RingQFast, N_PLUS_ONE, M, N, Z_GSW, T_GSW>(regev)
     }
 
-    fn decode_matrix_regev(
+    pub fn decode_matrix_regev(
         s_mat: &<Self as SPIRAL>::MatrixKey,
         c: &<Self as SPIRAL>::MatrixRegevCiphertext,
     ) -> <Self as SPIRAL>::MatrixQ {
@@ -750,7 +747,7 @@ impl<
             .into_ring(|x| <Self as SPIRAL>::RingQ::from(x))
     }
 
-    fn auto_setup<const LEN: usize, const BASE: u64>(
+    pub fn auto_setup<const LEN: usize, const BASE: u64>(
         tau_power: usize,
         s_scalar: &<Self as SPIRAL>::RingQFast,
     ) -> <Self as SPIRAL>::AutoKey<LEN> {
@@ -765,7 +762,7 @@ impl<
         (Matrix::stack(&a_t, &bottom), tau_power)
     }
 
-    fn auto_hom<const LEN: usize, const BASE: u64>(
+    pub fn auto_hom<const LEN: usize, const BASE: u64>(
         (w_mat, tau_power): &<Self as SPIRAL>::AutoKey<LEN>,
         c: &<Self as SPIRAL>::ScalarRegevCiphertext,
     ) -> <Self as SPIRAL>::ScalarRegevCiphertext {
@@ -789,7 +786,7 @@ impl<
     /// * `cts`: the input ciphertexts
     /// * `auto_key`: the automorphism key, which should have power equal to `D / 2^which_iter + 1`
     ///
-    fn do_coeff_expand_iter<const LEN: usize, const BASE: u64>(
+    pub fn do_coeff_expand_iter<const LEN: usize, const BASE: u64>(
         which_iter: usize,
         cts: &[<Self as SPIRAL>::ScalarRegevCiphertext],
         auto_key: &<Self as SPIRAL>::AutoKey<LEN>,
@@ -806,7 +803,7 @@ impl<
         cts_new
     }
 
-    fn scal_to_mat_setup(
+    pub fn scal_to_mat_setup(
         s_scalar: &<Self as SPIRAL>::ScalarKey,
         s_matrix: &<Self as SPIRAL>::MatrixKey,
     ) -> <Self as SPIRAL>::ScalToMatKey {
@@ -824,7 +821,7 @@ impl<
         result
     }
 
-    fn scal_to_mat(
+    pub fn scal_to_mat(
         scal_to_mat_key: &<Self as SPIRAL>::ScalToMatKey,
         c: &<Self as SPIRAL>::ScalarRegevCiphertext,
     ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
@@ -853,7 +850,7 @@ impl<
         result
     }
 
-    fn regev_to_gsw_setup(
+    pub fn regev_to_gsw_setup(
         s_scalar: &<Self as SPIRAL>::ScalarKey,
         s_matrix: &<Self as SPIRAL>::MatrixKey,
     ) -> <Self as SPIRAL>::RegevToGSWKey {
@@ -879,7 +876,7 @@ impl<
         (result, scal_to_mat_key)
     }
 
-    fn regev_to_gsw(
+    pub fn regev_to_gsw(
         (v_mat, scal_to_mat_key): &<Self as SPIRAL>::RegevToGSWKey,
         cs: &[<Self as SPIRAL>::ScalarRegevCiphertext],
     ) -> <Self as SPIRAL>::GSWCiphertext {
@@ -942,7 +939,7 @@ mod test {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
-        T_GSW: 9,
+        T_GSW: 8,
         T_CONV: 4,
         T_COEFF_REGEV: 8,
         T_COEFF_GSW: 56,

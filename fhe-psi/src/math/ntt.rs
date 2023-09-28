@@ -166,8 +166,8 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                         let y = _mm256_load_si256(right_ptr);
                         let x = _mm256_reduce_half(x, double_modulus);
                         let product = _mm256_mod_mul32(y, w, w_ratio32, neg_modulus);
-                        let x_new = _mm256_add_epi64(x, product);
                         let y_new = _mm256_add_epi64(x, _mm256_sub_epi64(double_modulus, product));
+                        let x_new = _mm256_add_epi64(x, product);
 
                         _mm256_store_si256(left_ptr as *mut __m256i, x_new);
                         _mm256_store_si256(right_ptr as *mut __m256i, y_new);
