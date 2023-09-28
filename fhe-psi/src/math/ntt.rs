@@ -57,6 +57,15 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
     table
 }
 
+// #[cfg(not(target_feature = "avx2"))]
+// pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
+//     values: &mut Aligned64<[IntMod<N>; D]>,
+// ) {
+//     let _ = values;
+//     todo!();
+// }
+
+// #[cfg(target_feature = "avx2")]
 pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
 ) {
@@ -143,7 +152,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
 
     unsafe {
         for i in (0..D).step_by(4) {
-            let val = _mm256_load_si256(*values.0.get_unchecked(i) as *const u64 as *const __m256i);
+            let val = _mm256_load_si256(values.0.get_unchecked(i) as *const u64 as *const __m256i);
             let val = _mm256_min_epu32(val, _mm256_sub_epi32(val, double_modulus));
             let val = _mm256_min_epu32(val, _mm256_sub_epi32(val, modulus));
             _mm256_store_si256(

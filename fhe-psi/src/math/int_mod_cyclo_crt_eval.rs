@@ -334,15 +334,15 @@ impl<
         }
     }
 
-    // #[cfg(not(target_feature = "avx2"))]
-    // fn add_eq_mul(&mut self, a: &Self, b: &Self) {
-    //     for i in 0..D {
-    //         self.p1.points[i] += a.p1.points[i] * b.p1.points[i];
-    //         self.p2.points[i] += a.p2.points[i] * b.p2.points[i];
-    //     }
-    // }
+    #[cfg(not(target_feature = "avx2"))]
+    fn add_eq_mul(&mut self, a: &Self, b: &Self) {
+        for i in 0..D {
+            self.p1.points[i] += a.p1.points[i] * b.p1.points[i];
+            self.p2.points[i] += a.p2.points[i] * b.p2.points[i];
+        }
+    }
 
-    // #[cfg(target_feature = "avx2")]
+    #[cfg(target_feature = "avx2")]
     fn add_eq_mul(&mut self, a: &Self, b: &Self) {
         if N1 == 0 && N2 == 0 && D % 4 == 0 {
             use std::arch::x86_64::*;
