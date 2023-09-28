@@ -115,7 +115,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     let double_modulus = unsafe { _mm256_set1_epi64x(2 * N as i64) };
     let neg_modulus = unsafe { _mm256_set1_epi64x(-(N as i64)) };
 
-    // Algorithm 2 of https://arxiv.org/pdf/2103.16400.pdf
+    // Algorithm 2/6 of https://arxiv.org/pdf/2103.16400.pdf
     for round in 0..NTTTable::<D, N, W>::LOG_D {
         let block_count = 1_usize << round;
         let block_half_stride = D >> (1_usize + round);
@@ -167,12 +167,11 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                         let y = _mm256_load_si256(right_ptr);
                         let x = _mm256_reduce_half(x, double_modulus);
                         let product = _mm256_mod_mul32(y, w, w_ratio32, neg_modulus);
-                        let x_new_vec = _mm256_add_epi64(x, product);
-                        let y_new_vec =
-                            _mm256_add_epi64(x, _mm256_sub_epi64(double_modulus, product));
+                        let x_new = _mm256_add_epi64(x, product);
+                        let y_new = _mm256_add_epi64(x, _mm256_sub_epi64(double_modulus, product));
 
-                        _mm256_store_si256(left_ptr as *mut __m256i, x_new_vec);
-                        _mm256_store_si256(right_ptr as *mut __m256i, y_new_vec);
+                        _mm256_store_si256(left_ptr as *mut __m256i, x_new);
+                        _mm256_store_si256(right_ptr as *mut __m256i, y_new);
                     }
                 }
             }
@@ -214,7 +213,7 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
     let double_modulus = unsafe { _mm256_set1_epi64x(2 * N as i64) };
     let neg_modulus = unsafe { _mm256_set1_epi64x(-(N as i64)) };
 
-    // Algorithm 3 of https://arxiv.org/pdf/2103.16400.pdf
+    // Algorithm 3/7 of https://arxiv.org/pdf/2103.16400.pdf
     for round in 0..NTTTable::<D, N, W>::LOG_D {
         let block_count = D >> (1_usize + round);
         let block_half_stride = 1 << round;
@@ -229,33 +228,52 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
                     .get_unchecked(block_count + block_idx)
             };
 
-            // if block_left_half_range.len() < 4 {
-            for left_idx in block_left_half_range {
-                let right_idx = left_idx + block_half_stride;
+            if block_left_half_range.len() < 4 {
+                for left_idx in block_left_half_range {
+                    let right_idx = left_idx + block_half_stride;
+                    unsafe {
+                        // Inverse Butterfly
+                        let x = *values.0.get_unchecked(left_idx);
+                        let y = *values.0.get_unchecked(right_idx);
+
+                        let x_new = x + y;
+                        let x_new = if x_new >= 2 * N { x_new - 2 * N } else { x_new };
+                        let sum = x - y + 2 * N;
+                        let quotient = (w_table.ratio32 * sum) >> 32;
+                        let y_new = (Wrapping(u64::from(w_table.value) as u32)
+                            * Wrapping(sum as u32)
+                            - Wrapping(N as u32) * Wrapping(quotient as u32))
+                        .0 as u64;
+
+                        *values.0.get_unchecked_mut(left_idx) = x_new;
+                        *values.0.get_unchecked_mut(right_idx) = y_new;
+                    }
+                }
+            } else {
                 unsafe {
-                    // Butterfly
-                    let x = *values.0.get_unchecked(left_idx);
-                    let y = *values.0.get_unchecked(right_idx);
+                    let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
+                    let w_ratio32 = _mm256_set1_epi64x(w_table.ratio32 as i64);
 
-                    let x_new = x + y;
-                    let x_new = if x_new >= 2 * N { x_new - 2 * N } else { x_new };
-                    let sum = x - y + 2 * N;
-                    let quotient = (w_table.ratio32 * sum) >> 32;
-                    let y_new = (Wrapping(u64::from(w_table.value) as u32) * Wrapping(sum as u32)
-                        - Wrapping(N as u32) * Wrapping(quotient as u32))
-                    .0 as u64;
+                    for left_idx in block_left_half_range.step_by(4) {
+                        let right_idx = left_idx + block_half_stride;
+                        let left_ptr =
+                            values.0.get_unchecked(left_idx) as *const u64 as *const __m256i;
+                        let right_ptr =
+                            values.0.get_unchecked(right_idx) as *const u64 as *const __m256i;
 
-                    *values.0.get_unchecked_mut(left_idx) = x_new;
-                    *values.0.get_unchecked_mut(right_idx) = y_new;
+                        // Inverse Butterfly
+                        let x = _mm256_load_si256(left_ptr);
+                        let y = _mm256_load_si256(right_ptr);
+                        let x_new = _mm256_add_epi64(x, y);
+                        let x_new = _mm256_reduce_half(x_new, double_modulus);
+                        let sum = _mm256_sub_epi64(_mm256_add_epi64(x, double_modulus), y);
+                        let y_new = _mm256_mod_mul32(sum, w, w_ratio32, neg_modulus);
+
+                        _mm256_store_si256(left_ptr as *mut __m256i, x_new);
+                        _mm256_store_si256(right_ptr as *mut __m256i, y_new);
+                    }
                 }
             }
-            // }
-            // else {
-            //     unsafe {
-            //         let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
-            //         let ratio = _mm256_set1_epi64x(w_table.ratio32 as i64);
-            //     }
-            // }
         }
     }
 
