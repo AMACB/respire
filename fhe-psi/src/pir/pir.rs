@@ -487,45 +487,9 @@ impl<
         db: &[<Self as SPIRAL>::RecordPreprocessed],
         (regevs, gsws): &<Self as SPIRAL>::QueryExpanded,
     ) -> <Self as SPIRAL>::Response {
-        let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
-        assert_eq!(regevs.len(), 1 << ETA1);
-        assert_eq!(gsws.len(), Self::ETA2 * (Z_FOLD - 1));
-
-        // First dimension processing
-        let db_at = |i: usize, j: usize| &db[i * fold_size + j];
-        let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(fold_size);
-        for j in 0..fold_size {
-            // Norm is at most N * max(Q_A, Q_B)^2 for each term
-            // Add one for margin
-            let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - N - 1);
-            let mut sum = Self::regev_mul_scalar_no_reduce(&regevs[0], db_at(0, j));
-            for i in 1..(1 << ETA1) {
-                Self::regev_add_eq_mul_scalar_no_reduce(&mut sum, &regevs[i], db_at(i, j));
-                if i % reduce_every == 0 {
-                    sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
-                }
-            }
-            sum.iter_do(|r| Self::RingQFast::reduce_mod(r));
-            curr.push(sum.convert_ring());
-        }
-
-        // Folding
-        let mut curr_size = fold_size;
-        for gsw_idx in 0..ETA2 {
-            curr.truncate(curr_size);
-            for fold_idx in 0..curr_size / Z_FOLD {
-                let c0 = curr[fold_idx].clone();
-                for i in 1..Z_FOLD {
-                    let c_i = &curr[i * curr_size / Z_FOLD + fold_idx];
-                    let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
-                    let b = &gsws[gsw_idx * (Z_FOLD - 1) + i - 1];
-                    let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, b);
-                    curr[fold_idx] += &c_i_sub_c0_mul_b;
-                }
-            }
-            curr_size /= Z_FOLD;
-        }
-        curr.remove(0)
+        let first_dim_folded = Self::answer_first_dim(db, regevs);
+        let result = Self::answer_fold(first_dim_folded, gsws.as_slice());
+        result
     }
 
     fn extract(
@@ -628,6 +592,60 @@ impl<
         Z_FOLD,
     >
 {
+    pub fn answer_first_dim(
+        db: &[<Self as SPIRAL>::RecordPreprocessed],
+        regevs: &[<Self as SPIRAL>::MatrixRegevCiphertext],
+    ) -> Vec<<Self as SPIRAL>::MatrixRegevCiphertext> {
+        assert_eq!(regevs.len(), 1 << ETA1);
+        let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
+
+        // First dimension processing
+        let db_at = |i: usize, j: usize| &db[i * fold_size + j];
+        let mut curr: Vec<<Self as SPIRAL>::MatrixRegevCiphertext> = Vec::with_capacity(fold_size);
+        for j in 0..fold_size {
+            // Norm is at most N * max(Q_A, Q_B)^2 for each term
+            // Add one for margin
+            let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - N - 1);
+            let mut sum = Self::regev_mul_scalar_no_reduce(&regevs[0], db_at(0, j));
+            for i in 1..(1 << ETA1) {
+                Self::regev_add_eq_mul_scalar_no_reduce(&mut sum, &regevs[i], db_at(i, j));
+                if i % reduce_every == 0 {
+                    sum.iter_do(|r| <Self as SPIRAL>::RingQFast::reduce_mod(r));
+                }
+            }
+            sum.iter_do(|r| <Self as SPIRAL>::RingQFast::reduce_mod(r));
+            curr.push(sum.convert_ring());
+        }
+
+        curr
+    }
+
+    pub fn answer_fold(
+        first_dim_folded: Vec<<Self as SPIRAL>::MatrixRegevCiphertext>,
+        gsws: &[<Self as SPIRAL>::GSWCiphertext],
+    ) -> <Self as SPIRAL>::MatrixRegevCiphertext {
+        assert_eq!(gsws.len(), Self::ETA2 * (Z_FOLD - 1));
+        let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
+
+        let mut curr = first_dim_folded;
+        let mut curr_size = fold_size;
+        for gsw_idx in 0..ETA2 {
+            curr.truncate(curr_size);
+            for fold_idx in 0..curr_size / Z_FOLD {
+                let c0 = curr[fold_idx].clone();
+                for i in 1..Z_FOLD {
+                    let c_i = &curr[i * curr_size / Z_FOLD + fold_idx];
+                    let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
+                    let b = &gsws[gsw_idx * (Z_FOLD - 1) + i - 1];
+                    let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, b);
+                    curr[fold_idx] += &c_i_sub_c0_mul_b;
+                }
+            }
+            curr_size /= Z_FOLD;
+        }
+        curr.remove(0)
+    }
+
     pub fn scalar_regev_setup() -> <Self as SPIRAL>::RingQFast {
         let mut rng = ChaCha20Rng::from_entropy();
         <Self as SPIRAL>::RingQFast::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng)
