@@ -162,9 +162,28 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     }
 }
 
+// #[cfg(not(target_feature = "avx2"))]
+// pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
+//     values: &mut Aligned64<[IntMod<N>; D]>,
+// ) {
+//     let _ = values;
+//     todo!();
+// }
+
+// #[cfg(target_feature = "avx2")]
 pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
 ) {
+    use std::arch::x86_64::*;
+
+    let values = values as *mut Aligned64<[IntMod<N>; D]>;
+    let values = values as *mut Aligned64<[u64; D]>;
+    let values = unsafe { &mut *values };
+
+    let modulus = unsafe { _mm256_set1_epi64x(N as i64) };
+    let double_modulus = unsafe { _mm256_set1_epi64x(2 * N as i64) };
+    let neg_modulus = unsafe { _mm256_set1_epi64x(-(N as i64)) };
+
     // Algorithm 3 of https://arxiv.org/pdf/2103.16400.pdf
     for round in 0..NTTTable::<D, N, W>::LOG_D {
         let block_count = D >> (1_usize + round);
@@ -175,22 +194,38 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
             let block_left_half_range =
                 (block_idx * block_stride)..(block_idx * block_stride + block_half_stride);
 
-            let w: IntMod<N> = unsafe {
+            let w_table = unsafe {
                 NTTTable::<D, N, W>::W_INV_POWERS_BIT_REVERSED
                     .get_unchecked(block_count + block_idx)
-                    .value
             };
 
+            // if block_left_half_range.len() < 4 {
             for left_idx in block_left_half_range {
                 let right_idx = left_idx + block_half_stride;
                 unsafe {
                     // Butterfly
                     let x = *values.0.get_unchecked(left_idx);
                     let y = *values.0.get_unchecked(right_idx);
-                    *values.0.get_unchecked_mut(left_idx) = x + y;
-                    *values.0.get_unchecked_mut(right_idx) = (x - y) * w;
+
+                    let x_new = x + y;
+                    let x_new = if x_new >= 2 * N { x_new - 2 * N } else { x_new };
+                    let sum = x - y + 2 * N;
+                    let quotient = (w_table.ratio32 * sum) >> 32;
+                    let y_new = (Wrapping(u64::from(w_table.value) as u32) * Wrapping(sum as u32)
+                        - Wrapping(N as u32) * Wrapping(quotient as u32))
+                    .0 as u64;
+
+                    *values.0.get_unchecked_mut(left_idx) = x_new;
+                    *values.0.get_unchecked_mut(right_idx) = y_new;
                 }
             }
+            // }
+            // else {
+            //     unsafe {
+            //         let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
+            //         let ratio = _mm256_set1_epi64x(w_table.ratio32 as i64);
+            //     }
+            // }
         }
     }
 
