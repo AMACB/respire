@@ -1,5 +1,6 @@
 use crate::math::int_mod::IntMod;
 use crate::math::utils::{floor_log, mod_inverse, reverse_bits};
+use std::arch::x86_64::{__m256, __m256i};
 use std::num::Wrapping;
 
 /// Compile time lookup table for NTT-related operations
@@ -29,6 +30,11 @@ impl<const D: usize, const N: u64, const W: u64> NTTTable<D, N, W> {
     const W_INV_POWERS_BIT_REVERSED: [MulTable<N>; D] = get_powers_bit_reversed::<D, N, W>(true);
     const LOG_D: usize = floor_log(2, D as u64);
     const INV_D: IntMod<N> = IntMod::from_u64_const(mod_inverse(D as u64, N));
+    const INV_D_RATIO32: u64 = get_ratio32::<N>(mod_inverse(D as u64, N) % N);
+}
+
+const fn get_ratio32<const N: u64>(a: u64) -> u64 {
+    (a << 32) / N
 }
 
 const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
@@ -45,7 +51,7 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
     let mut idx = 0;
 
     while idx < D {
-        let ratio32 = (cur.into_u64_const() << 32) / N;
+        let ratio32 = get_ratio32::<N>(cur.into_u64_const());
         table[reverse_bits::<D>(idx)] = MulTable {
             value: cur,
             ratio32,
@@ -55,6 +61,36 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
         idx += 1
     }
     table
+}
+
+///
+/// Compute a representative of `lhs * rhs mod N` in the range `[0, 2N)` on all four lanes.
+/// - The input `lhs` must be in the range `[0, 4N)`.
+/// - The modulus `N` must satisfy `N < 2^30`.
+/// - `rhs` resp. `rhs_ratio32` must be in the range `[0, N)`. The latter value is to be computed via
+/// `get_ratio32::<N>` of the former value.
+/// - `neg_modulus` must have `-N` in all lanes, e.g. via `_mm256_set1_epi64x(-(N as i64))`
+///
+unsafe fn _mm256_mod_mul32(
+    lhs: __m256i,
+    rhs: __m256i,
+    rhs_ratio32: __m256i,
+    neg_modulus: __m256i,
+) -> __m256i {
+    use std::arch::x86_64::*;
+    let quotient = _mm256_srli_epi64::<32>(_mm256_mul_epu32(rhs_ratio32, lhs));
+    let lhs_times_rhs = _mm256_mullo_epi32(lhs, rhs);
+    let neg_modulus_times_quotient = _mm256_mullo_epi32(neg_modulus, quotient);
+    _mm256_add_epi32(lhs_times_rhs, neg_modulus_times_quotient)
+}
+
+///
+/// Reduce the input from the range `[0, 2*modulus)` to `[0, modulus)` on all four lanes.
+/// - The modulus must be `< 2^31`.
+///
+unsafe fn _mm256_reduce_half(value: __m256i, modulus: __m256i) -> __m256i {
+    use std::arch::x86_64::*;
+    _mm256_min_epu32(value, _mm256_sub_epi32(value, modulus))
 }
 
 // #[cfg(not(target_feature = "avx2"))]
@@ -117,7 +153,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
             } else {
                 unsafe {
                     let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
-                    let ratio = _mm256_set1_epi64x(w_table.ratio32 as i64);
+                    let w_ratio32 = _mm256_set1_epi64x(w_table.ratio32 as i64);
 
                     for left_idx in block_left_half_range.step_by(4) {
                         let right_idx = left_idx + block_half_stride;
@@ -129,14 +165,8 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                         // Butterfly
                         let x = _mm256_load_si256(left_ptr);
                         let y = _mm256_load_si256(right_ptr);
-
-                        // This works because the upper 32 bits of each 64 bit are zero
-                        let x = _mm256_min_epu32(x, _mm256_sub_epi32(x, double_modulus));
-                        let quotient = _mm256_srli_epi64::<32>(_mm256_mul_epu32(ratio, y));
-                        let w_times_y = _mm256_mullo_epi32(w, y);
-                        let neg_modulus_times_quotient = _mm256_mullo_epi32(neg_modulus, quotient);
-                        let product = _mm256_add_epi32(w_times_y, neg_modulus_times_quotient);
-
+                        let x = _mm256_reduce_half(x, double_modulus);
+                        let product = _mm256_mod_mul32(y, w, w_ratio32, neg_modulus);
                         let x_new_vec = _mm256_add_epi64(x, product);
                         let y_new_vec =
                             _mm256_add_epi64(x, _mm256_sub_epi64(double_modulus, product));
@@ -152,8 +182,8 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     unsafe {
         for i in (0..D).step_by(4) {
             let val = _mm256_load_si256(values.0.get_unchecked(i) as *const u64 as *const __m256i);
-            let val = _mm256_min_epu32(val, _mm256_sub_epi32(val, double_modulus));
-            let val = _mm256_min_epu32(val, _mm256_sub_epi32(val, modulus));
+            let val = _mm256_reduce_half(val, double_modulus);
+            let val = _mm256_reduce_half(val, modulus);
             _mm256_store_si256(
                 values.0.get_unchecked_mut(i) as *mut u64 as *mut __m256i,
                 val,
@@ -229,8 +259,19 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
         }
     }
 
-    for value in values.0.iter_mut() {
-        *value *= NTTTable::<D, N, W>::INV_D;
+    unsafe {
+        let inv_d = _mm256_set1_epi64x(u64::from(NTTTable::<D, N, W>::INV_D) as i64);
+        let inv_d_ratio32 = _mm256_set1_epi64x(NTTTable::<D, N, W>::INV_D_RATIO32 as i64);
+
+        for i in (0..D).step_by(4) {
+            let val = _mm256_load_si256(values.0.get_unchecked(i) as *const u64 as *const __m256i);
+            let val = _mm256_mod_mul32(val, inv_d, inv_d_ratio32, neg_modulus);
+            let val = _mm256_reduce_half(val, modulus);
+            _mm256_store_si256(
+                values.0.get_unchecked_mut(i) as *mut u64 as *mut __m256i,
+                val,
+            );
+        }
     }
 }
 
