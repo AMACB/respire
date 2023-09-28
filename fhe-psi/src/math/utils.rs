@@ -54,6 +54,13 @@ pub const fn mod_inverse(x: u64, modulus: u64) -> u64 {
     (x + (x < (0_i64)) as i64 * modulus) as u64
 }
 
+///
+/// Compute the 32-bit barrett reduction ratio.
+///
+pub const fn get_ratio32<const N: u64>(a: u64) -> u64 {
+    (a << 32) / N
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

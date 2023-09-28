@@ -1,6 +1,5 @@
 use crate::math::int_mod::IntMod;
-use crate::math::utils::{floor_log, mod_inverse, reverse_bits};
-use std::arch::x86_64::{__m256, __m256i};
+use crate::math::utils::{floor_log, get_ratio32, mod_inverse, reverse_bits};
 use std::num::Wrapping;
 
 /// Compile time lookup table for NTT-related operations
@@ -33,10 +32,6 @@ impl<const D: usize, const N: u64, const W: u64> NTTTable<D, N, W> {
     const INV_D_RATIO32: u64 = get_ratio32::<N>(mod_inverse(D as u64, N) % N);
 }
 
-const fn get_ratio32<const N: u64>(a: u64) -> u64 {
-    (a << 32) / N
-}
-
 const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
     invert: bool,
 ) -> [MulTable<N>; D] {
@@ -63,36 +58,6 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
     table
 }
 
-///
-/// Compute a representative of `lhs * rhs mod N` in the range `[0, 2N)` on all four lanes.
-/// - The input `lhs` must be in the range `[0, 4N)`.
-/// - The modulus `N` must satisfy `N < 2^30`.
-/// - `rhs` resp. `rhs_ratio32` must be in the range `[0, N)`. The latter value is to be computed via
-/// `get_ratio32::<N>` of the former value.
-/// - `neg_modulus` must have `-N` in all lanes, e.g. via `_mm256_set1_epi64x(-(N as i64))`
-///
-unsafe fn _mm256_mod_mul32(
-    lhs: __m256i,
-    rhs: __m256i,
-    rhs_ratio32: __m256i,
-    neg_modulus: __m256i,
-) -> __m256i {
-    use std::arch::x86_64::*;
-    let quotient = _mm256_srli_epi64::<32>(_mm256_mul_epu32(rhs_ratio32, lhs));
-    let lhs_times_rhs = _mm256_mullo_epi32(lhs, rhs);
-    let neg_modulus_times_quotient = _mm256_mullo_epi32(neg_modulus, quotient);
-    _mm256_add_epi32(lhs_times_rhs, neg_modulus_times_quotient)
-}
-
-///
-/// Reduce the input from the range `[0, 2*modulus)` to `[0, modulus)` on all four lanes.
-/// - The modulus must be `< 2^31`.
-///
-unsafe fn _mm256_reduce_half(value: __m256i, modulus: __m256i) -> __m256i {
-    use std::arch::x86_64::*;
-    _mm256_min_epu32(value, _mm256_sub_epi32(value, modulus))
-}
-
 // #[cfg(not(target_feature = "avx2"))]
 // pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
 //     values: &mut Aligned64<[IntMod<N>; D]>,
@@ -105,6 +70,7 @@ unsafe fn _mm256_reduce_half(value: __m256i, modulus: __m256i) -> __m256i {
 pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
 ) {
+    use crate::math::simd_utils::*;
     use std::arch::x86_64::*;
 
     let values = values as *mut Aligned64<[IntMod<N>; D]>;
@@ -203,6 +169,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
 pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
 ) {
+    use crate::math::simd_utils::*;
     use std::arch::x86_64::*;
 
     let values = values as *mut Aligned64<[IntMod<N>; D]>;
