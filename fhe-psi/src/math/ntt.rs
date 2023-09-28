@@ -121,7 +121,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                 let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
                 let w_ratio32 = _mm256_set1_epi64x(w_table.ratio32 as i64);
 
-                if block_left_half_range.len() == 1 {
+                if block_left_half_range.len() < 4 {
                     for left_idx in block_left_half_range {
                         let right_idx = left_idx + block_half_stride;
                         let x = *values.0.get_unchecked(left_idx);
@@ -141,7 +141,6 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                         *values.0.get_unchecked_mut(left_idx) = x_new;
                         *values.0.get_unchecked_mut(right_idx) = y_new;
                     }
-                } else if block_left_half_range.len() == 2 {
                 } else {
                     for left_idx in block_left_half_range.step_by(4) {
                         let right_idx = left_idx + block_half_stride;
