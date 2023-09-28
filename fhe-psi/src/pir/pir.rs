@@ -5,7 +5,7 @@ use std::slice;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
-use crate::math::gadget::{build_gadget, gadget_inverse, RingElementDecomposable};
+use crate::math::gadget::{base_from_len, build_gadget, gadget_inverse, RingElementDecomposable};
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
@@ -62,24 +62,12 @@ pub struct SPIRALParamsRaw {
 }
 
 impl SPIRALParamsRaw {
-    const fn z_from_t(t: usize, q: u64) -> u64 {
-        // z = floor(q^(1/t)) + 1
-        let mut z: u128 = 2;
-        while z <= (1 << 20) {
-            if (z - 1).pow(t as u32) <= (q as u128) && (q as u128) < z.pow(t as u32) {
-                return z as u64;
-            }
-            z += 1;
-        }
-        panic!("z could not be computed from t (is it bigger than 2^20?)");
-    }
-
     pub const fn expand(&self) -> SPIRALParams {
         let q = self.Q_A * self.Q_B;
-        let z_gsw = Self::z_from_t(self.T_GSW, q);
-        let z_coeff_regev = Self::z_from_t(self.T_COEFF_REGEV, q);
-        let z_coeff_gsw = Self::z_from_t(self.T_COEFF_GSW, q);
-        let z_conv = Self::z_from_t(self.T_CONV, q);
+        let z_gsw = base_from_len(self.T_GSW, q);
+        let z_coeff_regev = base_from_len(self.T_COEFF_REGEV, q);
+        let z_coeff_gsw = base_from_len(self.T_COEFF_GSW, q);
+        let z_conv = base_from_len(self.T_CONV, q);
         SPIRALParams {
             N: self.N,
             N_PLUS_ONE: self.N + 1,

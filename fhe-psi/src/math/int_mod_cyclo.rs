@@ -261,7 +261,7 @@ impl<const D: usize, const NN: u64, const BASE: u64, const LEN: usize>
             decomps.push(IntModDecomposition::<BASE, LEN>::new(
                 u64::from(self.coeff[coeff_idx]),
                 NN,
-            ))
+            ));
         }
         for k in 0..LEN {
             for coeff_idx in 0..D {

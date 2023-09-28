@@ -6,6 +6,18 @@ use crate::math::ring_elem::*;
 // TODO
 // Write tests for Z_N_Cyclo
 
+pub const fn base_from_len(t: usize, q: u64) -> u64 {
+    // z = floor(q^(1/t)) + 1
+    let mut z: u128 = 2;
+    while z <= (1 << 20) {
+        if (z - 1).pow(t as u32) <= (q as u128) && (q as u128) < z.pow(t as u32) {
+            return z as u64;
+        }
+        z += 1;
+    }
+    panic!("z could not be computed from t (is it bigger than 2^20?)");
+}
+
 pub fn build_gadget<
     R: RingElementDecomposable<G_BASE, G_LEN>,
     const N: usize,
