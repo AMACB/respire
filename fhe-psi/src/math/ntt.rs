@@ -105,7 +105,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     use std::arch::x86_64::*;
     use std::num::Wrapping;
 
-    if N >= (1 >> 30) {
+    if N >= (1 << 30) {
         return ntt_neg_forward_fallback::<D, N, W>(values);
     }
 
@@ -242,7 +242,7 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
     use std::arch::x86_64::*;
     use std::num::Wrapping;
 
-    if N >= (1 >> 30) {
+    if N >= (1 << 30) {
         return ntt_neg_backward_fallback::<D, N, W>(values);
     }
 
