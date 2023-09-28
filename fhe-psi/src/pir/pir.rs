@@ -655,6 +655,7 @@ impl<
         c
     }
 
+    #[allow(unused)]
     fn decode_scalar_regev(
         s_scalar: &<Self as SPIRAL>::ScalarKey,
         c: &<Self as SPIRAL>::ScalarRegevCiphertext,
@@ -672,6 +673,7 @@ impl<
         result
     }
 
+    #[allow(unused)]
     fn encode_gsw(
         s_mat: &<Self as SPIRAL>::MatrixKey,
         mu: &<Self as SPIRAL>::RingQ,
@@ -687,6 +689,7 @@ impl<
         c_mat
     }
 
+    #[allow(unused)]
     fn decode_gsw_scaled(
         s_mat: &<Self as SPIRAL>::MatrixKey,
         c: &<Self as SPIRAL>::GSWCiphertext,

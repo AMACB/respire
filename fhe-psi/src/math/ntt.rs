@@ -11,6 +11,7 @@ pub struct Aligned64<T>(pub T);
 #[derive(Copy, Clone)]
 struct MulTable<const N: u64> {
     value: IntMod<N>,
+    #[allow(unused)]
     ratio32: u64,
 }
 
@@ -28,6 +29,7 @@ impl<const D: usize, const N: u64, const W: u64> NTTTable<D, N, W> {
     const W_INV_POWERS_BIT_REVERSED: [MulTable<N>; D] = get_powers_bit_reversed::<D, N, W>(true);
     const LOG_D: usize = floor_log(2, D as u64);
     const INV_D: IntMod<N> = IntMod::from_u64_const(mod_inverse(D as u64, N));
+    #[allow(unused)]
     const INV_D_RATIO32: u64 = get_ratio32::<N>(mod_inverse(D as u64, N) % N);
 }
 
@@ -57,8 +59,7 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
     table
 }
 
-#[cfg(not(target_feature = "avx2"))]
-pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
+fn ntt_neg_forward_fallback<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
 ) {
     // Algorithm 2 of https://arxiv.org/pdf/2103.16400.pdf
@@ -89,6 +90,13 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     }
 }
 
+#[cfg(not(target_feature = "avx2"))]
+pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
+    values: &mut Aligned64<[IntMod<N>; D]>,
+) {
+    ntt_neg_forward_fallback::<D, N, W>(values)
+}
+
 #[cfg(target_feature = "avx2")]
 pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
@@ -96,6 +104,10 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     use crate::math::simd_utils::*;
     use std::arch::x86_64::*;
     use std::num::Wrapping;
+
+    if N >= (1 >> 30) {
+        return ntt_neg_forward_fallback::<D, N, W>(values);
+    }
 
     let values = values as *mut Aligned64<[IntMod<N>; D]>;
     let values = values as *mut Aligned64<[u64; D]>;
@@ -178,8 +190,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     }
 }
 
-#[cfg(not(target_feature = "avx2"))]
-pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
+fn ntt_neg_backward_fallback<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
 ) {
     // Algorithm 3 of https://arxiv.org/pdf/2103.16400.pdf
@@ -216,6 +227,13 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
     }
 }
 
+#[cfg(not(target_feature = "avx2"))]
+pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
+    values: &mut Aligned64<[IntMod<N>; D]>,
+) {
+    ntt_neg_backward_fallback::<D, N, W>(values)
+}
+
 #[cfg(target_feature = "avx2")]
 pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
@@ -223,6 +241,10 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
     use crate::math::simd_utils::*;
     use std::arch::x86_64::*;
     use std::num::Wrapping;
+
+    if N >= (1 >> 30) {
+        return ntt_neg_backward_fallback::<D, N, W>(values);
+    }
 
     let values = values as *mut Aligned64<[IntMod<N>; D]>;
     let values = values as *mut Aligned64<[u64; D]>;
