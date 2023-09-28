@@ -320,7 +320,11 @@ impl<const N: u64> MulAssign<&IntMod<N>> for IntMod<N> {
 
 impl<const N: u64> RandUniformSampled for IntMod<N> {
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
-        rng.gen_range(0..N).into()
+        if N == 0 {
+            rng.gen::<u64>().into()
+        } else {
+            rng.gen_range(0..N).into()
+        }
     }
 }
 

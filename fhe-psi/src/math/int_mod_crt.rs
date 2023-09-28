@@ -284,8 +284,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RandUni
 {
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
         IntModCRT {
-            a1: rng.gen_range(0..N1).into(),
-            a2: rng.gen_range(0..N2).into(),
+            a1: IntMod::rand_uniform(rng),
+            a2: IntMod::rand_uniform(rng),
         }
     }
 }
