@@ -1,4 +1,4 @@
-use crate::math::int_mod::{IntMod, NoReduce};
+use crate::math::int_mod::IntMod;
 use crate::math::utils::{floor_log, mod_inverse, reverse_bits};
 use std::num::Wrapping;
 
@@ -69,7 +69,6 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
 pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     values: &mut Aligned64<[IntMod<N>; D]>,
 ) {
-    // TODO: require feature avx
     use std::arch::x86_64::*;
 
     let values = values as *mut Aligned64<[IntMod<N>; D]>;
@@ -156,7 +155,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
             let val = _mm256_min_epu32(val, _mm256_sub_epi32(val, double_modulus));
             let val = _mm256_min_epu32(val, _mm256_sub_epi32(val, modulus));
             _mm256_store_si256(
-                *values.0.get_unchecked_mut(i) as *mut u64 as *mut __m256i,
+                values.0.get_unchecked_mut(i) as *mut u64 as *mut __m256i,
                 val,
             );
         }
