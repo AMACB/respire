@@ -473,10 +473,7 @@ impl<
                 self_coeff.p1.coeff[coeff_idx],
                 self_coeff.p2.coeff[coeff_idx],
             )));
-            decomps.push(IntModDecomposition::<BASE, LEN>::new(
-                u64::from(coeff),
-                N1 * N2,
-            ));
+            decomps.push(IntModDecomposition::<BASE, LEN>::new(coeff, N1 * N2));
         }
         for k in 0..LEN {
             let mut result_coeff = IntModCycloCRT::zero();

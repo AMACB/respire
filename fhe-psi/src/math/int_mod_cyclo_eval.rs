@@ -258,9 +258,9 @@ impl<const D: usize, const N: u64, const W: u64> IntModCycloEval<D, N, W> {
         let mut result = Self::zero();
         let k_half = (k - 1) / 2;
         for i in 0..D {
-            let to = i;
-            let from = (2 * k_half * i + k_half + i) % D;
-            result.points[reverse_bits::<D>(to)] = self.points[reverse_bits::<D>(from)];
+            let rev_i = reverse_bits::<D>(i);
+            let from = (2 * k_half * rev_i + k_half + rev_i) % D;
+            result.points[i] = self.points[reverse_bits::<D>(from)];
         }
         result
     }
@@ -306,8 +306,8 @@ mod test {
         let root: IntMod<P> = W.into();
         p = IntModCycloEval::<D, P, W>::from([
             root.pow(1u64),
-            root.pow(3u64),
             root.pow(5u64),
+            root.pow(3u64),
             root.pow(7u64),
         ]);
         q = IntModCycloEval::<D, P, W>::from(IntModCyclo::from(vec![0u64, 1u64]));
