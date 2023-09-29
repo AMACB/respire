@@ -7,18 +7,18 @@ use std::arch::x86_64::*;
 /// - The modulus `N` must satisfy `N < 2^30`.
 /// - `rhs` resp. `rhs_ratio32` must be in the range `[0, N)`. The latter value is to be computed via
 /// `get_ratio32::<N>` of the former value.
-/// - `modulus` must have `N` in all lanes, e.g. via `_mm256_set1_epi64x(N as i64)`
+/// - `neg_modulus` must have `-N` in all lanes, e.g. via `_mm256_set1_epi64x(-(N as i64))`
 ///
 pub unsafe fn _mm256_mod_mul32(
     lhs: __m256i,
     rhs: __m256i,
     rhs_ratio32: __m256i,
-    modulus: __m256i,
+    neg_modulus: __m256i,
 ) -> __m256i {
     let quotient = _mm256_srli_epi64::<32>(_mm256_mul_epu32(rhs_ratio32, lhs));
-    let lhs_times_rhs = _mm256_mul_epu32(lhs, rhs);
-    let modulus_times_quotient = _mm256_mul_epu32(modulus, quotient);
-    _mm256_add_epi64(lhs_times_rhs, modulus_times_quotient)
+    let lhs_times_rhs = _mm256_mullo_epi32(lhs, rhs);
+    let neg_modulus_times_quotient = _mm256_mullo_epi32(neg_modulus, quotient);
+    _mm256_add_epi32(lhs_times_rhs, neg_modulus_times_quotient)
 }
 
 ///
