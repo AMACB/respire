@@ -115,7 +115,6 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
 
     let modulus = unsafe { _mm256_set1_epi64x(N as i64) };
     let double_modulus = unsafe { _mm256_set1_epi64x(2 * N as i64) };
-    let neg_modulus = unsafe { _mm256_set1_epi64x(-(N as i64)) };
 
     // Algorithm 2/6 of https://arxiv.org/pdf/2103.16400.pdf
     for round in 0..NTTTable::<D, N, W>::LOG_D {
@@ -165,7 +164,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                         let x = _mm256_load_si256(left_ptr);
                         let y = _mm256_load_si256(right_ptr);
                         let x = _mm256_reduce_half(x, double_modulus);
-                        let product = _mm256_mod_mul32(y, w, w_ratio32, neg_modulus);
+                        let product = _mm256_mod_mul32(y, w, w_ratio32, modulus);
                         let y_new = _mm256_add_epi64(x, _mm256_sub_epi64(double_modulus, product));
                         let x_new = _mm256_add_epi64(x, product);
 
@@ -252,7 +251,6 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
 
     let modulus = unsafe { _mm256_set1_epi64x(N as i64) };
     let double_modulus = unsafe { _mm256_set1_epi64x(2 * N as i64) };
-    let neg_modulus = unsafe { _mm256_set1_epi64x(-(N as i64)) };
 
     // Algorithm 3/7 of https://arxiv.org/pdf/2103.16400.pdf
     for round in 0..NTTTable::<D, N, W>::LOG_D {
@@ -308,7 +306,7 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
                         let x_new = _mm256_add_epi64(x, y);
                         let x_new = _mm256_reduce_half(x_new, double_modulus);
                         let sum = _mm256_sub_epi64(_mm256_add_epi64(x, double_modulus), y);
-                        let y_new = _mm256_mod_mul32(sum, w, w_ratio32, neg_modulus);
+                        let y_new = _mm256_mod_mul32(sum, w, w_ratio32, modulus);
 
                         _mm256_store_si256(left_ptr as *mut __m256i, x_new);
                         _mm256_store_si256(right_ptr as *mut __m256i, y_new);
@@ -324,7 +322,7 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
 
         for i in (0..D).step_by(4) {
             let val = _mm256_load_si256(values.0.get_unchecked(i) as *const u64 as *const __m256i);
-            let val = _mm256_mod_mul32(val, inv_d, inv_d_ratio32, neg_modulus);
+            let val = _mm256_mod_mul32(val, inv_d, inv_d_ratio32, modulus);
             let val = _mm256_reduce_half(val, modulus);
             _mm256_store_si256(
                 values.0.get_unchecked_mut(i) as *mut u64 as *mut __m256i,
