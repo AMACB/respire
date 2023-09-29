@@ -148,7 +148,13 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    c.bench_function("pir::query expansion", |b| {
+    c.bench_function("pir::scalar_regev_mul_x_pow", |b| {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let ct = Matrix::rand_uniform(&mut rng);
+        b.iter(|| SPIRALTest::scalar_regev_mul_x_pow(black_box(&ct), black_box(101)))
+    });
+
+    c.bench_function("pir::query_expand", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
         let (qk, pp) = SPIRALTest::setup();
         let idx = rng.gen_range(0..<SPIRALTest as SPIRAL>::DB_SIZE);

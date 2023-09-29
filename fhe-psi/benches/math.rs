@@ -8,7 +8,7 @@ use fhe_psi::math::matrix::Matrix;
 use fhe_psi::math::ntt::{ntt_neg_backward, ntt_neg_forward};
 use fhe_psi::math::number_theory::find_sqrt_primitive_root;
 use fhe_psi::math::rand_sampled::RandUniformSampled;
-use fhe_psi::math::utils::{floor_log, mod_inverse};
+use fhe_psi::math::utils::mod_inverse;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
@@ -64,17 +64,29 @@ fn criterion_benchmark(c: &mut Criterion) {
         { find_sqrt_primitive_root(D, Q_B) },
     >;
 
-    c.bench_function("math::Matrix<IntModCycloCRT> zero", |b| {
+    c.bench_function("math::IntModCycloCRT automorph", |b| {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let elem = RingCRT::rand_uniform(&mut rng);
+        b.iter(|| elem.auto(101));
+    });
+
+    c.bench_function("math::IntModCycloCRTEval automorph", |b| {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let elem = RingCRTEval::rand_uniform(&mut rng);
+        b.iter(|| elem.auto(101));
+    });
+
+    c.bench_function("math::IntModCycloCRT Matrix zero", |b| {
         type M = Matrix<2, 2, RingCRT>;
         b.iter(|| M::zero());
     });
 
-    c.bench_function("math::Matrix<IntModCycloCRTEval> zero", |b| {
+    c.bench_function("math::IntModCycloCRTEval Matrix zero", |b| {
         type M = Matrix<2, 2, RingCRTEval>;
         b.iter(|| M::zero());
     });
 
-    c.bench_function("math::Matrix<IntModCycloCRT> 2x2 add", |b| {
+    c.bench_function("math::IntModCycloCRT Matrix 2x2 add", |b| {
         type M = Matrix<2, 2, RingCRT>;
         let mut rng = ChaCha20Rng::from_entropy();
         let m1 = M::rand_uniform(&mut rng);
@@ -83,7 +95,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| black_box(&m1) + black_box(&m2));
     });
 
-    c.bench_function("math::Matrix<IntModCycloCRTEval> 2x2 add", |b| {
+    c.bench_function("math::IntModCycloCRTEval Matrix 2x2 add", |b| {
         type M = Matrix<2, 2, RingCRTEval>;
         let mut rng = ChaCha20Rng::from_entropy();
         let m1 = M::rand_uniform(&mut rng);
@@ -92,11 +104,21 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| black_box(&m1) + black_box(&m2));
     });
 
-    c.bench_function("math::Matrix<IntModCycloCRTEval> 2x2 mul", |b| {
+    c.bench_function("math::IntModCycloCRTEval Matrix 2x2 x 2x2 mul", |b| {
         type M = Matrix<2, 2, RingCRTEval>;
         let mut rng = ChaCha20Rng::from_entropy();
         let m1 = M::rand_uniform(&mut rng);
         let m2 = M::rand_uniform(&mut rng);
+
+        b.iter(|| black_box(&m1) * black_box(&m2));
+    });
+
+    c.bench_function("math::IntModCycloCRTEval Matrix 2x8 x 8x2 mul", |b| {
+        type M1 = Matrix<2, 8, RingCRTEval>;
+        type M2 = Matrix<8, 2, RingCRTEval>;
+        let mut rng = ChaCha20Rng::from_entropy();
+        let m1 = M1::rand_uniform(&mut rng);
+        let m2 = M2::rand_uniform(&mut rng);
 
         b.iter(|| black_box(&m1) * black_box(&m2));
     });

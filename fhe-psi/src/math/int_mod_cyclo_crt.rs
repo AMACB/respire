@@ -373,6 +373,10 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
 impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
     IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
 {
+    pub fn auto(&self, k: usize) -> Self {
+        (self.p1.auto(k), self.p2.auto(k)).into()
+    }
+
     pub fn norm(&self) -> u64 {
         let mut worst: u64 = 0;
         for i in 0..D {
