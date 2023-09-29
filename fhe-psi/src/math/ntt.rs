@@ -113,6 +113,9 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     let values = values as *mut Aligned64<[u64; D]>;
     let values = unsafe { &mut *values };
 
+    let modulus = unsafe { _mm256_set1_epi64x(N as i64) };
+    let double_modulus = unsafe { _mm256_set1_epi64x(2 * N as i64) };
+
     // Algorithm 2/6 of https://arxiv.org/pdf/2103.16400.pdf
     for round in 0..NTTTable::<D, N, W>::LOG_D {
         let block_count = 1_usize << round;
@@ -125,6 +128,9 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
             unsafe {
                 let w_table = *NTTTable::<D, N, W>::W_POWERS_BIT_REVERSED
                     .get_unchecked(block_count + block_idx);
+
+                let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
+                let w_ratio32 = _mm256_set1_epi64x(w_table.ratio32 as i64);
 
                 if block_left_half_range.len() < 4 {
                     for left_idx in block_left_half_range {
@@ -154,11 +160,6 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                         let right_ptr =
                             values.0.get_unchecked(right_idx) as *const u64 as *const __m256i;
 
-                        let modulus = unsafe { _mm256_set1_epi64x(N as i64) };
-                        let double_modulus = unsafe { _mm256_set1_epi64x(2 * N as i64) };
-                        let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
-                        let w_ratio32 = _mm256_set1_epi64x(w_table.ratio32 as i64);
-
                         // Butterfly
                         let x = _mm256_load_si256(left_ptr);
                         let y = _mm256_load_si256(right_ptr);
@@ -177,8 +178,6 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
 
     unsafe {
         for i in (0..D).step_by(4) {
-            let modulus = unsafe { _mm256_set1_epi64x(N as i64) };
-            let double_modulus = unsafe { _mm256_set1_epi64x(2 * N as i64) };
             let val = _mm256_load_si256(values.0.get_unchecked(i) as *const u64 as *const __m256i);
             let val = _mm256_reduce_half(val, double_modulus);
             let val = _mm256_reduce_half(val, modulus);
