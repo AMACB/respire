@@ -373,7 +373,8 @@ impl<
                     let self_p1_ptr =
                         self.p1.points.get_unchecked_mut(4 * i) as *mut IntMod<N1> as *mut __m256i;
                     ptr_add_eq_mul64(self_p1_ptr, a_p1_ptr, b_p1_ptr);
-
+                }
+                for i in 0..D / 4 {
                     let a_p2_ptr =
                         a.p2.points.get_unchecked(4 * i) as *const IntMod<N2> as *const __m256i;
                     let b_p2_ptr =
