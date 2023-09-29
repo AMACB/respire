@@ -9,6 +9,7 @@ use std::arch::x86_64::*;
 /// `get_ratio32::<N>` of the former value.
 /// - `modulus` must have `N` in all lanes, e.g. via `_mm256_set1_epi64x(N as i64)`
 ///
+#[inline(always)]
 pub unsafe fn _mm256_mod_mul32(
     lhs: __m256i,
     rhs: __m256i,
@@ -25,6 +26,7 @@ pub unsafe fn _mm256_mod_mul32(
 /// Reduce the input from the range `[0, 2*modulus)` to `[0, modulus)` on all four lanes.
 /// - The modulus must be `< 2^31`.
 ///
+#[inline(always)]
 pub unsafe fn _mm256_reduce_half(value: __m256i, modulus: __m256i) -> __m256i {
     _mm256_min_epu32(value, _mm256_sub_epi32(value, modulus))
 }
