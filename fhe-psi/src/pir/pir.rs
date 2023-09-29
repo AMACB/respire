@@ -774,9 +774,13 @@ impl<
     ) -> <Self as SPIRAL>::ScalarRegevCiphertext {
         let c0 = &c[(0, 0)];
         let c1 = &c[(1, 0)];
-        let mut tau_c0_mat: Matrix<1, 1, _> = Matrix::zero();
-        tau_c0_mat[(0, 0)] = c0.auto(*tau_power);
-        let g_inv_tau_c0 = gadget_inverse::<_, 1, LEN, 1, BASE, LEN>(&tau_c0_mat);
+        let mut g_inv_tau_c0 = Matrix::<LEN, 1, <Self as SPIRAL>::RingQFast>::zero();
+        <<Self as SPIRAL>::RingQFast as RingElementDecomposable<BASE, LEN>>::decompose_into_mat(
+            &c0.auto(*tau_power),
+            &mut g_inv_tau_c0,
+            0,
+            0,
+        );
         let mut result = w_mat * &g_inv_tau_c0;
         result[(1, 0)] += &c1.auto(*tau_power);
         result
