@@ -347,6 +347,7 @@ impl<
         if N1 == 0 && N2 == 0 && D % 4 == 0 {
             use std::arch::x86_64::*;
 
+            #[inline(always)]
             unsafe fn ptr_add_eq_mul64(
                 s_ptr: *mut __m256i,
                 a_ptr: *const __m256i,
