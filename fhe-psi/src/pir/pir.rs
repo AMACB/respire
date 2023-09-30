@@ -133,9 +133,11 @@ pub struct SPIRALParams {
 impl SPIRALParams {
     pub fn relative_noise_threshold(&self) -> f64 {
         // erfc_inverse(2^-40 / N^2 / D)
-        assert_eq!(self.N, 2);
-        assert_eq!(self.D, 2048);
-        let erfc_inv = 5.863_584_748_755_167_6_f64;
+        let erfc_inv = match (self.N, self.D) {
+            (2, 2048) => 5.863_584_748_755_167_6_f64,
+            (1, 2048) => 5.745_872_392_191_18_f64,
+            _ => todo!(),
+        };
         1_f64 / (2_f64 * (self.P as f64) * 2_f64.sqrt() * erfc_inv)
     }
 }
@@ -945,7 +947,7 @@ mod test {
     use super::*;
 
     const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
-        N: 2,
+        N: 1,
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
@@ -1081,7 +1083,7 @@ mod test {
     }
 
     fn run_spiral<
-        TheSPIRAL: SPIRAL<Record = Matrix<2, 2, IntModCyclo<2048, 256>>>,
+        TheSPIRAL: SPIRAL<Record = Matrix<1, 1, IntModCyclo<2048, 256>>>,
         I: Iterator<Item = usize>,
     >(
         iter: I,
@@ -1109,8 +1111,6 @@ mod test {
                 (i / 1000000) % 100,
             ]
             .into();
-            record[(0, 1)] = vec![i % 256, (i / 256) % 256, 0, 0].into();
-            record[(1, 1)] = (i * 37 % 256).into();
             db.push(record);
         }
         eprintln!(
