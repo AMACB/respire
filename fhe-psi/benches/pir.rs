@@ -29,7 +29,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("pir::automorphism with T_COEFF_REGEV", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
-        let scalar_key = SPIRALTest::scalar_regev_setup();
+        let scalar_key = SPIRALTest::encode_setup();
         let auto_key_regev = SPIRALTest::auto_setup::<
             { SPIRAL_TEST_PARAMS.T_COEFF_REGEV },
             { SPIRAL_TEST_PARAMS.Z_COEFF_REGEV },
@@ -45,7 +45,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("pir::automorphism with T_COEFF_GSW", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
-        let scalar_key = SPIRALTest::scalar_regev_setup();
+        let scalar_key = SPIRALTest::encode_setup();
         let auto_key_regev = SPIRALTest::auto_setup::<
             { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
             { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
@@ -63,7 +63,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     for i in 0..4 {
         group.bench_with_input(BenchmarkId::from_parameter(i), &i, |b, &i| {
             let mut rng = ChaCha20Rng::from_entropy();
-            let scalar_key = SPIRALTest::scalar_regev_setup();
+            let scalar_key = SPIRALTest::encode_setup();
             let auto_key_regev = SPIRALTest::auto_setup::<
                 { SPIRAL_TEST_PARAMS.T_COEFF_REGEV },
                 { SPIRAL_TEST_PARAMS.Z_COEFF_REGEV },
@@ -90,7 +90,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     for i in 0..4 {
         group.bench_with_input(BenchmarkId::from_parameter(i), &i, |b, &i| {
             let mut rng = ChaCha20Rng::from_entropy();
-            let scalar_key = SPIRALTest::scalar_regev_setup();
+            let scalar_key = SPIRALTest::encode_setup();
             let auto_key_regev = SPIRALTest::auto_setup::<
                 { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
                 { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
@@ -115,19 +115,19 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("pir::scal to mat", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
-        let scalar_key = SPIRALTest::scalar_regev_setup();
+        let scalar_key = SPIRALTest::encode_setup();
         let matrix_key = SPIRALTest::matrix_regev_setup();
         let scal_to_mat_key = SPIRALTest::scal_to_mat_setup(&scalar_key, &matrix_key);
 
         let msg = IntModCyclo::rand_uniform(&mut rng);
-        let ct = SPIRALTest::encode_scalar_regev(&scalar_key, &msg);
+        let ct = SPIRALTest::encode_regev(&scalar_key, &msg);
 
         b.iter(|| SPIRALTest::scal_to_mat(black_box(&scal_to_mat_key), black_box(&ct)))
     });
 
     c.bench_function("pir::regev to gsw", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
-        let scalar_key = SPIRALTest::scalar_regev_setup();
+        let scalar_key = SPIRALTest::encode_setup();
         let matrix_key = SPIRALTest::matrix_regev_setup();
         let regev_to_gsw_key = SPIRALTest::regev_to_gsw_setup(&scalar_key, &matrix_key);
 
@@ -136,7 +136,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut msg_curr = msg.include_into();
         let mut encrypt_vec = Vec::with_capacity(SPIRAL_TEST_PARAMS.T_GSW);
         for _ in 0..SPIRAL_TEST_PARAMS.T_GSW {
-            encrypt_vec.push(SPIRALTest::encode_scalar_regev(&scalar_key, &msg_curr));
+            encrypt_vec.push(SPIRALTest::encode_regev(&scalar_key, &msg_curr));
             msg_curr *= IntMod::from(SPIRAL_TEST_PARAMS.Z_GSW);
         }
 
@@ -151,7 +151,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("pir::scalar_regev_mul_x_pow", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
         let ct = Matrix::rand_uniform(&mut rng);
-        b.iter(|| SPIRALTest::scalar_regev_mul_x_pow(black_box(&ct), black_box(101)))
+        b.iter(|| SPIRALTest::regev_mul_x_pow(black_box(&ct), black_box(101)))
     });
 
     c.bench_function("pir::query_expand", |b| {
