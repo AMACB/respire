@@ -125,7 +125,7 @@ impl SPIRALParams {
     pub fn relative_noise_threshold(&self) -> f64 {
         // erfc_inverse(2^-40 / D)
         assert_eq!(self.D, 2048);
-        let erfc_inv = 5.7458723921911804703334813888123646139061858840406015270555555247_f64;
+        let erfc_inv = 5.745_872_392_191_18_f64;
         1_f64 / (2_f64 * (self.P as f64) * 2_f64.sqrt() * erfc_inv)
     }
 }
@@ -553,6 +553,8 @@ impl<
             // Norm is at most max(Q_A, Q_B)^2 for each term
             // Add one for margin
             let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - 1);
+
+            // TODO optimize me
             let mut sum = Matrix::zero();
             for i in 0..(1 << ETA1) {
                 Self::regev_add_eq_mul_scalar_no_reduce(&mut sum, &regevs[i], db_at(i, j));
@@ -689,16 +691,16 @@ impl<
 
     pub fn auto_setup<const LEN: usize, const BASE: u64>(
         tau_power: usize,
-        s_scalar: &<Self as SPIRAL>::RingQFast,
+        s_encode: &<Self as SPIRAL>::RingQFast,
     ) -> <Self as SPIRAL>::AutoKey<LEN> {
         let mut rng = ChaCha20Rng::from_entropy();
         let a_t: Matrix<1, LEN, <Self as SPIRAL>::RingQFast> = Matrix::rand_uniform(&mut rng);
         let e_t: Matrix<1, LEN, <Self as SPIRAL>::RingQFast> =
             Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
-        let mut bottom = &a_t * s_scalar;
+        let mut bottom = &a_t * s_encode;
         bottom += &e_t;
         bottom -= &(&build_gadget::<<Self as SPIRAL>::RingQFast, 1, LEN, BASE, LEN>()
-            * &s_scalar.auto(tau_power));
+            * &s_encode.auto(tau_power));
         (Matrix::stack(&a_t, &bottom), tau_power)
     }
 
@@ -759,13 +761,12 @@ impl<
         let mut bottom = &a_t * s_encode;
         bottom += &e_mat;
         let g_vec = build_gadget::<<Self as SPIRAL>::RingQFast, 1, T_CONV, Z_CONV, T_CONV>();
-        let mut s_scalar_tensor_g = Matrix::<1, M_CONV, <Self as SPIRAL>::RingQFast>::zero();
-        s_scalar_tensor_g.copy_into(&g_vec, 0, T_CONV);
-        s_scalar_tensor_g.copy_into(&(&g_vec * &(-s_encode)), 0, 0);
-        bottom -= &(&s_scalar_tensor_g * s_encode);
+        let mut s_encode_tensor_g = Matrix::<1, M_CONV, <Self as SPIRAL>::RingQFast>::zero();
+        s_encode_tensor_g.copy_into(&g_vec, 0, T_CONV);
+        s_encode_tensor_g.copy_into(&(&g_vec * &(-s_encode)), 0, 0);
+        bottom -= &(&s_encode_tensor_g * s_encode);
 
-        let result = Matrix::stack(&a_t, &bottom);
-        result
+        Matrix::stack(&a_t, &bottom)
     }
 
     pub fn regev_to_gsw(
@@ -774,15 +775,15 @@ impl<
     ) -> <Self as SPIRAL>::GSWCiphertext {
         let mut result = Matrix::<2, M_GSW, <Self as SPIRAL>::RingQFast>::zero();
         let mut c_hat = Matrix::<2, T_GSW, <Self as SPIRAL>::RingQFast>::zero();
-        for i in 0..T_GSW {
-            c_hat.copy_into(&cs[i], 0, i);
+        for (i, ci) in cs.iter().enumerate() {
+            c_hat.copy_into(ci, 0, i);
         }
         let g_inv_c_hat =
             gadget_inverse::<<Self as SPIRAL>::RingQFast, 2, M_CONV, T_GSW, Z_CONV, T_CONV>(&c_hat);
         let v_g_inv_c_hat = v_mat * &g_inv_c_hat;
         result.copy_into(&v_g_inv_c_hat, 0, 0);
-        for i in 0..T_GSW {
-            result.copy_into(&cs[i], 0, T_GSW + i);
+        for (i, ci) in cs.iter().enumerate() {
+            result.copy_into(ci, 0, T_GSW + i);
         }
 
         // No permutation needed for scalar regev
@@ -822,7 +823,7 @@ mod test {
     type SPIRALTest = spiral!(SPIRAL_TEST_PARAMS);
 
     #[test]
-    fn test_scalar_regev() {
+    fn test_regev() {
         let s = SPIRALTest::encode_setup();
         let mu = <SPIRALTest as SPIRAL>::RingP::from(12_u64);
         let encoded = SPIRALTest::encode_regev(&s, &mu.scale_up_into());
