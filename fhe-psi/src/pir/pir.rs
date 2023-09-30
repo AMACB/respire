@@ -1,6 +1,7 @@
 use libm::erfc;
 use std::cmp::max;
 use std::slice;
+use std::time::Instant;
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -392,11 +393,17 @@ impl<
         // Query expansion
         let (regevs, gsws) = Self::answer_query_expand(pp, q);
 
+        let start = Instant::now();
         // First dimension
         let first_dim_folded = Self::answer_first_dim(db, &regevs);
+        let mid = Instant::now();
 
         // Folding
         let result = Self::answer_fold(first_dim_folded, gsws.as_slice());
+
+        let end = Instant::now();
+        eprintln!("(*) answer first dim: {:?}", mid - start);
+        eprintln!("(*) answer fold: {:?}", end - mid);
         result
     }
 
