@@ -309,6 +309,24 @@ impl<
     }
 }
 
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
+    fn add_eq_mul_fallback(&mut self, a: &Self, b: &Self) {
+        for i in 0..D {
+            self.p1.points[i] += a.p1.points[i] * b.p1.points[i];
+            self.p2.points[i] += a.p2.points[i] * b.p2.points[i];
+        }
+    }
+}
+
 /// [`RingElement`] implementation
 
 impl<
@@ -336,58 +354,35 @@ impl<
 
     #[cfg(not(target_feature = "avx2"))]
     fn add_eq_mul(&mut self, a: &Self, b: &Self) {
-        for i in 0..D {
-            self.p1.points[i] += a.p1.points[i] * b.p1.points[i];
-            self.p2.points[i] += a.p2.points[i] * b.p2.points[i];
-        }
+        self.add_eq_mul_fallback(a, b);
     }
 
     #[cfg(target_feature = "avx2")]
     fn add_eq_mul(&mut self, a: &Self, b: &Self) {
-        if N1 == 0 && N2 == 0 && D % 4 == 0 {
-            use std::arch::x86_64::*;
+        if N1 != 0 || N2 != 0 || D % 4 != 0 {
+            return self.add_eq_mul_fallback(a, b);
+        }
 
-            #[inline(always)]
-            unsafe fn ptr_add_eq_mul64(
-                s_ptr: *mut __m256i,
-                a_ptr: *const __m256i,
-                b_ptr: *const __m256i,
-            ) {
-                let a = _mm256_load_si256(a_ptr);
-                let b = _mm256_load_si256(b_ptr);
-                let s = _mm256_load_si256(s_ptr);
-                // Note: this assumes the inputs are 32 bit. For now this is fine, since this is
-                // only used for "fresh" elements which come directly from CRT (and the CRT moduli
-                // are 32 bit).
-                let prod = _mm256_mul_epu32(a, b);
-                let sum_prod = _mm256_add_epi64(s, prod);
-                _mm256_store_si256(s_ptr, sum_prod);
+        use crate::math::simd_utils::*;
+        use std::arch::x86_64::*;
+        unsafe {
+            for i in 0..D / 4 {
+                let a_p1_ptr =
+                    a.p1.points.get_unchecked(4 * i) as *const IntMod<N1> as *const __m256i;
+                let b_p1_ptr =
+                    b.p1.points.get_unchecked(4 * i) as *const IntMod<N1> as *const __m256i;
+                let self_p1_ptr =
+                    self.p1.points.get_unchecked_mut(4 * i) as *mut IntMod<N1> as *mut __m256i;
+                _mm256_ptr_add_eq_mul32(self_p1_ptr, a_p1_ptr, b_p1_ptr);
             }
-
-            unsafe {
-                for i in 0..D / 4 {
-                    let a_p1_ptr =
-                        a.p1.points.get_unchecked(4 * i) as *const IntMod<N1> as *const __m256i;
-                    let b_p1_ptr =
-                        b.p1.points.get_unchecked(4 * i) as *const IntMod<N1> as *const __m256i;
-                    let self_p1_ptr =
-                        self.p1.points.get_unchecked_mut(4 * i) as *mut IntMod<N1> as *mut __m256i;
-                    ptr_add_eq_mul64(self_p1_ptr, a_p1_ptr, b_p1_ptr);
-                }
-                for i in 0..D / 4 {
-                    let a_p2_ptr =
-                        a.p2.points.get_unchecked(4 * i) as *const IntMod<N2> as *const __m256i;
-                    let b_p2_ptr =
-                        b.p2.points.get_unchecked(4 * i) as *const IntMod<N2> as *const __m256i;
-                    let self_p2_ptr =
-                        self.p2.points.get_unchecked_mut(4 * i) as *mut IntMod<N2> as *mut __m256i;
-                    ptr_add_eq_mul64(self_p2_ptr, a_p2_ptr, b_p2_ptr);
-                }
-            }
-        } else {
-            for i in 0..D {
-                self.p1.points[i] += a.p1.points[i] * b.p1.points[i];
-                self.p2.points[i] += a.p2.points[i] * b.p2.points[i];
+            for i in 0..D / 4 {
+                let a_p2_ptr =
+                    a.p2.points.get_unchecked(4 * i) as *const IntMod<N2> as *const __m256i;
+                let b_p2_ptr =
+                    b.p2.points.get_unchecked(4 * i) as *const IntMod<N2> as *const __m256i;
+                let self_p2_ptr =
+                    self.p2.points.get_unchecked_mut(4 * i) as *mut IntMod<N2> as *mut __m256i;
+                _mm256_ptr_add_eq_mul32(self_p2_ptr, a_p2_ptr, b_p2_ptr);
             }
         }
     }
