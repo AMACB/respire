@@ -2,22 +2,6 @@
 use std::arch::x86_64::*;
 
 ///
-/// Executes `s += a * b` on all four lanes. `a` and `b` are 32 bit; `s` is 64 bit.
-///
-pub unsafe fn _mm256_ptr_add_eq_mul32(
-    s_ptr: *mut __m256i,
-    a_ptr: *const __m256i,
-    b_ptr: *const __m256i,
-) {
-    let a = _mm256_load_si256(a_ptr);
-    let b = _mm256_load_si256(b_ptr);
-    let s = _mm256_load_si256(s_ptr);
-    let prod = _mm256_mul_epu32(a, b);
-    let sum_prod = _mm256_add_epi64(s, prod);
-    _mm256_store_si256(s_ptr, sum_prod);
-}
-
-///
 /// Compute a representative of `lhs * rhs mod N` in the range `[0, 2N)` on all four lanes.
 /// - The input `lhs` must be in the range `[0, 4N)`.
 /// - The modulus `N` must satisfy `N < 2^30`.
