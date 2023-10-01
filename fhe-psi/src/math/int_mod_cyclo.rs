@@ -14,7 +14,6 @@ use crate::math::ring_elem::*;
 use rand::Rng;
 use std::cmp::max;
 use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
-use std::slice::Iter;
 
 /// The raw (coefficient) representation of an element of a cyclotomic ring.
 ///
@@ -22,12 +21,12 @@ use std::slice::Iter;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct IntModCyclo<const D: usize, const N: u64> {
-    pub(in crate::math) coeff: [IntMod<N>; D],
+    pub coeff: [IntMod<N>; D],
 }
 
 impl<const D: usize, const N: u64> IntModCyclo<D, N> {
     pub fn into_aligned(self) -> Aligned64<[IntMod<N>; D]> {
-        Aligned64 { 0: self.coeff }
+        Aligned64(self.coeff)
     }
 }
 
@@ -115,7 +114,7 @@ impl<
         let mut result = IntModCyclo::zero();
         for i in 0..D {
             result.coeff[i] = IntMod::from(u64::from(IntModCRT::<N1, N2, N1_INV, N2_INV>::from((
-                a.p1[i], a.p2[i],
+                a.proj1[i], a.proj2[i],
             ))));
         }
         result
@@ -233,7 +232,7 @@ impl<'a, const D: usize, const N: u64> SubAssign<&'a Self> for IntModCyclo<D, N>
     }
 }
 
-impl<'a, const D: usize, const N: u64> MulAssign<IntMod<N>> for IntModCyclo<D, N> {
+impl<const D: usize, const N: u64> MulAssign<IntMod<N>> for IntModCyclo<D, N> {
     fn mul_assign(&mut self, rhs: IntMod<N>) {
         for i in 0..D {
             self.coeff[i] *= rhs;
@@ -394,13 +393,6 @@ impl<const D: usize, const N: u64> RandDiscreteGaussianSampled for IntModCyclo<D
 
 /// Other polynomial-specific operations.
 
-// TODO: maybe don't need this bc of index
-impl<const D: usize, const N: u64> IntModCyclo<D, N> {
-    pub fn coeff_iter(&self) -> Iter<'_, IntMod<{ N }>> {
-        self.coeff.iter()
-    }
-}
-
 impl<const D: usize, const N: u64> NormedRingElement for IntModCyclo<D, N> {
     fn norm(&self) -> u64 {
         let mut worst: u64 = 0;
@@ -448,7 +440,7 @@ mod test {
         let x2 = IntModCyclo::<D, P>::from(vec![0_u64, 0, 1, 0]);
         let x3 = IntModCyclo::<D, P>::from(vec![0_u64, 0, 0, 1]);
         for off in [0, 8, 16] {
-            assert_eq!(x1.mul_x_pow(0 + off), x1);
+            assert_eq!(x1.mul_x_pow(off), x1);
             assert_eq!(x1.mul_x_pow(1 + off), x2);
             assert_eq!(x1.mul_x_pow(2 + off), x3);
             assert_eq!(x1.mul_x_pow(3 + off), -&x0);

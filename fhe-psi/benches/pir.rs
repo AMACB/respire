@@ -10,7 +10,6 @@ use rand_chacha::ChaCha20Rng;
 
 fn criterion_benchmark(c: &mut Criterion) {
     const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
-        N: 2,
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,

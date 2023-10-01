@@ -16,8 +16,8 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 #[repr(C)]
 pub struct IntModCRT<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> {
-    pub(in crate::math) a1: IntMod<N1>,
-    pub(in crate::math) a2: IntMod<N2>,
+    pub proj1: IntMod<N1>,
+    pub proj2: IntMod<N2>,
 }
 
 /// Conversions
@@ -29,12 +29,12 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
     fn from(a: IntModCRT<N1, N2, N1_INV, N2_INV>) -> Self {
         // u64 arithmetic only when N1, N2 are 32 bit
         if N1 < (1u64 << 32) && N2 < (1u64 << 32) {
-            let a1 = u64::from(a.a1);
-            let a2 = u64::from(a.a2);
+            let a1 = u64::from(a.proj1);
+            let a2 = u64::from(a.proj2);
             (((N2_INV * a1) % N1) * N2 + ((N1_INV * a2) % N2) * N1) % (N1 * N2)
         } else {
-            let a1: u128 = u64::from(a.a1) as u128;
-            let a2: u128 = u64::from(a.a2) as u128;
+            let a1: u128 = u64::from(a.proj1) as u128;
+            let a2: u128 = u64::from(a.proj2) as u128;
             let n1: u128 = N1.into();
             let n2: u128 = N2.into();
             let n1_inv: u128 = N1_INV.into();
@@ -48,7 +48,10 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
     From<(IntMod<N1>, IntMod<N2>)> for IntModCRT<N1, N2, N1_INV, N2_INV>
 {
     fn from(a: (IntMod<N1>, IntMod<N2>)) -> Self {
-        IntModCRT { a1: a.0, a2: a.1 }
+        IntModCRT {
+            proj1: a.0,
+            proj2: a.1,
+        }
     }
 }
 
@@ -58,8 +61,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<u6
     /// Converts u64 to IntModCRT by modular reductions.
     fn from(a: u64) -> Self {
         IntModCRT {
-            a1: a.into(),
-            a2: a.into(),
+            proj1: a.into(),
+            proj2: a.into(),
         }
     }
 }
@@ -96,8 +99,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Add
     type Output = IntModCRT<N1, N2, N1_INV, N2_INV>;
     fn add(self, rhs: Self) -> Self::Output {
         IntModCRT {
-            a1: self.a1 + rhs.a1,
-            a2: self.a2 + rhs.a2,
+            proj1: self.proj1 + rhs.proj1,
+            proj2: self.proj2 + rhs.proj2,
         }
     }
 }
@@ -106,8 +109,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> AddAssi
     for IntModCRT<N1, N2, N1_INV, N2_INV>
 {
     fn add_assign(&mut self, rhs: Self) {
-        self.a1 += rhs.a1;
-        self.a2 += rhs.a2;
+        self.proj1 += rhs.proj1;
+        self.proj2 += rhs.proj2;
     }
 }
 
@@ -117,8 +120,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Mul
     type Output = IntModCRT<N1, N2, N1_INV, N2_INV>;
     fn mul(self, rhs: Self) -> Self::Output {
         IntModCRT {
-            a1: self.a1 * rhs.a1,
-            a2: self.a2 * rhs.a2,
+            proj1: self.proj1 * rhs.proj1,
+            proj2: self.proj2 * rhs.proj2,
         }
     }
 }
@@ -127,8 +130,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> MulAssi
     for IntModCRT<N1, N2, N1_INV, N2_INV>
 {
     fn mul_assign(&mut self, rhs: Self) {
-        self.a1 *= rhs.a1;
-        self.a2 *= rhs.a2;
+        self.proj1 *= rhs.proj1;
+        self.proj2 *= rhs.proj2;
     }
 }
 
@@ -145,8 +148,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> SubAssi
     for IntModCRT<N1, N2, N1_INV, N2_INV>
 {
     fn sub_assign(&mut self, rhs: Self) {
-        self.a1 -= rhs.a1;
-        self.a2 -= rhs.a2;
+        self.proj1 -= rhs.proj1;
+        self.proj2 -= rhs.proj2;
     }
 }
 
@@ -155,8 +158,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Neg
 {
     type Output = IntModCRT<N1, N2, N1_INV, N2_INV>;
     fn neg(mut self) -> Self::Output {
-        self.a1 = -self.a1;
-        self.a2 = -self.a2;
+        self.proj1 = -self.proj1;
+        self.proj2 = -self.proj2;
         self
     }
 }
@@ -203,7 +206,7 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> fmt::De
     for IntModCRT<N1, N2, N1_INV, N2_INV>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({:?}, {:?})", self.a1, self.a2)
+        write!(f, "({:?}, {:?})", self.proj1, self.proj2)
     }
 }
 
@@ -236,8 +239,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
     AddAssign<&IntModCRT<N1, N2, N1_INV, N2_INV>> for IntModCRT<N1, N2, N1_INV, N2_INV>
 {
     fn add_assign(&mut self, rhs: &Self) {
-        self.a1 += rhs.a1;
-        self.a2 += rhs.a2;
+        self.proj1 += rhs.proj1;
+        self.proj2 += rhs.proj2;
     }
 }
 
@@ -254,8 +257,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
     SubAssign<&IntModCRT<N1, N2, N1_INV, N2_INV>> for IntModCRT<N1, N2, N1_INV, N2_INV>
 {
     fn sub_assign(&mut self, rhs: &Self) {
-        self.a1 -= rhs.a1;
-        self.a2 -= rhs.a2;
+        self.proj1 -= rhs.proj1;
+        self.proj2 -= rhs.proj2;
     }
 }
 
@@ -272,8 +275,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
     MulAssign<&IntModCRT<N1, N2, N1_INV, N2_INV>> for IntModCRT<N1, N2, N1_INV, N2_INV>
 {
     fn mul_assign(&mut self, rhs: &Self) {
-        self.a1 *= rhs.a1;
-        self.a2 *= rhs.a2;
+        self.proj1 *= rhs.proj1;
+        self.proj2 *= rhs.proj2;
     }
 }
 
@@ -284,8 +287,8 @@ impl<const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RandUni
 {
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
         IntModCRT {
-            a1: IntMod::rand_uniform(rng),
-            a2: IntMod::rand_uniform(rng),
+            proj1: IntMod::rand_uniform(rng),
+            proj2: IntMod::rand_uniform(rng),
         }
     }
 }

@@ -13,7 +13,7 @@ use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
 use crate::math::matrix::Matrix;
 use crate::math::number_theory::find_sqrt_primitive_root;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
-use crate::math::ring_elem::{NormedRingElement, RingCompatible, RingElement};
+use crate::math::ring_elem::{NormedRingElement, RingElement};
 use crate::math::utils::{ceil_log, mod_inverse};
 
 pub struct SPIRALImpl<
@@ -184,9 +184,11 @@ pub trait SPIRAL {
     type QueryExpanded;
     type Response;
     type Record;
-    type RecordPreprocessed;
+    type Database;
 
     // Constants
+    const DB_DIM1_SIZE: usize;
+    const DB_DIM2_SIZE: usize;
     const DB_SIZE: usize;
     const ETA1: usize;
     const ETA2: usize;
@@ -195,14 +197,14 @@ pub trait SPIRAL {
     const GSW_COUNT: usize;
     const GSW_EXPAND_ITERS: usize;
 
-    fn preprocess(record: &Self::Record) -> Self::RecordPreprocessed;
+    fn preprocess<'a, I: ExactSizeIterator<Item = &'a Self::Record>>(
+        records_iter: I,
+    ) -> Self::Database
+    where
+        Self::Record: 'a;
     fn setup() -> (Self::QueryKey, Self::PublicParams);
     fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
-    fn answer(
-        pp: &Self::PublicParams,
-        db: &[Self::RecordPreprocessed],
-        q: &Self::Query,
-    ) -> Self::Response;
+    fn answer(pp: &Self::PublicParams, db: &Self::Database, q: &Self::Query) -> Self::Response;
     fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
     fn response_stats(
         qk: &<Self as SPIRAL>::QueryKey,
@@ -292,10 +294,12 @@ impl<
     type QueryExpanded = (Vec<Self::RegevCiphertext>, Vec<Self::GSWCiphertext>);
     type Response = Self::RegevCiphertext;
     type Record = Self::RingP;
-    type RecordPreprocessed = Self::RingQFast;
+    type Database = Vec<Self::RingQFast>;
 
     // Constants
-    const DB_SIZE: usize = 2_usize.pow(ETA1 as u32) * Z_FOLD.pow(ETA2 as u32);
+    const DB_DIM1_SIZE: usize = 2_usize.pow(ETA1 as u32);
+    const DB_DIM2_SIZE: usize = Z_FOLD.pow(ETA2 as u32);
+    const DB_SIZE: usize = Self::DB_DIM1_SIZE * Self::DB_DIM2_SIZE;
     const ETA1: usize = ETA1;
     const ETA2: usize = ETA2;
 
@@ -304,8 +308,24 @@ impl<
     const GSW_COUNT: usize = ETA2 * (Z_FOLD - 1) * T_GSW;
     const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
 
-    fn preprocess(record: &<Self as SPIRAL>::Record) -> <Self as SPIRAL>::RecordPreprocessed {
-        <Self as SPIRAL>::RingQFast::from(&record.include_into::<Q>())
+    fn preprocess<'a, I: ExactSizeIterator<Item = &'a Self::Record>>(
+        records_iter: I,
+    ) -> Self::Database
+    where
+        Self::Record: 'a,
+    {
+        assert_eq!(records_iter.len(), Self::DB_SIZE);
+        let mut db: <Self as SPIRAL>::Database = (0..Self::DB_SIZE)
+            .map(|_| <Self as SPIRAL>::RingQFast::zero())
+            .collect();
+        for (idx, record) in records_iter.enumerate() {
+            let record_q = <Self as SPIRAL>::RingQFast::from(&record.include_into::<Q>());
+            // Transpose the index
+            let (i, j) = (idx / Self::DB_DIM2_SIZE, idx % Self::DB_DIM2_SIZE);
+            let idx_t = j * Self::DB_DIM1_SIZE + i;
+            db[idx_t] = record_q;
+        }
+        db
     }
 
     fn setup() -> (<Self as SPIRAL>::QueryKey, <Self as SPIRAL>::PublicParams) {
@@ -346,10 +366,7 @@ impl<
 
     fn query(s_encode: &<Self as SPIRAL>::QueryKey, idx: usize) -> <Self as SPIRAL>::Query {
         assert!(idx < Self::DB_SIZE);
-        let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
-
-        let idx_i = idx / fold_size;
-        let idx_j = idx % fold_size;
+        let (idx_i, idx_j) = (idx / Self::DB_DIM2_SIZE, idx % Self::DB_DIM2_SIZE);
 
         let mut packed_vec: Vec<IntMod<Q>> = Vec::with_capacity(D);
         for _ in 0..D {
@@ -357,7 +374,7 @@ impl<
         }
 
         let inv_even = IntMod::from(mod_inverse(1 << (1 + Self::REGEV_EXPAND_ITERS), Q));
-        for i in 0_usize..(1 << ETA1) {
+        for i in 0_usize..Self::DB_DIM1_SIZE {
             packed_vec[2 * i] = (IntMod::<P>::from((i == idx_i) as u64)).scale_up_into() * inv_even;
         }
 
@@ -387,7 +404,7 @@ impl<
 
     fn answer(
         pp: &<Self as SPIRAL>::PublicParams,
-        db: &[<Self as SPIRAL>::RecordPreprocessed],
+        db: &<Self as SPIRAL>::Database,
         q: &<Self as SPIRAL>::Query,
     ) -> <Self as SPIRAL>::Response {
         // Query expansion
@@ -426,7 +443,7 @@ impl<
         let mut sum = 0_f64;
         let mut samples = 0_usize;
 
-        for e in diff.coeff_iter() {
+        for e in diff.coeff.iter() {
             let e_sq = (e.norm() as f64) * (e.norm() as f64);
             sum += e_sq;
             samples += 1;
@@ -519,7 +536,7 @@ impl<
                 auto_key_regev,
             );
         }
-        regevs.truncate(1 << Self::ETA1);
+        assert_eq!(regevs.len(), Self::DB_DIM1_SIZE);
 
         let mut gsws = vec![gsw_base];
         for (i, auto_key_gsw) in auto_keys_gsw.iter().enumerate() {
@@ -535,35 +552,70 @@ impl<
             .chunks_exact(T_GSW)
             .map(|cs| Self::regev_to_gsw(regev_to_gsw_key, cs))
             .collect();
+        assert_eq!(gsws.len(), Self::ETA2);
 
         (regevs, gsws)
     }
 
     pub fn answer_first_dim(
-        db: &[<Self as SPIRAL>::RecordPreprocessed],
+        db: &<Self as SPIRAL>::Database,
         regevs: &[<Self as SPIRAL>::RegevCiphertext],
     ) -> Vec<<Self as SPIRAL>::RegevCiphertext> {
-        assert_eq!(regevs.len(), 1 << ETA1);
-        let fold_size: usize = Z_FOLD.pow(Self::ETA2 as u32);
+        assert_eq!(regevs.len(), Self::DB_DIM1_SIZE);
+
+        // Flatten + transpose the ciphertexts
+        let mut c0_proj1s = Vec::with_capacity(D * Self::DB_DIM1_SIZE);
+        let mut c1_proj1s = Vec::with_capacity(D * Self::DB_DIM1_SIZE);
+        let mut c0_proj2s = Vec::with_capacity(D * Self::DB_DIM1_SIZE);
+        let mut c1_proj2s = Vec::with_capacity(D * Self::DB_DIM1_SIZE);
+        for eval_idx in 0..D {
+            for c in regevs.iter() {
+                c0_proj1s.push(c[(0, 0)].proj1.evals[eval_idx]);
+                c0_proj2s.push(c[(0, 0)].proj2.evals[eval_idx]);
+                c1_proj1s.push(c[(1, 0)].proj1.evals[eval_idx]);
+                c1_proj2s.push(c[(1, 0)].proj2.evals[eval_idx]);
+            }
+        }
 
         // First dimension processing
-        let db_at = |i: usize, j: usize| &db[i * fold_size + j];
-        let mut curr: Vec<<Self as SPIRAL>::RegevCiphertext> = Vec::with_capacity(fold_size);
-        for j in 0..fold_size {
+        let mut curr: Vec<<Self as SPIRAL>::RegevCiphertext> =
+            Vec::with_capacity(Self::DB_DIM2_SIZE);
+        for j in 0..Self::DB_DIM2_SIZE {
+            // We want to compute the sum over i of ct_i * db_(i, j).
+            // Here db_(i, j) are scalars; ct_i are 2 x 1 matrices.
+            let mut sum = <Self as SPIRAL>::RegevCiphertext::zero();
+
             // Norm is at most max(Q_A, Q_B)^2 for each term
             // Add one for margin
             let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - 1);
 
-            // TODO optimize me
-            let mut sum = Matrix::zero();
-            for i in 0..(1 << ETA1) {
-                Self::regev_add_eq_mul_scalar_no_reduce(&mut sum, &regevs[i], db_at(i, j));
-                if i % reduce_every == 0 {
-                    sum.iter_do(|r| <Self as SPIRAL>::RingQFast::reduce_mod(r));
+            let terms = [
+                ((0, 0), c0_proj1s.as_slice(), c0_proj2s.as_slice()),
+                ((1, 0), c1_proj1s.as_slice(), c1_proj2s.as_slice()),
+            ];
+            for (idx, c_proj1s, c_proj2s) in terms {
+                for eval_idx in 0..D {
+                    let mut sum_proj1 = 0_u64;
+                    let mut sum_proj2 = 0_u64;
+                    for i in 0..Self::DB_DIM1_SIZE {
+                        let lhs_proj1 = c_proj1s[eval_idx * Self::DB_DIM1_SIZE + i];
+                        let lhs_proj2 = c_proj2s[eval_idx * Self::DB_DIM1_SIZE + i];
+
+                        let rhs_proj1 = db[j * Self::DB_DIM1_SIZE + i].proj1.evals[eval_idx];
+                        let rhs_proj2 = db[j * Self::DB_DIM1_SIZE + i].proj2.evals[eval_idx];
+
+                        sum_proj1 += u64::from(lhs_proj1) * u64::from(rhs_proj1);
+                        sum_proj2 += u64::from(lhs_proj2) * u64::from(rhs_proj2);
+                        if i % reduce_every == 0 || i == Self::DB_DIM1_SIZE - 1 {
+                            sum_proj1 %= Q_A;
+                            sum_proj2 %= Q_B;
+                        }
+                    }
+                    sum[idx].proj1.evals[eval_idx] = IntMod::from(sum_proj1);
+                    sum[idx].proj2.evals[eval_idx] = IntMod::from(sum_proj2);
                 }
             }
-            sum.iter_do(|r| <Self as SPIRAL>::RingQFast::reduce_mod(r));
-            curr.push(sum.convert_ring());
+            curr.push(sum);
         }
 
         curr
@@ -661,15 +713,6 @@ impl<
         rhs: &<Self as SPIRAL>::RegevCiphertext,
     ) -> <Self as SPIRAL>::RegevCiphertext {
         lhs - rhs
-    }
-
-    pub fn regev_add_eq_mul_scalar_no_reduce(
-        lhs: &mut <Self as SPIRAL>::RegevCiphertext0,
-        rhs_a: &<Self as SPIRAL>::RegevCiphertext,
-        rhs_b: &<Self as SPIRAL>::RingQFast,
-    ) {
-        lhs[(0, 0)].add_eq_mul(rhs_a[(0, 0)].convert_ref(), rhs_b.convert_ref());
-        lhs[(1, 0)].add_eq_mul(rhs_a[(1, 0)].convert_ref(), rhs_b.convert_ref());
     }
 
     pub fn hybrid_mul_hom(
@@ -929,7 +972,8 @@ mod test {
             }
         );
         eprintln!("Parameters: {:#?}", SPIRAL_TEST_PARAMS);
-        let mut db: Vec<<TheSPIRAL as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);
+        let mut records: Vec<<TheSPIRAL as SPIRAL>::Record> =
+            Vec::with_capacity(SPIRALTest::DB_SIZE);
         for i in 0..TheSPIRAL::DB_SIZE as u64 {
             let mut record_coeff = [IntMod::<256>::zero(); 2048];
             record_coeff[0] = (i % 256).into();
@@ -940,7 +984,7 @@ mod test {
             record_coeff[5] = ((i / 100) % 100).into();
             record_coeff[6] = ((i / 100 / 100) % 100).into();
             record_coeff[7] = ((i / 100 / 100 / 100) % 100).into();
-            db.push(<TheSPIRAL as SPIRAL>::Record::from(record_coeff));
+            records.push(<TheSPIRAL as SPIRAL>::Record::from(record_coeff));
         }
         eprintln!(
             "Relative noise threshold: 2^({})",
@@ -950,11 +994,7 @@ mod test {
         eprintln!();
 
         let pre_start = Instant::now();
-        let mut db_pre: Vec<<TheSPIRAL as SPIRAL>::RecordPreprocessed> =
-            Vec::with_capacity(TheSPIRAL::DB_SIZE);
-        for db_elem in db.iter() {
-            db_pre.push(TheSPIRAL::preprocess(db_elem));
-        }
+        let db = TheSPIRAL::preprocess(records.iter());
         let pre_end = Instant::now();
         eprintln!("{:?} to preprocess", pre_end - pre_start);
 
@@ -971,7 +1011,7 @@ mod test {
             let query_total = query_end - query_start;
 
             let answer_start = Instant::now();
-            let result = TheSPIRAL::answer(&pp, &db_pre, &q);
+            let result = TheSPIRAL::answer(&pp, &db, &q);
             let answer_end = Instant::now();
             let answer_total = answer_end - answer_start;
 
@@ -980,7 +1020,7 @@ mod test {
             let extract_end = Instant::now();
             let extract_total = extract_end - extract_start;
 
-            if extracted != db[idx] {
+            if extracted != records[idx] {
                 eprintln!("  **** **** **** **** ERROR **** **** **** ****");
                 eprintln!("  protocol failed");
             }
@@ -988,7 +1028,7 @@ mod test {
             eprintln!("    {:?} to query", query_total);
             eprintln!("    {:?} to answer", answer_total);
             eprintln!("    {:?} to extract", extract_total);
-            let (rel_noise, correctness) = TheSPIRAL::response_stats(&qk, &result, &db[idx]);
+            let (rel_noise, correctness) = TheSPIRAL::response_stats(&qk, &result, &records[idx]);
 
             eprintln!(
                 "  relative coefficient noise (sample): 2^({})",
