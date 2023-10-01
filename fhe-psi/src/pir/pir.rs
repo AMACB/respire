@@ -294,7 +294,10 @@ impl<
     type QueryExpanded = (Vec<Self::RegevCiphertext>, Vec<Self::GSWCiphertext>);
     type Response = Self::RegevCiphertext;
     type Record = Self::RingP;
-    type Database = Vec<Self::RingQFast>;
+
+    /// We structure the database as `[2] x [D] x [DIM2_SIZE] x [DIM1_SIZE]` for optimal first dimension
+    /// processing. The outermost pair is the first resp. second CRT projections.
+    type Database = (Vec<u64>, Vec<u64>);
 
     // Constants
     const DB_DIM1_SIZE: usize = 2_usize.pow(ETA1 as u32);
@@ -315,17 +318,26 @@ impl<
         Self::Record: 'a,
     {
         assert_eq!(records_iter.len(), Self::DB_SIZE);
-        let mut db: <Self as SPIRAL>::Database = (0..Self::DB_SIZE)
-            .map(|_| <Self as SPIRAL>::RingQFast::zero())
+
+        let records_eval: Vec<<Self as SPIRAL>::RingQFast> = records_iter
+            .map(|r| <Self as SPIRAL>::RingQFast::from(&r.include_into::<Q>()))
             .collect();
-        for (idx, record) in records_iter.enumerate() {
-            let record_q = <Self as SPIRAL>::RingQFast::from(&record.include_into::<Q>());
-            // Transpose the index
-            let (i, j) = (idx / Self::DB_DIM2_SIZE, idx % Self::DB_DIM2_SIZE);
-            let idx_t = j * Self::DB_DIM1_SIZE + i;
-            db[idx_t] = record_q;
+
+        let mut db_proj1: Vec<u64> = (0..(D * Self::DB_SIZE)).map(|_| 0_u64).collect();
+        let mut db_proj2: Vec<u64> = (0..(D * Self::DB_SIZE)).map(|_| 0_u64).collect();
+        for coeff_idx in 0..D {
+            for db_idx in 0..Self::DB_SIZE {
+                // Transpose the index
+                let (db_i, db_j) = (db_idx / Self::DB_DIM2_SIZE, db_idx % Self::DB_DIM2_SIZE);
+                let db_idx_t = db_j * Self::DB_DIM1_SIZE + db_i;
+                db_proj1[coeff_idx * Self::DB_SIZE + db_idx_t] =
+                    u64::from(records_eval[db_idx].proj1.evals[coeff_idx]);
+                db_proj2[coeff_idx * Self::DB_SIZE + db_idx_t] =
+                    u64::from(records_eval[db_idx].proj2.evals[coeff_idx]);
+            }
         }
-        db
+
+        (db_proj1, db_proj2)
     }
 
     fn setup() -> (<Self as SPIRAL>::QueryKey, <Self as SPIRAL>::PublicParams) {
@@ -558,7 +570,7 @@ impl<
     }
 
     pub fn answer_first_dim(
-        db: &<Self as SPIRAL>::Database,
+        (db_proj1, db_proj2): &<Self as SPIRAL>::Database,
         regevs: &[<Self as SPIRAL>::RegevCiphertext],
     ) -> Vec<<Self as SPIRAL>::RegevCiphertext> {
         assert_eq!(regevs.len(), Self::DB_DIM1_SIZE);
@@ -570,10 +582,10 @@ impl<
         let mut c1_proj2s = Vec::with_capacity(D * Self::DB_DIM1_SIZE);
         for eval_idx in 0..D {
             for c in regevs.iter() {
-                c0_proj1s.push(c[(0, 0)].proj1.evals[eval_idx]);
-                c0_proj2s.push(c[(0, 0)].proj2.evals[eval_idx]);
-                c1_proj1s.push(c[(1, 0)].proj1.evals[eval_idx]);
-                c1_proj2s.push(c[(1, 0)].proj2.evals[eval_idx]);
+                c0_proj1s.push(u64::from(c[(0, 0)].proj1.evals[eval_idx]));
+                c0_proj2s.push(u64::from(c[(0, 0)].proj2.evals[eval_idx]));
+                c1_proj1s.push(u64::from(c[(1, 0)].proj1.evals[eval_idx]));
+                c1_proj2s.push(u64::from(c[(1, 0)].proj2.evals[eval_idx]));
             }
         }
 
@@ -601,11 +613,13 @@ impl<
                         let lhs_proj1 = c_proj1s[eval_idx * Self::DB_DIM1_SIZE + i];
                         let lhs_proj2 = c_proj2s[eval_idx * Self::DB_DIM1_SIZE + i];
 
-                        let rhs_proj1 = db[j * Self::DB_DIM1_SIZE + i].proj1.evals[eval_idx];
-                        let rhs_proj2 = db[j * Self::DB_DIM1_SIZE + i].proj2.evals[eval_idx];
+                        let rhs_proj1 =
+                            db_proj1[eval_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i];
+                        let rhs_proj2 =
+                            db_proj2[eval_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i];
 
-                        sum_proj1 += u64::from(lhs_proj1) * u64::from(rhs_proj1);
-                        sum_proj2 += u64::from(lhs_proj2) * u64::from(rhs_proj2);
+                        sum_proj1 += lhs_proj1 * rhs_proj1;
+                        sum_proj2 += lhs_proj2 * rhs_proj2;
                         if i % reduce_every == 0 || i == Self::DB_DIM1_SIZE - 1 {
                             sum_proj1 %= Q_A;
                             sum_proj2 %= Q_B;
