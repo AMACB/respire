@@ -1,12 +1,9 @@
 use crate::math::int_mod::IntMod;
+use crate::math::simd_utils::Aligned32;
 use crate::math::utils::{floor_log, get_ratio32, mod_inverse, reverse_bits};
 
 /// Compile time lookup table for NTT-related operations
 struct NTTTable<const D: usize, const N: u64, const W: u64> {}
-
-#[repr(C, align(64))]
-#[derive(Clone)]
-pub struct Aligned64<T>(pub T);
 
 #[derive(Copy, Clone)]
 struct MulTable<const N: u64> {
@@ -60,7 +57,7 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
 }
 
 fn ntt_neg_forward_fallback<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned64<[IntMod<N>; D]>,
+    values: &mut Aligned32<[IntMod<N>; D]>,
 ) {
     // Algorithm 2 of https://arxiv.org/pdf/2103.16400.pdf
     for round in 0..NTTTable::<D, N, W>::LOG_D {
@@ -92,14 +89,14 @@ fn ntt_neg_forward_fallback<const D: usize, const N: u64, const W: u64>(
 
 #[cfg(not(target_feature = "avx2"))]
 pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned64<[IntMod<N>; D]>,
+    values: &mut Aligned32<[IntMod<N>; D]>,
 ) {
     ntt_neg_forward_fallback::<D, N, W>(values)
 }
 
 #[cfg(target_feature = "avx2")]
 pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned64<[IntMod<N>; D]>,
+    values: &mut Aligned32<[IntMod<N>; D]>,
 ) {
     use crate::math::simd_utils::*;
     use std::arch::x86_64::*;
@@ -109,8 +106,8 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
         return ntt_neg_forward_fallback::<D, N, W>(values);
     }
 
-    let values = values as *mut Aligned64<[IntMod<N>; D]>;
-    let values = values as *mut Aligned64<[u64; D]>;
+    let values = values as *mut Aligned32<[IntMod<N>; D]>;
+    let values = values as *mut Aligned32<[u64; D]>;
     let values = unsafe { &mut *values };
 
     let modulus = unsafe { _mm256_set1_epi64x(N as i64) };
@@ -190,7 +187,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
 }
 
 fn ntt_neg_backward_fallback<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned64<[IntMod<N>; D]>,
+    values: &mut Aligned32<[IntMod<N>; D]>,
 ) {
     // Algorithm 3 of https://arxiv.org/pdf/2103.16400.pdf
     for round in 0..NTTTable::<D, N, W>::LOG_D {
@@ -228,14 +225,14 @@ fn ntt_neg_backward_fallback<const D: usize, const N: u64, const W: u64>(
 
 #[cfg(not(target_feature = "avx2"))]
 pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned64<[IntMod<N>; D]>,
+    values: &mut Aligned32<[IntMod<N>; D]>,
 ) {
     ntt_neg_backward_fallback::<D, N, W>(values)
 }
 
 #[cfg(target_feature = "avx2")]
 pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned64<[IntMod<N>; D]>,
+    values: &mut Aligned32<[IntMod<N>; D]>,
 ) {
     use crate::math::simd_utils::*;
     use std::arch::x86_64::*;
@@ -245,8 +242,8 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
         return ntt_neg_backward_fallback::<D, N, W>(values);
     }
 
-    let values = values as *mut Aligned64<[IntMod<N>; D]>;
-    let values = values as *mut Aligned64<[u64; D]>;
+    let values = values as *mut Aligned32<[IntMod<N>; D]>;
+    let values = values as *mut Aligned32<[u64; D]>;
     let values = unsafe { &mut *values };
 
     let modulus = unsafe { _mm256_set1_epi64x(N as i64) };
@@ -352,8 +349,8 @@ mod test {
 
     #[test]
     fn test_ntt_neg_forward() {
-        let mut values: Aligned64<[IntMod<P>; 4]> =
-            Aligned64([1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()]);
+        let mut values: Aligned32<[IntMod<P>; 4]> =
+            Aligned32([1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()]);
         let coeff_poly = IntModPoly::from(vec![1_u64, 2_u64, 3_u64, 4_u64]);
 
         let w = IntMod::from(W);
@@ -371,8 +368,8 @@ mod test {
 
     #[test]
     fn test_ntt_neg_inverses() {
-        let mut values: Aligned64<[IntMod<P>; 4]> =
-            Aligned64([1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()]);
+        let mut values: Aligned32<[IntMod<P>; 4]> =
+            Aligned32([1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()]);
         let expected = values.0;
 
         ntt_neg_forward::<D, P, W>(&mut values);
@@ -383,14 +380,14 @@ mod test {
 
     #[test]
     fn test_ntt_neg_mul() {
-        let mut values1: Aligned64<[IntMod<P>; 4]> =
-            Aligned64([1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()]);
-        let mut values2: Aligned64<[IntMod<P>; 4]> =
-            Aligned64([5_u64.into(), 6_u64.into(), 7_u64.into(), 8_u64.into()]);
+        let mut values1: Aligned32<[IntMod<P>; 4]> =
+            Aligned32([1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()]);
+        let mut values2: Aligned32<[IntMod<P>; 4]> =
+            Aligned32([5_u64.into(), 6_u64.into(), 7_u64.into(), 8_u64.into()]);
 
         ntt_neg_forward::<D, P, W>(&mut values1);
         ntt_neg_forward::<D, P, W>(&mut values2);
-        let mut result_points = Aligned64([
+        let mut result_points = Aligned32([
             values1.0[0] * values2.0[0],
             values1.0[1] * values2.0[1],
             values1.0[2] * values2.0[2],
@@ -419,7 +416,7 @@ mod test {
             vec_mod.push(IntMod::from(i + 1));
         }
 
-        let mut values: Aligned64<[IntMod<P>; DD]> = Aligned64(vec_mod.clone().try_into().unwrap());
+        let mut values: Aligned32<[IntMod<P>; DD]> = Aligned32(vec_mod.clone().try_into().unwrap());
         let coeff_poly = IntModPoly::<P>::from(vec_mod);
 
         let w = IntMod::from(WW);

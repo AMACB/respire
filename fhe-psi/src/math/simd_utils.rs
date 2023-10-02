@@ -1,9 +1,34 @@
 #![allow(clippy::missing_safety_doc)]
+
+#[cfg(target_feature = "avx2")]
 use std::arch::x86_64::*;
+
+#[repr(C, align(32))]
+#[derive(Clone)]
+///
+/// Wrapper type that has the same repr as `T`, except with a 32-byte alignment.
+///
+pub struct Aligned32<T>(pub T);
+
+// AVX2 Definitions
+#[cfg(target_feature = "avx2")]
+pub const SIMD_LANES: usize = 4;
+
+#[cfg(target_feature = "avx2")]
+pub type SimdVec = Aligned32<[u64; 4]>;
+
+// Non-SIMD Definitions
+#[cfg(not(target_feature = "avx2"))]
+pub const SIMD_LANES: usize = 1;
+
+#[cfg(not(target_feature = "avx2"))]
+pub type SimdVec = u64;
 
 ///
 /// Executes `s += a * b` on all four lanes. `a` and `b` are 32 bit; `s` is 64 bit.
 ///
+#[cfg(target_feature = "avx2")]
+#[inline(always)]
 pub unsafe fn _mm256_ptr_add_eq_mul32(
     s_ptr: *mut __m256i,
     a_ptr: *const __m256i,
@@ -25,6 +50,7 @@ pub unsafe fn _mm256_ptr_add_eq_mul32(
 /// `get_ratio32::<N>` of the former value.
 /// - `modulus` must have `N` in all lanes, e.g. via `_mm256_set1_epi64x(N as i64)`
 ///
+#[cfg(target_feature = "avx2")]
 #[inline(always)]
 pub unsafe fn _mm256_mod_mul32(
     lhs: __m256i,
@@ -42,6 +68,7 @@ pub unsafe fn _mm256_mod_mul32(
 /// Reduce the input from the range `[0, 2*modulus)` to `[0, modulus)` on all four lanes.
 /// - The modulus must be `< 2^31`.
 ///
+#[cfg(target_feature = "avx2")]
 #[inline(always)]
 pub unsafe fn _mm256_reduce_half(value: __m256i, modulus: __m256i) -> __m256i {
     _mm256_min_epu32(value, _mm256_sub_epi32(value, modulus))

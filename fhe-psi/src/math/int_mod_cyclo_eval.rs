@@ -9,6 +9,7 @@ use crate::math::ntt::*;
 use crate::math::number_theory::mod_pow;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
+use crate::math::simd_utils::Aligned32;
 use crate::math::utils::reverse_bits;
 use rand::Rng;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -23,14 +24,14 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 /// `w` here is the `2*D`th root of unity. However, implementations should not rely on the ordering
 /// of `evals`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C, align(64))]
+#[repr(C, align(32))]
 pub struct IntModCycloEval<const D: usize, const N: u64, const W: u64> {
     pub evals: [IntMod<N>; D],
 }
 
 impl<const D: usize, const N: u64, const W: u64> IntModCycloEval<D, N, W> {
-    pub fn into_aligned(self) -> Aligned64<[IntMod<N>; D]> {
-        Aligned64 { 0: self.evals }
+    pub fn into_aligned(self) -> Aligned32<[IntMod<N>; D]> {
+        Aligned32(self.evals)
     }
 }
 

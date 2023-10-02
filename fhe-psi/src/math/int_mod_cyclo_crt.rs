@@ -18,7 +18,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 // TODO: documentation
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C, align(64))]
+#[repr(C, align(32))]
 pub struct IntModCycloCRT<
     const D: usize,
     const N1: u64,

@@ -11,6 +11,7 @@ use crate::math::matrix::Matrix;
 use crate::math::ntt::*;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
+use crate::math::simd_utils::Aligned32;
 use rand::Rng;
 use std::cmp::max;
 use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -19,14 +20,14 @@ use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
 ///
 /// Internally, this is an array of coefficients where the `i`th index corresponds to `x^i`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C, align(64))]
+#[repr(C, align(32))]
 pub struct IntModCyclo<const D: usize, const N: u64> {
     pub coeff: [IntMod<N>; D],
 }
 
 impl<const D: usize, const N: u64> IntModCyclo<D, N> {
-    pub fn into_aligned(self) -> Aligned64<[IntMod<N>; D]> {
-        Aligned64(self.coeff)
+    pub fn into_aligned(self) -> Aligned32<[IntMod<N>; D]> {
+        Aligned32(self.coeff)
     }
 }
 
