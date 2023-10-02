@@ -660,95 +660,143 @@ impl<
             // Add one for margin
             let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - 1);
 
-            let terms = [((0, 0), c0s.as_slice()), ((1, 0), c1s.as_slice())];
-            for (idx, cs) in terms {
-                #[cfg(not(target_feature = "avx2"))]
-                for eval_idx in 0..D {
-                    let mut sum_proj1 = 0_u64;
-                    let mut sum_proj2 = 0_u64;
-                    for i in 0..Self::DB_DIM1_SIZE {
-                        let lhs = cs[eval_idx * Self::DB_DIM1_SIZE + i];
-                        let lhs_proj1 = lhs as u32 as u64;
-                        let lhs_proj2 = lhs >> 32;
+            #[cfg(not(target_feature = "avx2"))]
+            for eval_idx in 0..D {
+                let mut sum0_proj1 = 0_u64;
+                let mut sum0_proj2 = 0_u64;
+                let mut sum1_proj1 = 0_u64;
+                let mut sum1_proj2 = 0_u64;
+                for i in 0..Self::DB_DIM1_SIZE {
+                    let lhs0 = c0s[eval_idx * Self::DB_DIM1_SIZE + i];
+                    let lhs0_proj1 = lhs0 as u32 as u64;
+                    let lhs0_proj2 = lhs0 >> 32;
 
-                        let rhs = db[eval_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i];
-                        let rhs_proj1 = rhs as u32 as u64;
-                        let rhs_proj2 = rhs >> 32;
+                    let lhs1 = c1s[eval_idx * Self::DB_DIM1_SIZE + i];
+                    let lhs1_proj1 = lhs1 as u32 as u64;
+                    let lhs1_proj2 = lhs1 >> 32;
 
-                        sum_proj1 += lhs_proj1 * rhs_proj1;
-                        sum_proj2 += lhs_proj2 * rhs_proj2;
-                        if i % reduce_every == 0 || i == Self::DB_DIM1_SIZE - 1 {
-                            sum_proj1 %= Q_A;
-                            sum_proj2 %= Q_B;
-                        }
+                    let rhs = db[eval_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i];
+                    let rhs_proj1 = rhs as u32 as u64;
+                    let rhs_proj2 = rhs >> 32;
+
+                    sum0_proj1 += lhs0_proj1 * rhs_proj1;
+                    sum0_proj2 += lhs0_proj2 * rhs_proj2;
+                    sum1_proj1 += lhs1_proj1 * rhs_proj1;
+                    sum1_proj2 += lhs1_proj2 * rhs_proj2;
+
+                    if i % reduce_every == 0 || i == Self::DB_DIM1_SIZE - 1 {
+                        sum0_proj1 %= Q_A;
+                        sum0_proj2 %= Q_B;
+                        sum1_proj1 %= Q_A;
+                        sum1_proj2 %= Q_B;
                     }
-                    sum[idx].proj1.evals[eval_idx] = IntMod::from(sum_proj1);
-                    sum[idx].proj2.evals[eval_idx] = IntMod::from(sum_proj2);
                 }
+                sum[(0, 0)].proj1.evals[eval_idx] = IntMod::from(sum0_proj1);
+                sum[(0, 0)].proj2.evals[eval_idx] = IntMod::from(sum0_proj2);
+                sum[(1, 0)].proj1.evals[eval_idx] = IntMod::from(sum1_proj1);
+                sum[(1, 0)].proj2.evals[eval_idx] = IntMod::from(sum1_proj2);
+            }
 
-                #[cfg(target_feature = "avx2")]
-                for eval_vec_idx in 0..(D / SIMD_LANES) {
-                    use std::arch::x86_64::*;
-                    unsafe {
-                        let mut sum_proj1 = _mm256_setzero_si256();
-                        let mut sum_proj2 = _mm256_setzero_si256();
-                        for i in 0..Self::DB_DIM1_SIZE {
-                            let lhs_ptr = cs.get_unchecked(eval_vec_idx * Self::DB_DIM1_SIZE + i)
-                                as *const SimdVec
-                                as *const __m256i;
-                            let rhs_ptr = db.get_unchecked(
-                                eval_vec_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i,
-                            ) as *const SimdVec
-                                as *const __m256i;
+            #[cfg(target_feature = "avx2")]
+            for eval_vec_idx in 0..(D / SIMD_LANES) {
+                use std::arch::x86_64::*;
+                unsafe {
+                    let mut sum0_proj1 = _mm256_setzero_si256();
+                    let mut sum0_proj2 = _mm256_setzero_si256();
+                    let mut sum1_proj1 = _mm256_setzero_si256();
+                    let mut sum1_proj2 = _mm256_setzero_si256();
+                    for i in 0..Self::DB_DIM1_SIZE {
+                        let lhs0_ptr = c0s.get_unchecked(eval_vec_idx * Self::DB_DIM1_SIZE + i)
+                            as *const SimdVec
+                            as *const __m256i;
+                        let lhs1_ptr = c1s.get_unchecked(eval_vec_idx * Self::DB_DIM1_SIZE + i)
+                            as *const SimdVec
+                            as *const __m256i;
+                        let rhs_ptr = db.get_unchecked(
+                            eval_vec_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i,
+                        ) as *const SimdVec as *const __m256i;
 
-                            let lhs_proj1 = _mm256_load_si256(lhs_ptr);
-                            let lhs_proj2 = _mm256_srli_epi64::<32>(lhs_proj1);
-                            let rhs_proj1 = _mm256_load_si256(rhs_ptr);
-                            let rhs_proj2 = _mm256_srli_epi64::<32>(rhs_proj1);
+                        let lhs0_proj1 = _mm256_load_si256(lhs0_ptr);
+                        let lhs0_proj2 = _mm256_srli_epi64::<32>(lhs0_proj1);
+                        let lhs1_proj1 = _mm256_load_si256(lhs1_ptr);
+                        let lhs1_proj2 = _mm256_srli_epi64::<32>(lhs1_proj1);
+                        let rhs_proj1 = _mm256_load_si256(rhs_ptr);
+                        let rhs_proj2 = _mm256_srli_epi64::<32>(rhs_proj1);
 
-                            sum_proj1 =
-                                _mm256_add_epi64(sum_proj1, _mm256_mul_epu32(lhs_proj1, rhs_proj1));
-                            sum_proj2 =
-                                _mm256_add_epi64(sum_proj2, _mm256_mul_epu32(lhs_proj2, rhs_proj2));
+                        sum0_proj1 =
+                            _mm256_add_epi64(sum0_proj1, _mm256_mul_epu32(lhs0_proj1, rhs_proj1));
+                        sum0_proj2 =
+                            _mm256_add_epi64(sum0_proj2, _mm256_mul_epu32(lhs0_proj2, rhs_proj2));
+                        sum1_proj1 =
+                            _mm256_add_epi64(sum1_proj1, _mm256_mul_epu32(lhs1_proj1, rhs_proj1));
+                        sum1_proj2 =
+                            _mm256_add_epi64(sum1_proj2, _mm256_mul_epu32(lhs1_proj2, rhs_proj2));
 
-                            if i % reduce_every == 0 || i == Self::DB_DIM1_SIZE - 1 {
-                                let mut tmp_proj1: SimdVec = Aligned32([0_u64; 4]);
-                                let mut tmp_proj2: SimdVec = Aligned32([0_u64; 4]);
-                                _mm256_store_si256(
-                                    &mut tmp_proj1 as *mut SimdVec as *mut __m256i,
-                                    sum_proj1,
-                                );
-                                _mm256_store_si256(
-                                    &mut tmp_proj2 as *mut SimdVec as *mut __m256i,
-                                    sum_proj2,
-                                );
-                                for lane in 0..SIMD_LANES {
-                                    tmp_proj1.0[lane] %= Q_A;
-                                    tmp_proj2.0[lane] %= Q_B;
-                                }
-                                sum_proj1 = _mm256_load_si256(
-                                    &tmp_proj1 as *const SimdVec as *const __m256i,
-                                );
-                                sum_proj2 = _mm256_load_si256(
-                                    &tmp_proj2 as *const SimdVec as *const __m256i,
-                                );
+                        if i % reduce_every == 0 || i == Self::DB_DIM1_SIZE - 1 {
+                            let mut tmp0_proj1: SimdVec = Aligned32([0_u64; 4]);
+                            let mut tmp0_proj2: SimdVec = Aligned32([0_u64; 4]);
+                            let mut tmp1_proj1: SimdVec = Aligned32([0_u64; 4]);
+                            let mut tmp1_proj2: SimdVec = Aligned32([0_u64; 4]);
+                            _mm256_store_si256(
+                                &mut tmp0_proj1 as *mut SimdVec as *mut __m256i,
+                                sum0_proj1,
+                            );
+                            _mm256_store_si256(
+                                &mut tmp0_proj2 as *mut SimdVec as *mut __m256i,
+                                sum0_proj2,
+                            );
+                            _mm256_store_si256(
+                                &mut tmp1_proj1 as *mut SimdVec as *mut __m256i,
+                                sum1_proj1,
+                            );
+                            _mm256_store_si256(
+                                &mut tmp1_proj2 as *mut SimdVec as *mut __m256i,
+                                sum1_proj2,
+                            );
+                            for lane in 0..SIMD_LANES {
+                                tmp0_proj1.0[lane] %= Q_A;
+                                tmp0_proj2.0[lane] %= Q_B;
+                                tmp1_proj1.0[lane] %= Q_A;
+                                tmp1_proj2.0[lane] %= Q_B;
                             }
+                            sum0_proj1 =
+                                _mm256_load_si256(&tmp0_proj1 as *const SimdVec as *const __m256i);
+                            sum0_proj2 =
+                                _mm256_load_si256(&tmp0_proj2 as *const SimdVec as *const __m256i);
+                            sum1_proj1 =
+                                _mm256_load_si256(&tmp1_proj1 as *const SimdVec as *const __m256i);
+                            sum1_proj2 =
+                                _mm256_load_si256(&tmp1_proj2 as *const SimdVec as *const __m256i);
                         }
-                        let sum_proj1_ptr = sum[idx]
-                            .proj1
-                            .evals
-                            .get_unchecked_mut(eval_vec_idx * SIMD_LANES)
-                            as *mut IntMod<Q_A>
-                            as *mut __m256i;
-                        let sum_proj2_ptr = sum[idx]
-                            .proj2
-                            .evals
-                            .get_unchecked_mut(eval_vec_idx * SIMD_LANES)
-                            as *mut IntMod<Q_B>
-                            as *mut __m256i;
-                        _mm256_store_si256(sum_proj1_ptr, sum_proj1);
-                        _mm256_store_si256(sum_proj2_ptr, sum_proj2);
                     }
+                    let sum0_proj1_ptr = sum[(0, 0)]
+                        .proj1
+                        .evals
+                        .get_unchecked_mut(eval_vec_idx * SIMD_LANES)
+                        as *mut IntMod<Q_A>
+                        as *mut __m256i;
+                    let sum0_proj2_ptr = sum[(0, 0)]
+                        .proj2
+                        .evals
+                        .get_unchecked_mut(eval_vec_idx * SIMD_LANES)
+                        as *mut IntMod<Q_B>
+                        as *mut __m256i;
+                    let sum1_proj1_ptr = sum[(1, 0)]
+                        .proj1
+                        .evals
+                        .get_unchecked_mut(eval_vec_idx * SIMD_LANES)
+                        as *mut IntMod<Q_A>
+                        as *mut __m256i;
+                    let sum1_proj2_ptr = sum[(1, 0)]
+                        .proj2
+                        .evals
+                        .get_unchecked_mut(eval_vec_idx * SIMD_LANES)
+                        as *mut IntMod<Q_B>
+                        as *mut __m256i;
+                    _mm256_store_si256(sum0_proj1_ptr, sum0_proj1);
+                    _mm256_store_si256(sum0_proj2_ptr, sum0_proj2);
+                    _mm256_store_si256(sum1_proj1_ptr, sum1_proj1);
+                    _mm256_store_si256(sum1_proj2_ptr, sum1_proj2);
                 }
             }
             curr.push(sum);
