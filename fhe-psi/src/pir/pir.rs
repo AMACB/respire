@@ -722,11 +722,17 @@ impl<
                             eval_vec_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i,
                         ) as *const SimdVec as *const __m256i;
 
+                        // These loads are intentionally in a weird order! For reasons I don't fully
+                        // understand, putting these in the "natural" order causes a 2.5x slow down
+                        // in some cases. (This occurs to either the first half or the second half
+                        // the `eval_vec_idx` loop).
+
                         let lhs0_proj1 = _mm256_load_si256(lhs0_ptr);
-                        let lhs0_proj2 = _mm256_srli_epi64::<32>(lhs0_proj1);
-                        let lhs1_proj1 = _mm256_load_si256(lhs1_ptr);
-                        let lhs1_proj2 = _mm256_srli_epi64::<32>(lhs1_proj1);
                         let rhs_proj1 = _mm256_load_si256(rhs_ptr);
+                        let lhs1_proj1 = _mm256_load_si256(lhs1_ptr);
+
+                        let lhs0_proj2 = _mm256_srli_epi64::<32>(lhs0_proj1);
+                        let lhs1_proj2 = _mm256_srli_epi64::<32>(lhs1_proj1);
                         let rhs_proj2 = _mm256_srli_epi64::<32>(rhs_proj1);
 
                         sum0_proj1 =
