@@ -14,8 +14,9 @@ use crate::math::matrix::Matrix;
 use crate::math::number_theory::find_sqrt_primitive_root;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::ring_elem::{NormedRingElement, RingElement};
-use crate::math::simd_utils::{SimdVec, SIMD_LANES};
 use crate::math::utils::{ceil_log, mod_inverse};
+
+use crate::math::simd_utils::*;
 
 pub struct SPIRALImpl<
     const Q: u64,
@@ -348,10 +349,10 @@ impl<
         #[cfg(target_feature = "avx2")]
         {
             let mut db_proj1: Vec<SimdVec> = (0..((D / SIMD_LANES) * Self::DB_SIZE))
-                .map(|_| [0_u64; 4])
+                .map(|_| Aligned32([0_u64; 4]))
                 .collect();
             let mut db_proj2: Vec<SimdVec> = (0..((D / SIMD_LANES) * Self::DB_SIZE))
-                .map(|_| [0_u64; 4])
+                .map(|_| Aligned32([0_u64; 4]))
                 .collect();
 
             for eval_vec_idx in 0..(D / SIMD_LANES) {
