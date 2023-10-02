@@ -298,9 +298,9 @@ impl<
     type Record = Self::RingP;
 
     /// We structure the database as `[2] x [D / S] x [DIM2_SIZE] x [DIM1_SIZE] x [S]` for optimal first dimension
-    /// processing. The outermost pair is the first resp. second CRT projections; `S` is the SIMD lane count that
-    /// we can use, i.e. 4 for AVX2.
-    type Database = (Vec<SimdVec>, Vec<SimdVec>);
+    /// processing. The outermost pair is the first resp. second CRT projections, packed as two u32 into one u64;
+    /// `S` is the SIMD lane count that we can use, i.e. 4 for AVX2.
+    type Database = Vec<SimdVec>;
 
     // Constants
     const DB_DIM1_SIZE: usize = 2_usize.pow(ETA1 as u32);
@@ -328,8 +328,7 @@ impl<
 
         #[cfg(not(target_feature = "avx2"))]
         {
-            let mut db_proj1: Vec<SimdVec> = (0..(D * Self::DB_SIZE)).map(|_| 0_u64).collect();
-            let mut db_proj2: Vec<SimdVec> = (0..(D * Self::DB_SIZE)).map(|_| 0_u64).collect();
+            let mut db: Vec<SimdVec> = (0..(D * Self::DB_SIZE)).map(|_| 0_u64).collect();
             for eval_vec_idx in 0..D {
                 for db_idx in 0..Self::DB_SIZE {
                     // Transpose the index
@@ -338,20 +337,18 @@ impl<
 
                     let to_idx = eval_vec_idx * Self::DB_SIZE + db_idx_t;
                     let from_idx = eval_vec_idx;
-                    db_proj1[to_idx] = u64::from(records_eval[db_idx].proj1.evals[from_idx]);
-                    db_proj2[to_idx] = u64::from(records_eval[db_idx].proj2.evals[from_idx]);
+                    let lo = u64::from(records_eval[db_idx].proj1.evals[from_idx]);
+                    let hi = u64::from(records_eval[db_idx].proj2.evals[from_idx]);
+                    db[to_idx] = (hi << 32) | lo;
                 }
             }
 
-            (db_proj1, db_proj2)
+            db
         }
 
         #[cfg(target_feature = "avx2")]
         {
-            let mut db_proj1: Vec<SimdVec> = (0..((D / SIMD_LANES) * Self::DB_SIZE))
-                .map(|_| Aligned32([0_u64; 4]))
-                .collect();
-            let mut db_proj2: Vec<SimdVec> = (0..((D / SIMD_LANES) * Self::DB_SIZE))
+            let mut db: Vec<SimdVec> = (0..((D / SIMD_LANES) * Self::DB_SIZE))
                 .map(|_| Aligned32([0_u64; 4]))
                 .collect();
 
@@ -361,23 +358,20 @@ impl<
                     let (db_i, db_j) = (db_idx / Self::DB_DIM2_SIZE, db_idx % Self::DB_DIM2_SIZE);
                     let db_idx_t = db_j * Self::DB_DIM1_SIZE + db_i;
 
-                    let mut db_proj1_vec: SimdVec = Aligned32([0_u64; 4]);
-                    let mut db_proj2_vec: SimdVec = Aligned32([0_u64; 4]);
+                    let mut db_vec: SimdVec = Aligned32([0_u64; 4]);
                     for lane in 0..SIMD_LANES {
                         let from_idx = eval_vec_idx * SIMD_LANES + lane;
-                        db_proj1_vec.0[lane] =
-                            u64::from(records_eval[db_idx].proj1.evals[from_idx]);
-                        db_proj2_vec.0[lane] =
-                            u64::from(records_eval[db_idx].proj2.evals[from_idx]);
+                        let lo = u64::from(records_eval[db_idx].proj1.evals[from_idx]);
+                        let hi = u64::from(records_eval[db_idx].proj2.evals[from_idx]);
+                        db_vec.0[lane] = (hi << 32) | lo;
                     }
 
                     let to_idx = eval_vec_idx * Self::DB_SIZE + db_idx_t;
-                    db_proj1[to_idx] = db_proj1_vec;
-                    db_proj2[to_idx] = db_proj2_vec;
+                    db[to_idx] = db_vec;
                 }
             }
 
-            (db_proj1, db_proj2)
+            db
         }
     }
 
@@ -611,45 +605,46 @@ impl<
     }
 
     pub fn answer_first_dim(
-        (db_proj1, db_proj2): &<Self as SPIRAL>::Database,
+        db: &<Self as SPIRAL>::Database,
         regevs: &[<Self as SPIRAL>::RegevCiphertext],
     ) -> Vec<<Self as SPIRAL>::RegevCiphertext> {
         assert_eq!(regevs.len(), Self::DB_DIM1_SIZE);
 
         // Flatten + transpose the ciphertexts
-        let mut c0_proj1s: Vec<SimdVec> = Vec::with_capacity((D / SIMD_LANES) * Self::DB_DIM1_SIZE);
-        let mut c1_proj1s: Vec<SimdVec> = Vec::with_capacity((D / SIMD_LANES) * Self::DB_DIM1_SIZE);
-        let mut c0_proj2s: Vec<SimdVec> = Vec::with_capacity((D / SIMD_LANES) * Self::DB_DIM1_SIZE);
-        let mut c1_proj2s: Vec<SimdVec> = Vec::with_capacity((D / SIMD_LANES) * Self::DB_DIM1_SIZE);
+        let mut c0s: Vec<SimdVec> = Vec::with_capacity((D / SIMD_LANES) * Self::DB_DIM1_SIZE);
+        let mut c1s: Vec<SimdVec> = Vec::with_capacity((D / SIMD_LANES) * Self::DB_DIM1_SIZE);
 
         #[cfg(not(target_feature = "avx2"))]
         for eval_idx in 0..D {
             for c in regevs.iter() {
-                c0_proj1s.push(u64::from(c[(0, 0)].proj1.evals[eval_idx]));
-                c0_proj2s.push(u64::from(c[(0, 0)].proj2.evals[eval_idx]));
-                c1_proj1s.push(u64::from(c[(1, 0)].proj1.evals[eval_idx]));
-                c1_proj2s.push(u64::from(c[(1, 0)].proj2.evals[eval_idx]));
+                let c0_lo = u64::from(c[(0, 0)].proj1.evals[eval_idx]);
+                let c0_hi = u64::from(c[(0, 0)].proj2.evals[eval_idx]);
+                c0s.push((c0_hi << 32) | c0_lo);
+
+                let c1_lo = u64::from(c[(1, 0)].proj1.evals[eval_idx]);
+                let c1_hi = u64::from(c[(1, 0)].proj2.evals[eval_idx]);
+                c1s.push((c1_hi << 32) | c1_lo);
             }
         }
 
         #[cfg(target_feature = "avx2")]
         for eval_vec_idx in 0..(D / SIMD_LANES) {
             for c in regevs.iter() {
-                let mut c0_proj1_vec: SimdVec = Aligned32([0_u64; 4]);
-                let mut c0_proj2_vec: SimdVec = Aligned32([0_u64; 4]);
-                let mut c1_proj1_vec: SimdVec = Aligned32([0_u64; 4]);
-                let mut c1_proj2_vec: SimdVec = Aligned32([0_u64; 4]);
+                let mut c0_vec: SimdVec = Aligned32([0_u64; 4]);
+                let mut c1_vec: SimdVec = Aligned32([0_u64; 4]);
                 for lane_idx in 0..SIMD_LANES {
                     let from_idx = eval_vec_idx * SIMD_LANES + lane_idx;
-                    c0_proj1_vec.0[lane_idx] = u64::from(c[(0, 0)].proj1.evals[from_idx]);
-                    c0_proj2_vec.0[lane_idx] = u64::from(c[(0, 0)].proj2.evals[from_idx]);
-                    c1_proj1_vec.0[lane_idx] = u64::from(c[(1, 0)].proj1.evals[from_idx]);
-                    c1_proj2_vec.0[lane_idx] = u64::from(c[(1, 0)].proj2.evals[from_idx]);
+
+                    let c0_lo = u64::from(c[(0, 0)].proj1.evals[from_idx]);
+                    let c0_hi = u64::from(c[(0, 0)].proj2.evals[from_idx]);
+                    c0_vec.0[lane_idx] = (c0_hi << 32) | c0_lo;
+
+                    let c1_lo = u64::from(c[(1, 0)].proj1.evals[from_idx]);
+                    let c1_hi = u64::from(c[(1, 0)].proj2.evals[from_idx]);
+                    c1_vec.0[lane_idx] = (c1_hi << 32) | c1_lo;
                 }
-                c0_proj1s.push(c0_proj1_vec);
-                c0_proj2s.push(c0_proj2_vec);
-                c1_proj1s.push(c1_proj1_vec);
-                c1_proj2s.push(c1_proj2_vec);
+                c0s.push(c0_vec);
+                c1s.push(c1_vec);
             }
         }
 
@@ -665,23 +660,20 @@ impl<
             // Add one for margin
             let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - 1);
 
-            let terms = [
-                ((0, 0), c0_proj1s.as_slice(), c0_proj2s.as_slice()),
-                ((1, 0), c1_proj1s.as_slice(), c1_proj2s.as_slice()),
-            ];
-            for (idx, c_proj1s, c_proj2s) in terms {
+            let terms = [((0, 0), c0s.as_slice()), ((1, 0), c1s.as_slice())];
+            for (idx, cs) in terms {
                 #[cfg(not(target_feature = "avx2"))]
                 for eval_idx in 0..D {
                     let mut sum_proj1 = 0_u64;
                     let mut sum_proj2 = 0_u64;
                     for i in 0..Self::DB_DIM1_SIZE {
-                        let lhs_proj1 = c_proj1s[eval_idx * Self::DB_DIM1_SIZE + i];
-                        let lhs_proj2 = c_proj2s[eval_idx * Self::DB_DIM1_SIZE + i];
+                        let lhs = cs[eval_idx * Self::DB_DIM1_SIZE + i];
+                        let lhs_proj1 = lhs as u32 as u64;
+                        let lhs_proj2 = lhs >> 32;
 
-                        let rhs_proj1 =
-                            db_proj1[eval_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i];
-                        let rhs_proj2 =
-                            db_proj2[eval_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i];
+                        let rhs = db[eval_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i];
+                        let rhs_proj1 = rhs as u32 as u64;
+                        let rhs_proj2 = rhs >> 32;
 
                         sum_proj1 += lhs_proj1 * rhs_proj1;
                         sum_proj2 += lhs_proj2 * rhs_proj2;
@@ -701,27 +693,18 @@ impl<
                         let mut sum_proj1 = _mm256_setzero_si256();
                         let mut sum_proj2 = _mm256_setzero_si256();
                         for i in 0..Self::DB_DIM1_SIZE {
-                            let lhs_proj1_ptr = c_proj1s
-                                .get_unchecked(eval_vec_idx * Self::DB_DIM1_SIZE + i)
+                            let lhs_ptr = cs.get_unchecked(eval_vec_idx * Self::DB_DIM1_SIZE + i)
                                 as *const SimdVec
                                 as *const __m256i;
-                            let lhs_proj2_ptr = c_proj2s
-                                .get_unchecked(eval_vec_idx * Self::DB_DIM1_SIZE + i)
-                                as *const SimdVec
-                                as *const __m256i;
-                            let rhs_proj1_ptr = db_proj1.get_unchecked(
-                                eval_vec_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i,
-                            ) as *const SimdVec
-                                as *const __m256i;
-                            let rhs_proj2_ptr = db_proj2.get_unchecked(
+                            let rhs_ptr = db.get_unchecked(
                                 eval_vec_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i,
                             ) as *const SimdVec
                                 as *const __m256i;
 
-                            let lhs_proj1 = _mm256_load_si256(lhs_proj1_ptr);
-                            let lhs_proj2 = _mm256_load_si256(lhs_proj2_ptr);
-                            let rhs_proj1 = _mm256_load_si256(rhs_proj1_ptr);
-                            let rhs_proj2 = _mm256_load_si256(rhs_proj2_ptr);
+                            let lhs_proj1 = _mm256_load_si256(lhs_ptr);
+                            let lhs_proj2 = _mm256_srli_epi64::<32>(lhs_proj1);
+                            let rhs_proj1 = _mm256_load_si256(rhs_ptr);
+                            let rhs_proj2 = _mm256_srli_epi64::<32>(rhs_proj1);
 
                             sum_proj1 =
                                 _mm256_add_epi64(sum_proj1, _mm256_mul_epu32(lhs_proj1, rhs_proj1));
