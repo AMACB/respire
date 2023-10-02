@@ -649,23 +649,25 @@ impl<
         }
 
         // First dimension processing
-        let mut curr: Vec<<Self as SPIRAL>::RegevCiphertext> =
-            Vec::with_capacity(Self::DB_DIM2_SIZE);
-        for j in 0..Self::DB_DIM2_SIZE {
-            // We want to compute the sum over i of ct_i * db_(i, j).
-            // Here db_(i, j) are scalars; ct_i are 2 x 1 matrices.
-            let mut sum = <Self as SPIRAL>::RegevCiphertext::zero();
+        let mut result: Vec<<Self as SPIRAL>::RegevCiphertext> = (0..Self::DB_DIM2_SIZE)
+            .map(|_| <Self as SPIRAL>::RegevCiphertext::zero())
+            .collect();
 
-            // Norm is at most max(Q_A, Q_B)^2 for each term
-            // Add one for margin
-            let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - 1);
+        // Norm is at most max(Q_A, Q_B)^2 for each term
+        // Add one for margin
+        let reduce_every = 1 << (64 - 2 * ceil_log(2, max(Q_A, Q_B)) - 1);
 
-            #[cfg(not(target_feature = "avx2"))]
-            for eval_idx in 0..D {
+        // We want to compute the sum over i of ct_i * db_(i, j).
+        // Here db_(i, j) are scalars; ct_i are 2 x 1 matrices.
+
+        #[cfg(not(target_feature = "avx2"))]
+        for eval_idx in 0..D {
+            for j in 0..Self::DB_DIM2_SIZE {
                 let mut sum0_proj1 = 0_u64;
                 let mut sum0_proj2 = 0_u64;
                 let mut sum1_proj1 = 0_u64;
                 let mut sum1_proj2 = 0_u64;
+
                 for i in 0..Self::DB_DIM1_SIZE {
                     let lhs0 = c0s[eval_idx * Self::DB_DIM1_SIZE + i];
                     let lhs0_proj1 = lhs0 as u32 as u64;
@@ -691,20 +693,24 @@ impl<
                         sum1_proj2 %= Q_B;
                     }
                 }
-                sum[(0, 0)].proj1.evals[eval_idx] = IntMod::from(sum0_proj1);
-                sum[(0, 0)].proj2.evals[eval_idx] = IntMod::from(sum0_proj2);
-                sum[(1, 0)].proj1.evals[eval_idx] = IntMod::from(sum1_proj1);
-                sum[(1, 0)].proj2.evals[eval_idx] = IntMod::from(sum1_proj2);
-            }
 
-            #[cfg(target_feature = "avx2")]
-            for eval_vec_idx in 0..(D / SIMD_LANES) {
-                use std::arch::x86_64::*;
-                unsafe {
+                result[j][(0, 0)].proj1.evals[eval_idx] = IntMod::from(sum0_proj1);
+                result[j][(0, 0)].proj2.evals[eval_idx] = IntMod::from(sum0_proj2);
+                result[j][(1, 0)].proj1.evals[eval_idx] = IntMod::from(sum1_proj1);
+                result[j][(1, 0)].proj2.evals[eval_idx] = IntMod::from(sum1_proj2);
+            }
+        }
+
+        #[cfg(target_feature = "avx2")]
+        for eval_vec_idx in 0..(D / SIMD_LANES) {
+            use std::arch::x86_64::*;
+            unsafe {
+                for j in 0..Self::DB_DIM2_SIZE {
                     let mut sum0_proj1 = _mm256_setzero_si256();
                     let mut sum0_proj2 = _mm256_setzero_si256();
                     let mut sum1_proj1 = _mm256_setzero_si256();
                     let mut sum1_proj2 = _mm256_setzero_si256();
+
                     for i in 0..Self::DB_DIM1_SIZE {
                         let lhs0_ptr = c0s.get_unchecked(eval_vec_idx * Self::DB_DIM1_SIZE + i)
                             as *const SimdVec
@@ -769,25 +775,26 @@ impl<
                                 _mm256_load_si256(&tmp1_proj2 as *const SimdVec as *const __m256i);
                         }
                     }
-                    let sum0_proj1_ptr = sum[(0, 0)]
+
+                    let sum0_proj1_ptr = result[j][(0, 0)]
                         .proj1
                         .evals
                         .get_unchecked_mut(eval_vec_idx * SIMD_LANES)
                         as *mut IntMod<Q_A>
                         as *mut __m256i;
-                    let sum0_proj2_ptr = sum[(0, 0)]
+                    let sum0_proj2_ptr = result[j][(0, 0)]
                         .proj2
                         .evals
                         .get_unchecked_mut(eval_vec_idx * SIMD_LANES)
                         as *mut IntMod<Q_B>
                         as *mut __m256i;
-                    let sum1_proj1_ptr = sum[(1, 0)]
+                    let sum1_proj1_ptr = result[j][(1, 0)]
                         .proj1
                         .evals
                         .get_unchecked_mut(eval_vec_idx * SIMD_LANES)
                         as *mut IntMod<Q_A>
                         as *mut __m256i;
-                    let sum1_proj2_ptr = sum[(1, 0)]
+                    let sum1_proj2_ptr = result[j][(1, 0)]
                         .proj2
                         .evals
                         .get_unchecked_mut(eval_vec_idx * SIMD_LANES)
@@ -799,10 +806,9 @@ impl<
                     _mm256_store_si256(sum1_proj2_ptr, sum1_proj2);
                 }
             }
-            curr.push(sum);
         }
 
-        curr
+        result
     }
 
     pub fn answer_fold(
