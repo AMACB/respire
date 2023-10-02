@@ -365,11 +365,13 @@ impl<
                             (db_idx / Self::DB_DIM2_SIZE, db_idx % Self::DB_DIM2_SIZE);
                         let db_idx_t = db_j * Self::DB_DIM1_SIZE + db_i;
 
-                        let to_idx = (eval_vec_idx * Self::DB_SIZE + db_idx_t) * SIMD_LANES + lane;
                         let from_idx = eval_vec_idx * SIMD_LANES + lane;
-                        db_proj1_vec[lane] = u64::from(records_eval[db_idx].proj1.evals[from_idx]);
-                        db_proj2_vec[lane] = u64::from(records_eval[db_idx].proj2.evals[from_idx]);
+                        db_proj1_vec.0[lane] =
+                            u64::from(records_eval[db_idx].proj1.evals[from_idx]);
+                        db_proj2_vec.0[lane] =
+                            u64::from(records_eval[db_idx].proj2.evals[from_idx]);
                     }
+                    let to_idx = eval_vec_idx * Self::DB_SIZE + db_idx_t;
                     db_proj1[to_idx] = db_proj1_vec;
                     db_proj2[to_idx] = db_proj2_vec;
                 }
@@ -639,10 +641,10 @@ impl<
                 let c1_proj2_vec: SimdVec = Aligned32([0_u64; 4]);
                 for lane_idx in 0..SIMD_LANES {
                     let from_idx = eval_vec_idx * SIMD_LANES + lane_idx;
-                    c0_proj1_vec[lane_idx] = u64::from(c[(0, 0)].proj1.evals[from_idx]);
-                    c0_proj2_vec[lane_idx] = u64::from(c[(0, 0)].proj2.evals[from_idx]);
-                    c1_proj1_vec[lane_idx] = u64::from(c[(1, 0)].proj1.evals[from_idx]);
-                    c1_proj2_vec[lane_idx] = u64::from(c[(1, 0)].proj2.evals[from_idx]);
+                    c0_proj1_vec.0[lane_idx] = u64::from(c[(0, 0)].proj1.evals[from_idx]);
+                    c0_proj2_vec.0[lane_idx] = u64::from(c[(0, 0)].proj2.evals[from_idx]);
+                    c1_proj1_vec.0[lane_idx] = u64::from(c[(1, 0)].proj1.evals[from_idx]);
+                    c1_proj2_vec.0[lane_idx] = u64::from(c[(1, 0)].proj2.evals[from_idx]);
                 }
                 c0_proj1s.push(c0_proj1_vec);
                 c0_proj2s.push(c0_proj2_vec);
