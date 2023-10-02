@@ -348,15 +348,16 @@ impl<
         #[cfg(target_feature = "avx2")]
         {
             let mut db_proj1: Vec<SimdVec> = (0..((D / SIMD_LANES) * Self::DB_SIZE))
-                .map(|_| 0_u64)
+                .map(|_| [0_u64; 4])
                 .collect();
             let mut db_proj2: Vec<SimdVec> = (0..((D / SIMD_LANES) * Self::DB_SIZE))
-                .map(|_| 0_u64)
+                .map(|_| [0_u64; 4])
                 .collect();
 
             for eval_vec_idx in 0..(D / SIMD_LANES) {
                 for db_idx in 0..Self::DB_SIZE {
-                    let simd_vec: SimdVec = Aligned32([0_u64; 4]);
+                    let db_proj1_vec: SimdVec = Aligned32([0_u64; 4]);
+                    let db_proj2_vec: SimdVec = Aligned32([0_u64; 4]);
                     for lane in 0..SIMD_LANES {
                         // Transpose the index
                         let (db_i, db_j) =
@@ -365,9 +366,11 @@ impl<
 
                         let to_idx = (eval_vec_idx * Self::DB_SIZE + db_idx_t) * SIMD_LANES + lane;
                         let from_idx = eval_vec_idx * SIMD_LANES + lane;
-                        db_proj1[to_idx] = u64::from(records_eval[db_idx].proj1.evals[from_idx]);
-                        db_proj2[to_idx] = u64::from(records_eval[db_idx].proj2.evals[from_idx]);
+                        db_proj1_vec[lane] = u64::from(records_eval[db_idx].proj1.evals[from_idx]);
+                        db_proj2_vec[lane] = u64::from(records_eval[db_idx].proj2.evals[from_idx]);
                     }
+                    db_proj1[to_idx] = db_proj1_vec;
+                    db_proj2[to_idx] = db_proj2_vec;
                 }
             }
 
