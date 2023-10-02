@@ -357,20 +357,20 @@ impl<
 
             for eval_vec_idx in 0..(D / SIMD_LANES) {
                 for db_idx in 0..Self::DB_SIZE {
+                    // Transpose the index
+                    let (db_i, db_j) = (db_idx / Self::DB_DIM2_SIZE, db_idx % Self::DB_DIM2_SIZE);
+                    let db_idx_t = db_j * Self::DB_DIM1_SIZE + db_i;
+
                     let db_proj1_vec: SimdVec = Aligned32([0_u64; 4]);
                     let db_proj2_vec: SimdVec = Aligned32([0_u64; 4]);
                     for lane in 0..SIMD_LANES {
-                        // Transpose the index
-                        let (db_i, db_j) =
-                            (db_idx / Self::DB_DIM2_SIZE, db_idx % Self::DB_DIM2_SIZE);
-                        let db_idx_t = db_j * Self::DB_DIM1_SIZE + db_i;
-
                         let from_idx = eval_vec_idx * SIMD_LANES + lane;
                         db_proj1_vec.0[lane] =
                             u64::from(records_eval[db_idx].proj1.evals[from_idx]);
                         db_proj2_vec.0[lane] =
                             u64::from(records_eval[db_idx].proj2.evals[from_idx]);
                     }
+
                     let to_idx = eval_vec_idx * Self::DB_SIZE + db_idx_t;
                     db_proj1[to_idx] = db_proj1_vec;
                     db_proj2[to_idx] = db_proj2_vec;
