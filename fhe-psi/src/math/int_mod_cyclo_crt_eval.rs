@@ -464,8 +464,9 @@ impl<
         &self,
         mat: &mut Matrix<N, M, Self>,
         i: usize,
-        j: usize
+        j: usize,
     ) {
+        // TODO: do the decomposition and/or NTTs in place
         let self_coeff = IntModCycloCRT::<D, N1, N2, N1_INV, N2_INV>::from(self);
         let mut tmp = Matrix::<LEN, 1, IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>>::zero();
         <IntModCycloCRT<D, N1, N2, N1_INV, N2_INV> as RingElementDecomposable<BASE, LEN>>::decompose_into_mat(&self_coeff, &mut tmp, 0, 0);

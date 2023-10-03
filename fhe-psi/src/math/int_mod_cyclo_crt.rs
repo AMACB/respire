@@ -291,20 +291,16 @@ impl<
         i: usize,
         j: usize,
     ) {
-        let mut decomps = Vec::<IntModDecomposition<BASE, LEN>>::with_capacity(D);
         for coeff_idx in 0..D {
             let coeff = u64::from(IntModCRT::<N1, N2, N1_INV, N2_INV>::from((
                 self.proj1.coeff[coeff_idx],
                 self.proj2.coeff[coeff_idx],
             )));
-            decomps.push(IntModDecomposition::<BASE, LEN>::new(coeff, N1 * N2));
-        }
-        for k in 0..LEN {
-            for coeff_idx in 0..D {
-                let result =
-                    IntModCRT::<N1, N2, N1_INV, N2_INV>::from(decomps[coeff_idx].next().unwrap());
-                mat[(i + k, j)].proj1.coeff[coeff_idx] = result.proj1;
-                mat[(i + k, j)].proj2.coeff[coeff_idx] = result.proj2;
+            let decomp = IntModDecomposition::<BASE, LEN>::new(coeff, N1 * N2);
+            for (k, u) in decomp.enumerate() {
+                let u_crt = IntModCRT::<N1, N2, N1_INV, N2_INV>::from(u);
+                mat[(i + k, j)].proj1.coeff[coeff_idx] = u_crt.proj1;
+                mat[(i + k, j)].proj2.coeff[coeff_idx] = u_crt.proj2;
             }
         }
     }
