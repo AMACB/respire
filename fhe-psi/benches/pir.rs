@@ -112,30 +112,23 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
     group.finish();
 
-    c.bench_function("pir::scal to mat", |b| {
+    c.bench_function("pir::scalar_regev_mul_x_pow", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
-        let scalar_key = SPIRALTest::encode_setup();
-        let matrix_key = SPIRALTest::matrix_regev_setup();
-        let scal_to_mat_key = SPIRALTest::scal_to_mat_setup(&scalar_key, &matrix_key);
-
-        let msg = IntModCyclo::rand_uniform(&mut rng);
-        let ct = SPIRALTest::encode_regev(&scalar_key, &msg);
-
-        b.iter(|| SPIRALTest::scal_to_mat(black_box(&scal_to_mat_key), black_box(&ct)))
+        let ct = Matrix::rand_uniform(&mut rng);
+        b.iter(|| SPIRALTest::regev_mul_x_pow(black_box(&ct), black_box(101)))
     });
 
     c.bench_function("pir::regev to gsw", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
-        let scalar_key = SPIRALTest::encode_setup();
-        let matrix_key = SPIRALTest::matrix_regev_setup();
-        let regev_to_gsw_key = SPIRALTest::regev_to_gsw_setup(&scalar_key, &matrix_key);
+        let s = SPIRALTest::encode_setup();
+        let regev_to_gsw_key = SPIRALTest::regev_to_gsw_setup(&s);
 
         let msg: IntModCyclo<{ SPIRAL_TEST_PARAMS.D }, { SPIRAL_TEST_PARAMS.Q }> =
             IntModCyclo::rand_uniform(&mut rng);
         let mut msg_curr = msg.include_into();
         let mut encrypt_vec = Vec::with_capacity(SPIRAL_TEST_PARAMS.T_GSW);
         for _ in 0..SPIRAL_TEST_PARAMS.T_GSW {
-            encrypt_vec.push(SPIRALTest::encode_regev(&scalar_key, &msg_curr));
+            encrypt_vec.push(SPIRALTest::encode_regev(&s, &msg_curr));
             msg_curr *= IntMod::from(SPIRAL_TEST_PARAMS.Z_GSW);
         }
 
@@ -145,47 +138,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 black_box(encrypt_vec.as_slice()),
             )
         });
-    });
-
-    c.bench_function("pir::scalar_regev_mul_x_pow", |b| {
-        let mut rng = ChaCha20Rng::from_entropy();
-        let ct = Matrix::rand_uniform(&mut rng);
-        b.iter(|| SPIRALTest::regev_mul_x_pow(black_box(&ct), black_box(101)))
-    });
-
-    c.bench_function("pir::query_expand", |b| {
-        let mut rng = ChaCha20Rng::from_entropy();
-        let (qk, pp) = SPIRALTest::setup();
-        let idx = rng.gen_range(0..<SPIRALTest as SPIRAL>::DB_SIZE);
-        let q = SPIRALTest::query(&qk, idx);
-        b.iter(|| SPIRALTest::query_expand(black_box(&pp), black_box(&q)))
-    });
-
-    c.bench_function("pir::regev_mul_scalar_no_reduce", |b| {
-        let mut rng = ChaCha20Rng::from_entropy();
-        let m1 = Matrix::rand_uniform(&mut rng);
-        let m2 = Matrix::rand_uniform(&mut rng);
-        b.iter(|| SPIRALTest::regev_mul_scalar_no_reduce(black_box(&m1), black_box(&m2)));
-    });
-
-    c.bench_function("pir::regev_add_eq_mul_scalar_no_reduce", |b| {
-        let mut rng = ChaCha20Rng::from_entropy();
-        let mut m1 = Matrix::rand_uniform(&mut rng);
-        let m2 = Matrix::rand_uniform(&mut rng);
-        let m3 = Matrix::rand_uniform(&mut rng);
-        b.iter(|| {
-            SPIRALTest::regev_add_eq_mul_scalar_no_reduce(
-                black_box(&mut m1),
-                black_box(&m2),
-                black_box(&m3),
-            )
-        });
-    });
-
-    c.bench_function("pir::reduce_mod", |b| {
-        let mut rng = ChaCha20Rng::from_entropy();
-        let mut elem = <SPIRALTest as SPIRAL>::Ring0Fast::rand_uniform(&mut rng);
-        b.iter(|| <SPIRALTest as SPIRAL>::RingQFast::reduce_mod(black_box(&mut elem)));
     });
 
     c.bench_function("pir::regev_sub_hom", |b| {
@@ -202,23 +154,29 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| SPIRALTest::hybrid_mul_hom(black_box(&m1), black_box(&m2)));
     });
 
-    c.bench_function("pir::first_dim", |b| {
+    c.bench_function("pir::answer_query_expand", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
-        let db: Vec<_> = (0..)
-            .map(|_| Matrix::rand_uniform(&mut rng))
+        let (qk, pp) = SPIRALTest::setup();
+        let idx = rng.gen_range(0..<SPIRALTest as SPIRAL>::DB_SIZE);
+        let q = SPIRALTest::query(&qk, idx);
+        b.iter(|| SPIRALTest::answer_query_expand(black_box(&pp), black_box(&q)))
+    });
+
+    c.bench_function("pir::answer_first_dim", |b| {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let records: Vec<_> = (0..)
+            .map(|_| <SPIRALTest as SPIRAL>::RingP::rand_uniform(&mut rng))
             .take(SPIRALTest::DB_SIZE)
             .collect();
+        let db = SPIRALTest::preprocess(records.iter());
         let regevs: Vec<_> = (0..)
             .map(|_| Matrix::rand_uniform(&mut rng))
             .take(1 << SPIRALTest::ETA1)
             .collect();
-
-        b.iter(|| {
-            SPIRALTest::answer_first_dim(black_box(db.as_slice()), black_box(regevs.as_slice()))
-        });
+        b.iter(|| SPIRALTest::answer_first_dim(black_box(&db), black_box(regevs.as_slice())));
     });
 
-    c.bench_function("pir::fold", |b| {
+    c.bench_function("pir::answer_fold", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
         let first_dim_folded: Vec<_> = (0..)
             .map(|_| Matrix::rand_uniform(&mut rng))

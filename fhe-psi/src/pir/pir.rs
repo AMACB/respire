@@ -463,7 +463,6 @@ impl<
 
         // First dimension
         let first_dim_folded = Self::answer_first_dim(db, &regevs);
-        let mid = Instant::now();
 
         let i2 = Instant::now();
 
