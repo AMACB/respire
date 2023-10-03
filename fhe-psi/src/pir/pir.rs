@@ -454,20 +454,27 @@ impl<
         db: &<Self as SPIRAL>::Database,
         q: &<Self as SPIRAL>::Query,
     ) -> <Self as SPIRAL>::Response {
+        let i0 = Instant::now();
+
         // Query expansion
         let (regevs, gsws) = Self::answer_query_expand(pp, q);
 
-        let start = Instant::now();
+        let i1 = Instant::now();
+
         // First dimension
         let first_dim_folded = Self::answer_first_dim(db, &regevs);
         let mid = Instant::now();
 
+        let i2 = Instant::now();
+
         // Folding
         let result = Self::answer_fold(first_dim_folded, gsws.as_slice());
 
-        let end = Instant::now();
-        eprintln!("(*) answer first dim: {:?}", mid - start);
-        eprintln!("(*) answer fold: {:?}", end - mid);
+        let i3 = Instant::now();
+
+        eprintln!("(*) answer query expand: {:?}", i1 - i0);
+        eprintln!("(*) answer first dim: {:?}", i2 - i1);
+        eprintln!("(*) answer fold: {:?}", i3 - i2);
         result
     }
 
