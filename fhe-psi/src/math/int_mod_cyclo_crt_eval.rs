@@ -1,4 +1,4 @@
-use crate::math::gadget::{IntModDecomposition, RingElementDecomposable};
+use crate::math::gadget::RingElementDecomposable;
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_crt::IntModCRT;
 use crate::math::int_mod_cyclo::IntModCyclo;
@@ -464,26 +464,13 @@ impl<
         &self,
         mat: &mut Matrix<N, M, Self>,
         i: usize,
-        j: usize,
+        j: usize
     ) {
-        let self_coeff = IntModCycloCRT::from(self);
-        let mut decomps = Vec::<IntModDecomposition<BASE, LEN>>::with_capacity(D);
-        for coeff_idx in 0..D {
-            let coeff = u64::from(IntModCRT::<N1, N2, N1_INV, N2_INV>::from((
-                self_coeff.proj1.coeff[coeff_idx],
-                self_coeff.proj2.coeff[coeff_idx],
-            )));
-            decomps.push(IntModDecomposition::<BASE, LEN>::new(coeff, N1 * N2));
-        }
+        let self_coeff = IntModCycloCRT::<D, N1, N2, N1_INV, N2_INV>::from(self);
+        let mut tmp = Matrix::<LEN, 1, IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>>::zero();
+        <IntModCycloCRT<D, N1, N2, N1_INV, N2_INV> as RingElementDecomposable<BASE, LEN>>::decompose_into_mat(&self_coeff, &mut tmp, 0, 0);
         for k in 0..LEN {
-            let mut result_coeff = IntModCycloCRT::zero();
-            for coeff_idx in 0..D {
-                let result =
-                    IntModCRT::<N1, N2, N1_INV, N2_INV>::from(decomps[coeff_idx].next().unwrap());
-                result_coeff.proj1.coeff[coeff_idx] = result.proj1;
-                result_coeff.proj2.coeff[coeff_idx] = result.proj2;
-            }
-            mat[(i + k, j)] = IntModCycloCRTEval::from(result_coeff);
+            mat[(i + k, j)] = IntModCycloCRTEval::from(tmp[(k, 0)].clone());
         }
     }
 }

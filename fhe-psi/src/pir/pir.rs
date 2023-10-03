@@ -950,13 +950,19 @@ impl<
         let c0 = &c[(0, 0)];
         let c1 = &c[(1, 0)];
         let mut g_inv_tau_c0 = Matrix::<LEN, 1, <Self as SPIRAL>::RingQFast>::zero();
+
+        // 80% + 1%
         <<Self as SPIRAL>::RingQFast as RingElementDecomposable<BASE, LEN>>::decompose_into_mat(
             &c0.auto(*tau_power),
             &mut g_inv_tau_c0,
             0,
             0,
         );
+
+        // 8%
         let mut result = w_mat * &g_inv_tau_c0;
+
+        // 1%
         result[(1, 0)] += &c1.auto(*tau_power);
         result
     }
