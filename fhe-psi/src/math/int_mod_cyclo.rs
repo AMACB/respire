@@ -208,11 +208,11 @@ impl<const D: usize, const N: u64> Neg for &IntModCyclo<D, N> {
 
 impl<const D: usize, const N: u64> RingElement for IntModCyclo<D, N> {
     fn zero() -> IntModCyclo<D, N> {
-        [0_u64.into(); D].into()
+        [IntMod::zero(); D].into()
     }
     fn one() -> IntModCyclo<D, N> {
         let mut result = Self::zero();
-        result.coeff[0] = 1_u64.into();
+        result.coeff[0] = IntMod::one();
         result
     }
 }

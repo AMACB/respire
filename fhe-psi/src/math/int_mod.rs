@@ -86,10 +86,11 @@ impl<const N: u64> From<IntMod<N>> for i64 {
 
 impl<const N: u64> RingElement for IntMod<N> {
     fn zero() -> Self {
-        0_u64.into()
+        NoReduce(0_u64).into()
     }
     fn one() -> Self {
-        1_u64.into()
+        // mod 1 is prohibited
+        NoReduce(1_u64).into()
     }
 }
 

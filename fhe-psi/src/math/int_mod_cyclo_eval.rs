@@ -160,10 +160,10 @@ impl<const D: usize, const N: u64, const W: u64> Neg for &IntModCycloEval<D, N, 
 
 impl<const D: usize, const N: u64, const W: u64> RingElement for IntModCycloEval<D, N, W> {
     fn zero() -> IntModCycloEval<D, N, W> {
-        [0_u64.into(); D].into()
+        [IntMod::zero(); D].into()
     }
     fn one() -> IntModCycloEval<D, N, W> {
-        [1_u64.into(); D].into()
+        [IntMod::one(); D].into()
     }
 }
 
