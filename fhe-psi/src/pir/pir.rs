@@ -3,6 +3,7 @@ use std::cmp::max;
 use std::slice;
 use std::time::Instant;
 
+use crate::math::discrete_gaussian::NUM_WIDTHS;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
@@ -17,6 +18,7 @@ use crate::math::ring_elem::{NormedRingElement, RingElement};
 use crate::math::utils::{ceil_log, mod_inverse};
 
 use crate::math::simd_utils::*;
+use crate::pir::noise::{BoundedNoise, Independent, SubGaussianNoise};
 
 pub struct SPIRALImpl<
     const Q: u64,
@@ -129,6 +131,78 @@ impl SPIRALParams {
         assert_eq!(self.D, 2048);
         let erfc_inv = 5.745_872_392_191_18_f64;
         1_f64 / (2_f64 * (self.P as f64) * 2_f64.sqrt() * erfc_inv)
+    }
+
+    pub fn noise_estimate(&self) -> f64 {
+        let chi = SubGaussianNoise::new(
+            (self.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64).powi(2),
+            self.D as u64,
+        );
+
+        let chi_bounded = BoundedNoise::new(
+            (self.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64 * NUM_WIDTHS as f64).ceil(),
+            self.D as u64,
+        );
+
+        let db_record_noise = BoundedNoise::new((self.P - 1) as f64, self.D as u64);
+
+        let gadget_inverse_noise =
+            |base: u64, len: usize, rows: usize, cols: usize| -> BoundedNoise {
+                BoundedNoise::new_matrix((base / 2) as f64, self.D as u64, rows * len, cols)
+            };
+
+        let automorph_noise = |e: SubGaussianNoise, base: u64, len: usize| -> SubGaussianNoise {
+            let e_t_g_inv = chi.with_dimension(1, len) * gadget_inverse_noise(base, len, 1, 1);
+            e + e_t_g_inv
+        };
+
+        let expand_iter_noise = |e: SubGaussianNoise, base: u64, len: usize| -> SubGaussianNoise {
+            e + automorph_noise(e, base, len)
+        };
+
+        let regev_to_gsw_noise = |e_t: SubGaussianNoise| -> SubGaussianNoise {
+            let e_conv = chi.with_dimension(1, 2 * self.T_CONV);
+            let g_inv_z_conv = gadget_inverse_noise(self.Z_CONV, self.T_CONV, 2, self.T_GSW);
+            let s_gsw = chi_bounded.with_dimension(1, 1);
+            let result = e_conv * g_inv_z_conv + s_gsw * e_t.with_dimension(1, self.T_GSW);
+            result.with_dimension(1, 2 * self.T_GSW)
+        };
+
+        let regev_count = 1 << self.ETA1;
+        let regev_expand_iters = self.ETA1;
+        let gsw_count = self.ETA2 * (self.Z_FOLD - 1) * self.T_GSW;
+        let gsw_expand_iters = ceil_log(2, gsw_count as u64);
+
+        // Original query
+        let query_noise = chi;
+
+        // Query expansion
+        let (regev_noise, gsw_noise) = {
+            let mut regev_expand_noise =
+                expand_iter_noise(query_noise, self.Z_COEFF_GSW, self.T_COEFF_GSW);
+            let mut gsw_expand_noise = regev_expand_noise;
+            for _ in 0..regev_expand_iters {
+                regev_expand_noise =
+                    expand_iter_noise(regev_expand_noise, self.Z_COEFF_REGEV, self.T_COEFF_REGEV);
+            }
+            for _ in 0..gsw_expand_iters {
+                gsw_expand_noise =
+                    expand_iter_noise(gsw_expand_noise, self.Z_COEFF_GSW, self.T_COEFF_GSW);
+            }
+            (regev_expand_noise, regev_to_gsw_noise(gsw_expand_noise))
+        };
+
+        // First dimension
+        let first_dim_noise = (regev_noise * db_record_noise) * Independent(regev_count as f64);
+
+        // Folding
+        let mut fold_noise = first_dim_noise;
+        for _ in 0..self.ETA2 {
+            let ci_minus_c0_noise = gsw_noise * gadget_inverse_noise(self.Z_GSW, self.T_GSW, 2, 1);
+            fold_noise = fold_noise + ci_minus_c0_noise * Independent((self.Z_FOLD - 1) as f64);
+        }
+
+        fold_noise.variance().sqrt() / self.Q as f64
     }
 }
 

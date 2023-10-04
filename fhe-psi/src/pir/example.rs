@@ -77,6 +77,10 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<2048, 256>>, I: Iterato
         records.push(<TheSPIRAL as SPIRAL>::Record::from(record_coeff));
     }
     eprintln!(
+        "Estimated relative noise: 2^({})",
+        SPIRAL_TEST_PARAMS.noise_estimate().log2()
+    );
+    eprintln!(
         "Relative noise threshold: 2^({})",
         SPIRAL_TEST_PARAMS.relative_noise_threshold().log2()
     );
