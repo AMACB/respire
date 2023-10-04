@@ -164,8 +164,14 @@ impl SPIRALParams {
             let e_conv = chi.with_dimension(1, 2 * self.T_CONV);
             let g_inv_z_conv = gadget_inverse_noise(self.Z_CONV, self.T_CONV, 2, self.T_GSW);
             let s_gsw = chi_bounded.with_dimension(1, 1);
-            let result = e_conv * g_inv_z_conv + s_gsw * e_t.with_dimension(1, self.T_GSW);
-            result.with_dimension(1, 2 * self.T_GSW)
+            let lhs = e_conv * g_inv_z_conv + s_gsw * e_t.with_dimension(1, self.T_GSW);
+
+            let lhs_variance = lhs.variance();
+            let rhs_variance = e_t.variance();
+            // Average the noise of the left T_GSW and right T_GSW entries. Since this will get
+            // multiplied by a BoundedNoise after this estimate is accurate.
+            SubGaussianNoise::new((lhs_variance + rhs_variance) / 2_f64, self.D as u64)
+                .with_dimension(1, 2 * self.T_GSW)
         };
 
         let regev_count = 1 << self.ETA1;
