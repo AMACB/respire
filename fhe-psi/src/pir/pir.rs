@@ -679,7 +679,7 @@ impl<
             .chunks_exact(T_GSW)
             .map(|cs| Self::regev_to_gsw(regev_to_gsw_key, cs))
             .collect();
-        assert_eq!(gsws.len(), Self::ETA2);
+        assert_eq!(gsws.len(), Self::ETA2 * (Z_FOLD - 1));
 
         (regevs, gsws)
     }
