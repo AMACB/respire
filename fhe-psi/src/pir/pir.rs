@@ -205,7 +205,9 @@ impl SPIRALParams {
         let mut fold_noise = first_dim_noise;
         for _ in 0..self.ETA2 {
             let ci_minus_c0_noise = gsw_noise * gadget_inverse_noise(self.Z_GSW, self.T_GSW, 2, 1);
-            fold_noise = fold_noise + ci_minus_c0_noise * Independent((self.Z_FOLD - 1) as f64);
+            // Second fold_noise term is for E_regev
+            fold_noise =
+                fold_noise + ci_minus_c0_noise * Independent((self.Z_FOLD - 1) as f64) + fold_noise;
         }
 
         fold_noise.variance().sqrt() / self.Q as f64
