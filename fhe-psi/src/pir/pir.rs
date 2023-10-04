@@ -1,5 +1,6 @@
 use libm::erfc;
 use std::cmp::max;
+use std::f64::consts::PI;
 use std::slice;
 use std::time::Instant;
 
@@ -127,10 +128,9 @@ pub struct SPIRALParams {
 
 impl SPIRALParams {
     pub fn relative_noise_threshold(&self) -> f64 {
-        // erfc_inverse(2^-40 / D)
-        assert_eq!(self.D, 2048);
-        let erfc_inv = 5.745_872_392_191_18_f64;
-        1_f64 / (2_f64 * (self.P as f64) * 2_f64.sqrt() * erfc_inv)
+        // 2 d n^2 * exp(-pi * correctness^2) <= 2^(-40)
+        let correctness = (-1_f64 / PI * (2_f64.powi(-40) / 2_f64 / self.D as f64).ln()).sqrt();
+        1_f64 / (2_f64 * self.P as f64) / correctness
     }
 
     pub fn noise_estimate(&self) -> f64 {
