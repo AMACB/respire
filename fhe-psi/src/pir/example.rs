@@ -122,15 +122,11 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<2048, 256>>, I: Iterato
         eprintln!("    {:?} to query", query_total);
         eprintln!("    {:?} to answer", answer_total);
         eprintln!("    {:?} to extract", extract_total);
-        let (rel_noise, correctness) = TheSPIRAL::response_stats(&qk, &result, &records[idx]);
+        let rel_noise = TheSPIRAL::response_stats(&qk, &result, &records[idx]);
 
         eprintln!(
             "  relative coefficient noise (sample): 2^({})",
             rel_noise.log2()
-        );
-        eprintln!(
-            "  correctness probability (sample): 1 - 2^({})",
-            correctness.log2()
         );
     };
 

@@ -1,4 +1,3 @@
-use libm::erfc;
 use std::cmp::max;
 use std::f64::consts::PI;
 use std::slice;
@@ -148,7 +147,8 @@ impl SPIRALParams {
 
         let gadget_inverse_noise =
             |base: u64, len: usize, rows: usize, cols: usize| -> BoundedNoise {
-                BoundedNoise::new_matrix((base / 2) as f64, self.D as u64, rows * len, cols)
+                // Note: we use base / 4 since G inverse of uniform is uniform in [-z/2, z/2]. So the expected magnitude is z/4.
+                BoundedNoise::new_matrix((base / 2) as f64 / 2_f64, self.D as u64, rows * len, cols)
             };
 
         let automorph_noise = |e: SubGaussianNoise, base: u64, len: usize| -> SubGaussianNoise {
@@ -294,7 +294,7 @@ pub trait SPIRAL {
         qk: &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::Response,
         actual: &<Self as SPIRAL>::Record,
-    ) -> (f64, f64);
+    ) -> f64;
 }
 
 impl<
@@ -570,7 +570,7 @@ impl<
         s_encode: &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::Response,
         actual: &<Self as SPIRAL>::Record,
-    ) -> (f64, f64) {
+    ) -> f64 {
         let actual_scaled = actual.scale_up_into();
         let decoded = Self::decode_regev(s_encode, r);
         let diff = &actual_scaled - &decoded;
@@ -584,17 +584,8 @@ impl<
             samples += 1;
         }
 
-        // sigma^2 is the variance of the relative noise (noise divided by Q) of the coefficients
-        let sigma = (sum / samples as f64).sqrt() / (Q as f64);
-
-        // We want to bound the probability that a single sample of relative noise has magnitude
-        // >= k. For decoding correctness, we use k = 1 / 2P. Assuming the relative noise is
-        // Gaussian, this is 1 - erf( k / (sigma * sqrt(2))).
-        let num_sigmas = 1_f64 / (sigma * 2_f64 * (P as f64));
-        let correctness_error = erfc(num_sigmas / 2_f64.sqrt());
-
-        // Multiply by the number of samples to union bound over all coefficients
-        (sigma, (correctness_error * samples as f64).min(1_f64))
+        // sigma^2 is the variance of the relative noise (noise divided by Q) of the coefficients. Return sigma.
+        (sum / samples as f64).sqrt() / (Q as f64)
     }
 }
 
