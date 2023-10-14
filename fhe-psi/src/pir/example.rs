@@ -22,6 +22,9 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     ETA1: 9,
     ETA2: 6,
     Z_FOLD: 2,
+    Q_SWITCH1: 1 << 10, // 4P
+    Q_SWITCH2: 1 << 21,
+    D_SWITCH: 1024,
 }
 .expand();
 
@@ -105,24 +108,33 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<2048, 256>>, I: Iterato
         let query_total = query_end - query_start;
 
         let answer_start = Instant::now();
-        let result = TheSPIRAL::answer(&pp, &db, &q);
+        let response_raw = TheSPIRAL::answer(&pp, &db, &q);
         let answer_end = Instant::now();
         let answer_total = answer_end - answer_start;
 
-        let extract_start = Instant::now();
-        let extracted = TheSPIRAL::extract(&qk, &result);
-        let extract_end = Instant::now();
-        let extract_total = extract_end - extract_start;
+        let response_compress_start = Instant::now();
+        let response = TheSPIRAL::response_compress(&response_raw);
+        let response_compress_end = Instant::now();
+        let response_compress_total = response_compress_end - response_compress_start;
+
+        let response_extract_start = Instant::now();
+        let extracted = TheSPIRAL::response_extract(&qk, &response);
+        let response_extract_end = Instant::now();
+        let response_extract_total = response_extract_end - response_extract_start;
 
         if extracted != records[idx] {
             eprintln!("  **** **** **** **** ERROR **** **** **** ****");
             eprintln!("  protocol failed");
         }
-        eprintln!("  {:?} total", query_total + answer_total + extract_total);
+        eprintln!(
+            "  {:?} total",
+            query_total + answer_total + response_compress_total + response_extract_total
+        );
         eprintln!("    {:?} to query", query_total);
         eprintln!("    {:?} to answer", answer_total);
-        eprintln!("    {:?} to extract", extract_total);
-        let rel_noise = TheSPIRAL::response_stats(&qk, &result, &records[idx]);
+        eprintln!("    {:?} to compress response", response_compress_total);
+        eprintln!("    {:?} to extract response", response_extract_total);
+        let rel_noise = TheSPIRAL::response_stats(&qk, &response_raw, &records[idx]);
 
         eprintln!(
             "  relative coefficient noise (sample): 2^({})",
@@ -199,6 +211,16 @@ mod test {
         let scale = <SPIRALTest as SPIRAL>::RingQFast::from(SPIRAL_TEST_PARAMS.Q / 1024);
         let decrypted = SPIRALTest::decode_gsw_scaled(&s, &encrypt_gsw, &scale);
         assert_eq!(decrypted.round_down_into(), mu);
+    }
+
+    #[test]
+    fn test_modulus_switch() {
+        let s = SPIRALTest::encode_setup();
+        let mu = <SPIRALTest as SPIRAL>::RingP::from(99_u64);
+        let c = SPIRALTest::encode_regev(&s, &mu.scale_up_into());
+        let c_switch = SPIRALTest::modulus_switch(&c);
+        let mu_recovered = SPIRALTest::modulus_switch_recover(&s, &c_switch);
+        assert_eq!(mu, mu_recovered.round_down_into());
     }
 
     #[test]

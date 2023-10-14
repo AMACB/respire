@@ -44,6 +44,9 @@ pub struct SPIRALImpl<
     const ETA1: usize,
     const ETA2: usize,
     const Z_FOLD: usize,
+    const Q_SWITCH1: u64,
+    const Q_SWITCH2: u64,
+    const D_SWITCH: u64,
 > {}
 
 #[allow(non_snake_case)]
@@ -60,6 +63,9 @@ pub struct SPIRALParamsRaw {
     pub ETA1: usize,
     pub ETA2: usize,
     pub Z_FOLD: usize,
+    pub Q_SWITCH1: u64,
+    pub Q_SWITCH2: u64,
+    pub D_SWITCH: u64,
 }
 
 impl SPIRALParamsRaw {
@@ -93,6 +99,9 @@ impl SPIRALParamsRaw {
             ETA1: self.ETA1,
             ETA2: self.ETA2,
             Z_FOLD: self.Z_FOLD,
+            Q_SWITCH1: self.Q_SWITCH1,
+            Q_SWITCH2: self.Q_SWITCH2,
+            D_SWITCH: self.D_SWITCH,
         }
     }
 }
@@ -123,13 +132,19 @@ pub struct SPIRALParams {
     pub ETA1: usize,
     pub ETA2: usize,
     pub Z_FOLD: usize,
+    pub Q_SWITCH1: u64,
+    pub Q_SWITCH2: u64,
+    pub D_SWITCH: u64,
 }
 
 impl SPIRALParams {
-    pub fn relative_noise_threshold(&self) -> f64 {
+    pub fn correctness_param(&self) -> f64 {
         // 2 d n^2 * exp(-pi * correctness^2) <= 2^(-40)
-        let correctness = (-1_f64 / PI * (2_f64.powi(-40) / 2_f64 / self.D as f64).ln()).sqrt();
-        1_f64 / (2_f64 * self.P as f64) / correctness
+        (-1_f64 / PI * (2_f64.powi(-40) / 2_f64 / self.D as f64).ln()).sqrt()
+    }
+
+    pub fn relative_noise_threshold(&self) -> f64 {
+        1_f64 / (2_f64 * self.P as f64) / self.correctness_param()
     }
 
     pub fn noise_estimate(&self) -> f64 {
@@ -241,6 +256,9 @@ macro_rules! spiral {
             {$params.ETA1},
             {$params.ETA2},
             {$params.Z_FOLD},
+            {$params.Q_SWITCH1},
+            {$params.Q_SWITCH2},
+            {$params.D_SWITCH},
         >
     }
 }
@@ -254,6 +272,7 @@ pub trait SPIRAL {
     type Ring0Fast;
     type RegevCiphertext;
     type RegevCiphertext0;
+    type RegevSmallModulus;
     type GSWCiphertext;
     type EncodingKey;
     type AutoKey<const T: usize>;
@@ -266,6 +285,7 @@ pub trait SPIRAL {
     type PublicParams;
     type Query;
     type QueryExpanded;
+    type ResponseRaw;
     type Response;
     type Record;
     type Database;
@@ -288,11 +308,12 @@ pub trait SPIRAL {
         Self::Record: 'a;
     fn setup() -> (Self::QueryKey, Self::PublicParams);
     fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
-    fn answer(pp: &Self::PublicParams, db: &Self::Database, q: &Self::Query) -> Self::Response;
-    fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
+    fn answer(pp: &Self::PublicParams, db: &Self::Database, q: &Self::Query) -> Self::ResponseRaw;
+    fn response_compress(r: &Self::ResponseRaw) -> Self::Response;
+    fn response_extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
     fn response_stats(
         qk: &<Self as SPIRAL>::QueryKey,
-        r: &<Self as SPIRAL>::Response,
+        r: &<Self as SPIRAL>::ResponseRaw,
         actual: &<Self as SPIRAL>::Record,
     ) -> f64;
 }
@@ -321,6 +342,9 @@ impl<
         const ETA1: usize,
         const ETA2: usize,
         const Z_FOLD: usize,
+        const Q_SWITCH1: u64,
+        const Q_SWITCH2: u64,
+        const D_SWITCH: u64,
     > SPIRAL
     for SPIRALImpl<
         Q,
@@ -346,6 +370,9 @@ impl<
         ETA1,
         ETA2,
         Z_FOLD,
+        Q_SWITCH1,
+        Q_SWITCH2,
+        D_SWITCH,
     >
 {
     // Type aliases
@@ -356,6 +383,7 @@ impl<
     type Ring0Fast = IntModCycloCRTEval<D, 0, 0, 0, 0, 0, 0>;
     type RegevCiphertext = Matrix<2, 1, Self::RingQFast>;
     type RegevCiphertext0 = Matrix<2, 1, Self::Ring0Fast>;
+    type RegevSmallModulus = (IntModCyclo<D, Q_SWITCH2>, IntModCyclo<D, Q_SWITCH1>);
     type GSWCiphertext = Matrix<2, M_GSW, Self::RingQFast>;
 
     type EncodingKey = Self::RingQFast;
@@ -376,7 +404,8 @@ impl<
     );
     type Query = Self::RegevCiphertext;
     type QueryExpanded = (Vec<Self::RegevCiphertext>, Vec<Self::GSWCiphertext>);
-    type Response = Self::RegevCiphertext;
+    type ResponseRaw = Self::RegevCiphertext;
+    type Response = Self::RegevSmallModulus;
     type Record = Self::RingP;
 
     /// We structure the database as `[2] x [D / S] x [DIM2_SIZE] x [DIM1_SIZE] x [S]` for optimal first dimension
@@ -535,22 +564,19 @@ impl<
         pp: &<Self as SPIRAL>::PublicParams,
         db: &<Self as SPIRAL>::Database,
         q: &<Self as SPIRAL>::Query,
-    ) -> <Self as SPIRAL>::Response {
+    ) -> <Self as SPIRAL>::ResponseRaw {
         let i0 = Instant::now();
 
         // Query expansion
         let (regevs, gsws) = Self::answer_query_expand(pp, q);
-
         let i1 = Instant::now();
 
         // First dimension
         let first_dim_folded = Self::answer_first_dim(db, &regevs);
-
         let i2 = Instant::now();
 
         // Folding
         let result = Self::answer_fold(first_dim_folded, gsws.as_slice());
-
         let i3 = Instant::now();
 
         eprintln!("(*) answer query expand: {:?}", i1 - i0);
@@ -559,16 +585,20 @@ impl<
         result
     }
 
-    fn extract(
+    fn response_compress(r: &Self::ResponseRaw) -> Self::Response {
+        Self::modulus_switch(r)
+    }
+
+    fn response_extract(
         s_encode: &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::Response,
     ) -> <Self as SPIRAL>::Record {
-        Self::decode_regev(s_encode, r).round_down_into()
+        Self::modulus_switch_recover(s_encode, r).round_down_into()
     }
 
     fn response_stats(
         s_encode: &<Self as SPIRAL>::QueryKey,
-        r: &<Self as SPIRAL>::Response,
+        r: &<Self as SPIRAL>::ResponseRaw,
         actual: &<Self as SPIRAL>::Record,
     ) -> f64 {
         let actual_scaled = actual.scale_up_into();
@@ -613,6 +643,9 @@ impl<
         const ETA1: usize,
         const ETA2: usize,
         const Z_FOLD: usize,
+        const Q_SWITCH1: u64,
+        const Q_SWITCH2: u64,
+        const D_SWITCH: u64,
     >
     SPIRALImpl<
         Q,
@@ -638,6 +671,9 @@ impl<
         ETA1,
         ETA2,
         Z_FOLD,
+        Q_SWITCH1,
+        Q_SWITCH2,
+        D_SWITCH,
     >
 {
     pub fn answer_query_expand(
@@ -1106,5 +1142,51 @@ impl<
 
         // No permutation needed for scalar regev
         result
+    }
+
+    pub fn modulus_switch(
+        c: &<Self as SPIRAL>::RegevCiphertext,
+    ) -> <Self as SPIRAL>::RegevSmallModulus {
+        let c0_q = IntModCyclo::<D, Q>::from(&c[(0, 0)]);
+        let c1_q = IntModCyclo::<D, Q>::from(&c[(1, 0)]);
+
+        let mut c0_q2 = IntModCyclo::<D, Q_SWITCH2>::zero();
+        for (i, c) in c0_q.coeff.iter().enumerate() {
+            // round((q2/q) * c0)
+            let mul = u64::from(*c) as u128 * Q_SWITCH2 as u128;
+            let div = ((mul + Q as u128 / 2) / Q as u128) as u64;
+            c0_q2.coeff[i] = IntMod::from(div);
+        }
+
+        let mut c1_q1 = IntModCyclo::<D, Q_SWITCH1>::zero();
+        for (i, c) in c1_q.coeff.iter().enumerate() {
+            // round((q1/q) * c1)
+            let mul = u64::from(*c) as u128 * Q_SWITCH1 as u128;
+            let div = ((mul + Q as u128 / 2) / Q as u128) as u64;
+            c1_q1.coeff[i] = IntMod::from(div);
+        }
+
+        (c0_q2, c1_q1)
+    }
+
+    pub fn modulus_switch_recover(
+        s_encode: &<Self as SPIRAL>::QueryKey,
+        (c0_q2, c1_q1): &<Self as SPIRAL>::RegevSmallModulus,
+    ) -> IntModCyclo<D, Q_SWITCH1> {
+        let c0_q: IntModCyclo<D, Q> = c0_q2.include_into();
+
+        // FIXME: this multiplication should be done over characteristic 0
+        let neg_s_c0 = <Self as SPIRAL>::RingQ::from(
+            &-&(s_encode * &<Self as SPIRAL>::RingQFast::from(&c0_q)),
+        );
+        let mut recovered = IntModCyclo::<D, Q_SWITCH1>::zero();
+        for i in 0..D {
+            let prod = Q_SWITCH1 as u128 * u64::from(neg_s_c0.coeff[i]) as u128;
+            let div = ((prod + Q_SWITCH2 as u128 / 2) / Q_SWITCH2 as u128) as u64;
+            // round((q1 / q2) * s_c0)
+            recovered.coeff[i] = IntMod::from(div);
+        }
+        recovered += c1_q1;
+        recovered
     }
 }
