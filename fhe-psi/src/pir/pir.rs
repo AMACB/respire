@@ -11,6 +11,7 @@ use crate::math::gadget::{base_from_len, build_gadget, gadget_inverse, RingEleme
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
+use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
 use crate::math::number_theory::find_sqrt_primitive_root;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
@@ -47,6 +48,7 @@ pub struct SPIRALImpl<
     const Q_SWITCH1: u64,
     const Q_SWITCH2: u64,
     const D_SWITCH: u64,
+    const W_SWITCH2: u64,
 > {}
 
 #[allow(non_snake_case)]
@@ -102,6 +104,7 @@ impl SPIRALParamsRaw {
             Q_SWITCH1: self.Q_SWITCH1,
             Q_SWITCH2: self.Q_SWITCH2,
             D_SWITCH: self.D_SWITCH,
+            W_SWITCH2: find_sqrt_primitive_root(self.D, self.Q_SWITCH2),
         }
     }
 }
@@ -135,6 +138,7 @@ pub struct SPIRALParams {
     pub Q_SWITCH1: u64,
     pub Q_SWITCH2: u64,
     pub D_SWITCH: u64,
+    pub W_SWITCH2: u64,
 }
 
 impl SPIRALParams {
@@ -259,6 +263,7 @@ macro_rules! spiral {
             {$params.Q_SWITCH1},
             {$params.Q_SWITCH2},
             {$params.D_SWITCH},
+            {$params.W_SWITCH2},
         >
     }
 }
@@ -345,6 +350,7 @@ impl<
         const Q_SWITCH1: u64,
         const Q_SWITCH2: u64,
         const D_SWITCH: u64,
+        const W_SWITCH2: u64,
     > SPIRAL
     for SPIRALImpl<
         Q,
@@ -373,6 +379,7 @@ impl<
         Q_SWITCH1,
         Q_SWITCH2,
         D_SWITCH,
+        W_SWITCH2,
     >
 {
     // Type aliases
@@ -646,6 +653,7 @@ impl<
         const Q_SWITCH1: u64,
         const Q_SWITCH2: u64,
         const D_SWITCH: u64,
+        const W_SWITCH2: u64,
     >
     SPIRALImpl<
         Q,
@@ -674,6 +682,7 @@ impl<
         Q_SWITCH1,
         Q_SWITCH2,
         D_SWITCH,
+        W_SWITCH2,
     >
 {
     pub fn answer_query_expand(
@@ -1173,20 +1182,22 @@ impl<
         s_encode: &<Self as SPIRAL>::QueryKey,
         (c0_q2, c1_q1): &<Self as SPIRAL>::RegevSmallModulus,
     ) -> IntModCyclo<D, Q_SWITCH1> {
-        let c0_q: IntModCyclo<D, Q> = c0_q2.include_into();
+        let c0_q2_eval = IntModCycloEval::<D, Q_SWITCH2, W_SWITCH2>::from(c0_q2);
+        let s_q2_eval = {
+            let s_q = IntModCyclo::<D, Q>::from(s_encode);
+            let s_q2 =
+                IntModCyclo::<D, Q_SWITCH2>::from(s_q.coeff.map(|x| IntMod::from(u64::from(x))));
+            IntModCycloEval::from(s_q2)
+        };
 
-        // FIXME: this multiplication should be done over characteristic 0
-        let neg_s_c0 = <Self as SPIRAL>::RingQ::from(
-            &-&(s_encode * &<Self as SPIRAL>::RingQFast::from(&c0_q)),
-        );
+        let neg_s_c0 = IntModCyclo::from(-&(&s_q2_eval * &c0_q2_eval));
         let mut recovered = IntModCyclo::<D, Q_SWITCH1>::zero();
         for i in 0..D {
-            let prod = Q_SWITCH1 as u128 * u64::from(neg_s_c0.coeff[i]) as u128;
-            let div = ((prod + Q_SWITCH2 as u128 / 2) / Q_SWITCH2 as u128) as u64;
-            // round((q1 / q2) * s_c0)
-            recovered.coeff[i] = IntMod::from(div);
+            let numer = Q_SWITCH1 as u128 * u64::from(neg_s_c0.coeff[i]) as u128;
+            let denom = Q_SWITCH2 as u128;
+            let div = ((numer + denom / 2) / denom) as u64;
+            recovered.coeff[i] = IntMod::from(div + u64::from(c1_q1.coeff[i]));
         }
-        recovered += c1_q1;
         recovered
     }
 }

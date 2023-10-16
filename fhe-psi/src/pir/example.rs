@@ -23,7 +23,7 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     ETA2: 6,
     Z_FOLD: 2,
     Q_SWITCH1: 1 << 10, // 4P
-    Q_SWITCH2: 1 << 21,
+    Q_SWITCH2: 2056193, // must be prime
     D_SWITCH: 1024,
 }
 .expand();
