@@ -1186,7 +1186,7 @@ impl<
         let s_q2_eval = {
             let s_q = IntModCyclo::<D, Q>::from(s_encode);
             let s_q2 =
-                IntModCyclo::<D, Q_SWITCH2>::from(s_q.coeff.map(|x| IntMod::from(u64::from(x))));
+                IntModCyclo::<D, Q_SWITCH2>::from(s_q.coeff.map(|x| IntMod::from(i64::from(x))));
             IntModCycloEval::from(s_q2)
         };
 
