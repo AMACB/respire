@@ -25,6 +25,7 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     Q_SWITCH1: 1 << 10, // 4P
     Q_SWITCH2: 2056193, // must be prime
     D_SWITCH: 1024,
+    T_SWITCH: 21,
 }
 .expand();
 
@@ -50,7 +51,7 @@ pub fn has_avx2() -> bool {
 //     extract_time: Duration,
 // }
 
-pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<2048, 256>>, I: Iterator<Item = usize>>(
+pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<1024, 256>>, I: Iterator<Item = usize>>(
     iter: I,
 ) {
     eprintln!(
@@ -68,7 +69,7 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<2048, 256>>, I: Iterato
     eprintln!("Parameters: {:#?}", SPIRAL_TEST_PARAMS);
     let mut records: Vec<<TheSPIRAL as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);
     for i in 0..TheSPIRAL::DB_SIZE as u64 {
-        let mut record_coeff = [IntMod::<256>::zero(); 2048];
+        let mut record_coeff = [IntMod::<256>::zero(); 1024];
         record_coeff[0] = (i % 256).into();
         record_coeff[1] = ((i / 256) % 256).into();
         record_coeff[2] = 42_u64.into();
@@ -150,7 +151,10 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<2048, 256>>, I: Iterato
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
+    use crate::math::int_mod_cyclo_eval::IntModCycloEval;
     use crate::math::int_mod_poly::IntModPoly;
+    use crate::math::rand_sampled::RandDiscreteGaussianSampled;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
 
@@ -221,6 +225,61 @@ mod test {
         let c_switch = SPIRALTest::modulus_switch(&c);
         let mu_recovered = SPIRALTest::modulus_switch_recover(&s, &c_switch);
         assert_eq!(mu, mu_recovered.round_down_into());
+    }
+
+    #[test]
+    fn test_key_switch() {
+        let mut rng = ChaCha20Rng::from_entropy();
+
+        let s_from_q = IntModCycloCRTEval::from(&IntModCyclo::<
+            { SPIRAL_TEST_PARAMS.D },
+            { SPIRAL_TEST_PARAMS.Q },
+        >::rand_discrete_gaussian::<
+            _,
+            { SPIRAL_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS },
+        >(&mut rng));
+        let s_from = {
+            let s_from_q_coeff =
+                IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, { SPIRAL_TEST_PARAMS.Q }>::from(&s_from_q);
+            let s_from_q2 =
+                IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, { SPIRAL_TEST_PARAMS.Q_SWITCH2 }>::from(
+                    s_from_q_coeff.coeff.map(|x| IntMod::from(i64::from(x))),
+                );
+            IntModCycloEval::from(s_from_q2)
+        };
+        let s_to_small = IntModCyclo::<
+            { SPIRAL_TEST_PARAMS.D_SWITCH },
+            { SPIRAL_TEST_PARAMS.Q_SWITCH2 },
+        >::rand_discrete_gaussian::<_, { SPIRAL_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS }>(
+            &mut rng
+        );
+        let s_to = IntModCycloEval::from(s_to_small.include_dim());
+        let switch_key = SPIRALTest::key_switch_setup(&s_from, &s_to);
+
+        let mu = <SPIRALTest as SPIRAL>::RingP::from(222_u64);
+        let c = SPIRALTest::encode_regev(&s_from_q, &mu.scale_up_into());
+        let c_scaled = c.into_ring(|x| {
+            IntModCycloEval::from(
+                &IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, { SPIRAL_TEST_PARAMS.Q }>::from(x)
+                    .round_down_into(),
+            )
+        });
+        let c_switch = SPIRALTest::key_switch(&switch_key, &c_scaled);
+        let c_switch_proj = c_switch.into_ring(|x| {
+            IntModCycloEval::<
+                { SPIRAL_TEST_PARAMS.D_SWITCH },
+                { SPIRAL_TEST_PARAMS.Q_SWITCH2 },
+                { SPIRAL_TEST_PARAMS.W_SWITCH2_D_SWITCH },
+            >::from(
+                IntModCyclo::from(x).project_dim::<{ SPIRAL_TEST_PARAMS.D_SWITCH }>()
+            )
+        });
+        let decrypted = &(-&(&IntModCycloEval::from(s_to_small) * &c_switch_proj[(0, 0)]))
+            + &c_switch_proj[(1, 0)];
+        assert_eq!(
+            IntModCyclo::from(decrypted).round_down_into(),
+            mu.project_dim()
+        );
     }
 
     #[test]

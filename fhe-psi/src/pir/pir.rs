@@ -7,7 +7,9 @@ use crate::math::discrete_gaussian::NUM_WIDTHS;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
-use crate::math::gadget::{base_from_len, build_gadget, gadget_inverse, RingElementDecomposable};
+use crate::math::gadget::{
+    base_from_len, build_gadget, gadget_inverse, gadget_inverse_scalar, RingElementDecomposable,
+};
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
@@ -47,8 +49,11 @@ pub struct SPIRALImpl<
     const Z_FOLD: usize,
     const Q_SWITCH1: u64,
     const Q_SWITCH2: u64,
-    const D_SWITCH: u64,
-    const W_SWITCH2: u64,
+    const D_SWITCH: usize,
+    const W_SWITCH2_D: u64,
+    const W_SWITCH2_D_SWITCH: u64,
+    const T_SWITCH: usize,
+    const Z_SWITCH: u64,
 > {}
 
 #[allow(non_snake_case)]
@@ -67,7 +72,8 @@ pub struct SPIRALParamsRaw {
     pub Z_FOLD: usize,
     pub Q_SWITCH1: u64,
     pub Q_SWITCH2: u64,
-    pub D_SWITCH: u64,
+    pub D_SWITCH: usize,
+    pub T_SWITCH: usize,
 }
 
 impl SPIRALParamsRaw {
@@ -77,6 +83,7 @@ impl SPIRALParamsRaw {
         let z_coeff_regev = base_from_len(self.T_COEFF_REGEV, q);
         let z_coeff_gsw = base_from_len(self.T_COEFF_GSW, q);
         let z_conv = base_from_len(self.T_CONV, q);
+        let z_switch = base_from_len(self.T_SWITCH, self.Q_SWITCH2);
         SPIRALParams {
             Q: q,
             Q_A: self.Q_A,
@@ -104,7 +111,10 @@ impl SPIRALParamsRaw {
             Q_SWITCH1: self.Q_SWITCH1,
             Q_SWITCH2: self.Q_SWITCH2,
             D_SWITCH: self.D_SWITCH,
-            W_SWITCH2: find_sqrt_primitive_root(self.D, self.Q_SWITCH2),
+            W_SWITCH2_D: find_sqrt_primitive_root(self.D, self.Q_SWITCH2),
+            W_SWITCH2_D_SWITCH: find_sqrt_primitive_root(self.D_SWITCH, self.Q_SWITCH2),
+            T_SWITCH: self.T_SWITCH,
+            Z_SWITCH: z_switch,
         }
     }
 }
@@ -137,8 +147,11 @@ pub struct SPIRALParams {
     pub Z_FOLD: usize,
     pub Q_SWITCH1: u64,
     pub Q_SWITCH2: u64,
-    pub D_SWITCH: u64,
-    pub W_SWITCH2: u64,
+    pub D_SWITCH: usize,
+    pub W_SWITCH2_D: u64,
+    pub W_SWITCH2_D_SWITCH: u64,
+    pub T_SWITCH: usize,
+    pub Z_SWITCH: u64,
 }
 
 impl SPIRALParams {
@@ -263,7 +276,10 @@ macro_rules! spiral {
             {$params.Q_SWITCH1},
             {$params.Q_SWITCH2},
             {$params.D_SWITCH},
-            {$params.W_SWITCH2},
+            {$params.W_SWITCH2_D},
+            {$params.W_SWITCH2_D_SWITCH},
+            {$params.T_SWITCH},
+            {$params.Z_SWITCH},
         >
     }
 }
@@ -284,6 +300,7 @@ pub trait SPIRAL {
     type AutoKeyRegev;
     type AutoKeyGSW;
     type RegevToGSWKey;
+    type KeySwitchKey;
 
     // Associated types
     type QueryKey;
@@ -293,6 +310,7 @@ pub trait SPIRAL {
     type ResponseRaw;
     type Response;
     type Record;
+    type RecordLarge;
     type Database;
 
     // Constants
@@ -349,8 +367,11 @@ impl<
         const Z_FOLD: usize,
         const Q_SWITCH1: u64,
         const Q_SWITCH2: u64,
-        const D_SWITCH: u64,
-        const W_SWITCH2: u64,
+        const D_SWITCH: usize,
+        const W_SWITCH2_D: u64,
+        const W_SWITCH2_D_SWITCH: u64,
+        const T_SWITCH: usize,
+        const Z_SWITCH: u64,
     > SPIRAL
     for SPIRALImpl<
         Q,
@@ -379,7 +400,10 @@ impl<
         Q_SWITCH1,
         Q_SWITCH2,
         D_SWITCH,
-        W_SWITCH2,
+        W_SWITCH2_D,
+        W_SWITCH2_D_SWITCH,
+        T_SWITCH,
+        Z_SWITCH,
     >
 {
     // Type aliases
@@ -398,6 +422,10 @@ impl<
     type AutoKeyRegev = Self::AutoKey<T_COEFF_REGEV>;
     type AutoKeyGSW = Self::AutoKey<T_COEFF_GSW>;
     type RegevToGSWKey = Matrix<2, M_CONV, Self::RingQFast>;
+    type KeySwitchKey = (
+        Matrix<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>>,
+        Matrix<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>>,
+    );
 
     // Associated types
     type QueryKey = Self::EncodingKey;
@@ -413,7 +441,8 @@ impl<
     type QueryExpanded = (Vec<Self::RegevCiphertext>, Vec<Self::GSWCiphertext>);
     type ResponseRaw = Self::RegevCiphertext;
     type Response = Self::RegevSmallModulus;
-    type Record = Self::RingP;
+    type Record = IntModCyclo<D_SWITCH, P>;
+    type RecordLarge = IntModCyclo<D, P>;
 
     /// We structure the database as `[2] x [D / S] x [DIM2_SIZE] x [DIM1_SIZE] x [S]` for optimal first dimension
     /// processing. The outermost pair is the first resp. second CRT projections, packed as two u32 into one u64;
@@ -441,7 +470,10 @@ impl<
         assert_eq!(records_iter.len(), Self::DB_SIZE);
 
         let records_eval: Vec<<Self as SPIRAL>::RingQFast> = records_iter
-            .map(|r| <Self as SPIRAL>::RingQFast::from(&r.include_into::<Q>()))
+            .map(|r| {
+                let r_large = r.include_dim();
+                <Self as SPIRAL>::RingQFast::from(&IntModCyclo::from(r_large).include_into::<Q>())
+            })
             .collect();
 
         #[cfg(not(target_feature = "avx2"))]
@@ -600,16 +632,18 @@ impl<
         s_encode: &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::Response,
     ) -> <Self as SPIRAL>::Record {
-        Self::modulus_switch_recover(s_encode, r).round_down_into()
+        Self::modulus_switch_recover(s_encode, r)
+            .round_down_into()
+            .project_dim()
     }
 
     fn response_stats(
-        s_encode: &<Self as SPIRAL>::QueryKey,
+        qk: &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::ResponseRaw,
         actual: &<Self as SPIRAL>::Record,
     ) -> f64 {
         let actual_scaled = actual.scale_up_into();
-        let decoded = Self::decode_regev(s_encode, r);
+        let decoded = Self::decode_regev(qk, r).project_dim();
         let diff = &actual_scaled - &decoded;
 
         let mut sum = 0_f64;
@@ -652,8 +686,11 @@ impl<
         const Z_FOLD: usize,
         const Q_SWITCH1: u64,
         const Q_SWITCH2: u64,
-        const D_SWITCH: u64,
-        const W_SWITCH2: u64,
+        const D_SWITCH: usize,
+        const W_SWITCH2_D: u64,
+        const W_SWITCH2_D_SWITCH: u64,
+        const T_SWITCH: usize,
+        const Z_SWITCH: u64,
     >
     SPIRALImpl<
         Q,
@@ -682,7 +719,10 @@ impl<
         Q_SWITCH1,
         Q_SWITCH2,
         D_SWITCH,
-        W_SWITCH2,
+        W_SWITCH2_D,
+        W_SWITCH2_D_SWITCH,
+        T_SWITCH,
+        Z_SWITCH,
     >
 {
     pub fn answer_query_expand(
@@ -1182,7 +1222,7 @@ impl<
         s_encode: &<Self as SPIRAL>::QueryKey,
         (c0_q2, c1_q1): &<Self as SPIRAL>::RegevSmallModulus,
     ) -> IntModCyclo<D, Q_SWITCH1> {
-        let c0_q2_eval = IntModCycloEval::<D, Q_SWITCH2, W_SWITCH2>::from(c0_q2);
+        let c0_q2_eval = IntModCycloEval::<D, Q_SWITCH2, W_SWITCH2_D>::from(c0_q2);
         let s_q2_eval = {
             let s_q = IntModCyclo::<D, Q>::from(s_encode);
             let s_q2 =
@@ -1199,5 +1239,47 @@ impl<
             recovered.coeff[i] = IntMod::from(div + u64::from(c1_q1.coeff[i]));
         }
         recovered
+    }
+
+    pub fn key_switch_setup(
+        s_from: &IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>,
+        s_to: &IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>,
+    ) -> <Self as SPIRAL>::KeySwitchKey {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let a_t = Matrix::<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>>::rand_uniform(
+            &mut rng,
+        );
+        let e_t =
+            Matrix::<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>>::rand_discrete_gaussian::<
+                _,
+                NOISE_WIDTH_MILLIONTHS,
+            >(&mut rng);
+        let mut b_t = &build_gadget::<
+            IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>,
+            1,
+            T_SWITCH,
+            Z_SWITCH,
+            T_SWITCH,
+        >() * &(-s_from);
+        b_t += &(&a_t * s_to);
+        b_t += &e_t;
+        (a_t, b_t)
+    }
+
+    pub fn key_switch(
+        (a_t, b_t): &<Self as SPIRAL>::KeySwitchKey,
+        c: &Matrix<2, 1, IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>>,
+    ) -> Matrix<2, 1, IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>> {
+        let c0 = &c[(0, 0)];
+        let c1 = &c[(1, 0)];
+        let g_inv_c0 = gadget_inverse_scalar::<_, Z_SWITCH, T_SWITCH>(c0);
+        let mut c_hat = Matrix::<2, 1, IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>>::zero();
+        c_hat[(0, 0)] = (a_t * &g_inv_c0)[(0, 0)].clone();
+        c_hat[(1, 0)] = {
+            let mut c1_hat = (b_t * &g_inv_c0)[(0, 0)].clone();
+            c1_hat += c1;
+            c1_hat
+        };
+        c_hat
     }
 }

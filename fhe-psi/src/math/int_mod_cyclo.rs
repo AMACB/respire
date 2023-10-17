@@ -14,6 +14,7 @@ use crate::math::ring_elem::*;
 use crate::math::simd_utils::Aligned32;
 use rand::Rng;
 use std::cmp::max;
+use std::iter;
 use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// The raw (coefficient) representation of an element of a cyclotomic ring.
@@ -344,6 +345,28 @@ impl<const D: usize, const N: u64> IntModCyclo<D, N> {
             result.coeff[i] = self.coeff[i].round_down_into();
         }
         result
+    }
+
+    pub fn project_dim<const D_SMALL: usize>(&self) -> IntModCyclo<D_SMALL, N> {
+        assert_eq!(D % D_SMALL, 0);
+        let result_coeff_vec: Vec<IntMod<N>> =
+            self.coeff.iter().step_by(D / D_SMALL).copied().collect();
+        let result_coeff: [IntMod<N>; D_SMALL] = result_coeff_vec.try_into().unwrap();
+        IntModCyclo::from(result_coeff)
+    }
+
+    pub fn include_dim<const D_LARGE: usize>(&self) -> IntModCyclo<D_LARGE, N> {
+        assert_eq!(D_LARGE % D, 0);
+        let result_coeff_vec: Vec<IntMod<N>> = self
+            .coeff
+            .iter()
+            .flat_map(|x| {
+                [*x].into_iter()
+                    .chain(iter::repeat(IntMod::zero()).take(D_LARGE / D - 1))
+            })
+            .collect();
+        let result_coeff: [IntMod<N>; D_LARGE] = result_coeff_vec.try_into().unwrap();
+        IntModCyclo::from(result_coeff)
     }
 }
 

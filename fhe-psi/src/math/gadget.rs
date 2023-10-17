@@ -150,6 +150,21 @@ where
     m_expanded
 }
 
+pub fn gadget_inverse_scalar<
+    R: RingElementDecomposable<G_BASE, G_LEN>,
+    const G_BASE: u64,
+    const G_LEN: usize,
+>(
+    a: &R,
+) -> Matrix<G_LEN, 1, R>
+where
+    for<'a> &'a R: RingElementRef<R>,
+{
+    let mut m_expanded: Matrix<G_LEN, 1, R> = Matrix::zero();
+    a.decompose_into_mat(&mut m_expanded, 0, 0);
+    m_expanded
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
