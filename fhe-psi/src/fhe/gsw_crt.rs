@@ -5,7 +5,7 @@ use crate::fhe::gsw_utils::*;
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_crt::IntModCRT;
 use crate::math::matrix::Matrix;
-use crate::math::utils::{ceil_log, mod_inverse};
+use crate::math::utils::ceil_log;
 
 /*
  * A GSW implementation using Chinese Remainder Theorem to achieve larger Q.
@@ -16,7 +16,6 @@ use crate::math::utils::{ceil_log, mod_inverse};
  *   - P: plaintext modulus.
  *   - Q: ciphertext modulus, where `Q = Q1 * Q2`.
  *   - Q1, Q2: factors of the ciphertext modulus, for Chinese Remainder Theorem.
- *   - Q1_INV, Q2_INV: `Q1^{-1} mod Q2` and `Q2^{-1} mod Q1`, for combining factors via Chinese Remainder Theorem.
  *   - G_BASE: base used for the gadget matrix.
  *   - G_LEN: length of the `g` gadget vector, or alternatively `log_{G_BASE} Q`.
  *   - NOISE_WIDTH_MILLIONTHS: noise width, expressed in millionths to allow for precision past the decimal point (since f64 is not a valid generic parameter).
@@ -31,8 +30,6 @@ pub struct GSWCRT<
     const Q: u64,
     const Q1: u64,
     const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
     const G_BASE: u64,
     const G_LEN: usize,
     const NOISE_WIDTH_MILLIONTHS: u64,
@@ -46,12 +43,10 @@ pub struct GSWCRTCiphertext<
     const Q: u64,
     const Q1: u64,
     const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    ct: Matrix<N, M, IntModCRT<Q1, Q2, Q1_INV, Q2_INV>>,
+    ct: Matrix<N, M, IntModCRT<Q1, Q2>>,
 }
 
 #[derive(Clone, Debug)]
@@ -62,12 +57,10 @@ pub struct GSWCRTPublicKey<
     const Q: u64,
     const Q1: u64,
     const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    A: Matrix<N, M, IntModCRT<Q1, Q2, Q1_INV, Q2_INV>>,
+    A: Matrix<N, M, IntModCRT<Q1, Q2>>,
 }
 
 #[derive(Clone, Debug)]
@@ -78,12 +71,10 @@ pub struct GSWCRTSecretKey<
     const Q: u64,
     const Q1: u64,
     const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    s_T: Matrix<1, N, IntModCRT<Q1, Q2, Q1_INV, Q2_INV>>,
+    s_T: Matrix<1, N, IntModCRT<Q1, Q2>>,
 }
 
 // TODO: Find a way to validate these params at compile time (static_assert / const_guards crate?)
@@ -96,13 +87,10 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > FHEScheme
-    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    > FHEScheme for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
 }
 
@@ -114,12 +102,10 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    > GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
 }
 
@@ -131,18 +117,16 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > EncryptionScheme
-    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     type Plaintext = IntMod<P>;
-    type Ciphertext = GSWCRTCiphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
-    type PublicKey = GSWCRTPublicKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
-    type SecretKey = GSWCRTSecretKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN>;
+    type Ciphertext = GSWCRTCiphertext<N, M, P, Q, Q1, Q2, G_BASE, G_LEN>;
+    type PublicKey = GSWCRTPublicKey<N, M, P, Q, Q1, Q2, G_BASE, G_LEN>;
+    type SecretKey = GSWCRTSecretKey<N, M, P, Q, Q1, Q2, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
         let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, _, NOISE_WIDTH_MILLIONTHS>();
@@ -150,13 +134,13 @@ impl<
     }
 
     fn encrypt(pk: &Self::PublicKey, mu: &Self::Plaintext) -> Self::Ciphertext {
-        let mu = IntModCRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(mu.clone()));
+        let mu = IntModCRT::<Q1, Q2>::from(u64::from(mu.clone()));
         let ct = gsw_encrypt_pk::<N, M, G_BASE, G_LEN, _>(&pk.A, mu);
         Self::Ciphertext { ct }
     }
 
     fn encrypt_sk(sk: &Self::SecretKey, mu: &Self::Plaintext) -> Self::Ciphertext {
-        let mu = IntModCRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(mu.clone()));
+        let mu = IntModCRT::<Q1, Q2>::from(u64::from(mu.clone()));
         let ct = gsw_encrypt_sk::<N_MINUS_1, N, M, G_BASE, G_LEN, _, NOISE_WIDTH_MILLIONTHS>(
             &sk.s_T, mu,
         );
@@ -183,13 +167,11 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > AddHomEncryptionScheme
-    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -205,13 +187,11 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > MulHomEncryptionScheme
-    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -228,16 +208,14 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > AddScalarEncryptionScheme<IntMod<P>>
-    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn add_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
-        let rhs = IntModCRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(*rhs));
+        let rhs = IntModCRT::<Q1, Q2>::from(u64::from(*rhs));
         Self::Ciphertext {
             ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs),
         }
@@ -252,16 +230,14 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > MulScalarEncryptionScheme<IntMod<P>>
-    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
-        let rhs = IntModCRT::<Q1, Q2, Q1_INV, Q2_INV>::from(u64::from(*rhs));
+        let rhs = IntModCRT::<Q1, Q2>::from(u64::from(*rhs));
         Self::Ciphertext {
             ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs),
         }
@@ -276,13 +252,11 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > NegEncryptionScheme
-    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for GSWCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext { ct: -&ct.ct }
@@ -313,8 +287,6 @@ macro_rules! gsw_from_params {
             { $params.Q1 * $params.Q2 },
             { $params.Q1 },
             { $params.Q2 },
-            { mod_inverse($params.Q1, $params.Q2) } ,
-            { mod_inverse($params.Q2, $params.Q1) } ,
             { $params.G_BASE },
             { ceil_log($params.G_BASE, $params.Q1 * $params.Q2) },
             { $params.NOISE_WIDTH_MILLIONTHS },

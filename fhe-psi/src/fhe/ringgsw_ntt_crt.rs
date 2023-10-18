@@ -6,7 +6,7 @@ use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt::IntModCycloCRT;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
 use crate::math::matrix::Matrix;
-use crate::math::utils::{ceil_log, mod_inverse};
+use crate::math::utils::ceil_log;
 
 pub struct RingGSWNTTCRT<
     const N_MINUS_1: usize,
@@ -16,8 +16,6 @@ pub struct RingGSWNTTCRT<
     const Q: u64,
     const Q1: u64,
     const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
     const D: usize,
     const G_BASE: u64,
     const G_LEN: usize,
@@ -32,13 +30,11 @@ pub struct RingGSWNTTCRTCiphertext<
     const Q: u64,
     const Q1: u64,
     const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
     const D: usize,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    ct: Matrix<N, M, IntModCycloCRTEval<D, Q1, Q2, Q1_INV, Q2_INV>>,
+    ct: Matrix<N, M, IntModCycloCRTEval<D, Q1, Q2>>,
 }
 
 #[derive(Clone, Debug)]
@@ -49,13 +45,11 @@ pub struct RingGSWNTTCRTPublicKey<
     const Q: u64,
     const Q1: u64,
     const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
     const D: usize,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    A: Matrix<N, M, IntModCycloCRTEval<D, Q1, Q2, Q1_INV, Q2_INV>>,
+    A: Matrix<N, M, IntModCycloCRTEval<D, Q1, Q2>>,
 }
 
 #[derive(Clone, Debug)]
@@ -66,13 +60,11 @@ pub struct RingGSWNTTCRTSecretKey<
     const Q: u64,
     const Q1: u64,
     const Q2: u64,
-    const Q1_INV: u64,
-    const Q2_INV: u64,
     const D: usize,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    s_T: Matrix<1, N, IntModCycloCRTEval<D, Q1, Q2, Q1_INV, Q2_INV>>,
+    s_T: Matrix<1, N, IntModCycloCRTEval<D, Q1, Q2>>,
 }
 
 impl<
@@ -83,28 +75,12 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > FHEScheme
-    for RingGSWNTTCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        D,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for RingGSWNTTCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
 }
 
@@ -116,33 +92,17 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > EncryptionScheme
-    for RingGSWNTTCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        D,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for RingGSWNTTCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     type Plaintext = IntModCyclo<D, P>;
-    type Ciphertext = RingGSWNTTCRTCiphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, D, G_BASE, G_LEN>;
-    type PublicKey = RingGSWNTTCRTPublicKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, D, G_BASE, G_LEN>;
-    type SecretKey = RingGSWNTTCRTSecretKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, D, G_BASE, G_LEN>;
+    type Ciphertext = RingGSWNTTCRTCiphertext<N, M, P, Q, Q1, Q2, D, G_BASE, G_LEN>;
+    type PublicKey = RingGSWNTTCRTPublicKey<N, M, P, Q, Q1, Q2, D, G_BASE, G_LEN>;
+    type SecretKey = RingGSWNTTCRTSecretKey<N, M, P, Q, Q1, Q2, D, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
         let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, _, NOISE_WIDTH_MILLIONTHS>();
@@ -171,7 +131,7 @@ impl<
         let s_T = &sk.s_T;
         let ct = &ct.ct;
         let pt_eval = gsw_half_decrypt::<N, M, P, Q, G_BASE, G_LEN, _>(s_T, ct);
-        let pt: IntModCycloCRT<D, Q1, Q2, Q1_INV, Q2_INV> = pt_eval.into();
+        let pt: IntModCycloCRT<D, Q1, Q2> = pt_eval.into();
         pt.round_down_into()
     }
 }
@@ -188,28 +148,12 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > AddHomEncryptionScheme
-    for RingGSWNTTCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        D,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for RingGSWNTTCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -226,28 +170,12 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > MulHomEncryptionScheme
-    for RingGSWNTTCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        D,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for RingGSWNTTCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -264,42 +192,26 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > AddScalarEncryptionScheme<IntModCyclo<D, P>>
-    for RingGSWNTTCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        D,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for RingGSWNTTCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn add_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
         let rhs_q1 = rhs.include_into();
         let rhs_q2 = rhs.include_into();
-        let rhs_q: IntModCycloCRT<D, Q1, Q2, Q1_INV, Q2_INV> = (rhs_q1, rhs_q2).into();
+        let rhs_q: IntModCycloCRT<D, Q1, Q2> = (rhs_q1, rhs_q2).into();
         let rhs_q_eval = rhs_q.into();
         Self::Ciphertext {
             ct: scalar_ciphertext_add::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q_eval),
         }
         // // TODO: see below, not fast
-        // let rhs_q = &Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(*rhs));
+        // let rhs_q = &Z_N_CycloNTT_CRT::<D, Q1, Q2, W1, W2>::from(u64::from(*rhs));
         // Ciphertext {
-        //     // ct: &self.ct + &(&build_gadget::<Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>, N, M, G_BASE, G_LEN>() * rhs_q),
-        //     ct: &self.ct + &(&build_gadget::<Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>, N, M, G_BASE, G_LEN>() * rhs_q),
+        //     // ct: &self.ct + &(&build_gadget::<Z_N_CycloNTT_CRT::<D, Q1, Q2, W1, W2>, N, M, G_BASE, G_LEN>() * rhs_q),
+        //     ct: &self.ct + &(&build_gadget::<Z_N_CycloNTT_CRT::<D, Q1, Q2, W1, W2>, N, M, G_BASE, G_LEN>() * rhs_q),
     }
 }
 
@@ -311,59 +223,43 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > MulScalarEncryptionScheme<IntModCyclo<D, P>>
-    for RingGSWNTTCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        D,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for RingGSWNTTCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
         let rhs_q1 = rhs.include_into();
         let rhs_q2 = rhs.include_into();
-        let rhs_q: IntModCycloCRT<D, Q1, Q2, Q1_INV, Q2_INV> = (rhs_q1, rhs_q2).into();
+        let rhs_q: IntModCycloCRT<D, Q1, Q2> = (rhs_q1, rhs_q2).into();
         let rhs_q_eval = rhs_q.into();
         Self::Ciphertext {
             ct: scalar_ciphertext_mul::<N, M, G_BASE, G_LEN, _>(&lhs.ct, &rhs_q_eval),
         }
-        // let rhs_q = &Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>::from(u64::from(rhs));
+        // let rhs_q = &Z_N_CycloNTT_CRT::<D, Q1, Q2, W1, W2>::from(u64::from(rhs));
         // Ciphertext {
         //     ct: &self.ct
         //         * &gadget_inverse::<_, N, M, M, G_BASE, G_LEN>(
-        //             &(&build_gadget::<Z_N_CycloNTT_CRT::<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>, N, M, G_BASE, G_LEN>() * rhs_q),
+        //             &(&build_gadget::<Z_N_CycloNTT_CRT::<D, Q1, Q2, W1, W2>, N, M, G_BASE, G_LEN>() * rhs_q),
         //         ),
         // }
 
         // TODO: below is the faster way to do it, need to add arbitrary scalar * matrix mult
         // let rhs_q = Z_N_CRT::from(u64::from(rhs));
-        // let mut G_rhs: Matrix<N, M, Z_N_CycloRaw_CRT<D, Q1, Q2, Q1_INV, Q2_INV>> =
-        //     build_gadget::<Z_N_CycloRaw_CRT<D, Q1, Q2, Q1_INV, Q2_INV>, N, M, G_BASE, G_LEN>();
+        // let mut G_rhs: Matrix<N, M, Z_N_CycloRaw_CRT<D, Q1, Q2>> =
+        //     build_gadget::<Z_N_CycloRaw_CRT<D, Q1, Q2>, N, M, G_BASE, G_LEN>();
         // for i in 0..N {
         //     for j in 0..M {
         //         G_rhs[(i, j)] *= rhs_q;
         //     }
         // }
 
-        // let G_inv_G_rhs_raw: Matrix<M, M, Z_N_CycloRaw_CRT<D, Q1, Q2, Q1_INV, Q2_INV>> =
-        //     gadget_inverse::<Z_N_CycloRaw_CRT<D, Q1, Q2, Q1_INV, Q2_INV>, N, M, M, G_BASE, G_LEN>(&G_rhs);
+        // let G_inv_G_rhs_raw: Matrix<M, M, Z_N_CycloRaw_CRT<D, Q1, Q2>> =
+        //     gadget_inverse::<Z_N_CycloRaw_CRT<D, Q1, Q2>, N, M, M, G_BASE, G_LEN>(&G_rhs);
 
-        // let mut G_inv_G_rhs_ntt: Matrix<M, M, Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>> = Matrix::zero();
+        // let mut G_inv_G_rhs_ntt: Matrix<M, M, Z_N_CycloNTT_CRT<D, Q1, Q2, W1, W2>> = Matrix::zero();
         // for i in 0..M {
         //     for j in 0..M {
         //         G_inv_G_rhs_ntt[(i, j)] = (&G_inv_G_rhs_raw[(i, j)]).into();
@@ -373,7 +269,7 @@ impl<
         // Ciphertext {
         //     ct: &self.ct
         //         * &gadget_inverse::<
-        //             Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>,
+        //             Z_N_CycloNTT_CRT<D, Q1, Q2, W1, W2>,
         //             N,
         //             M,
         //             M,
@@ -381,7 +277,7 @@ impl<
         //             G_LEN,
         //         >(
         //             &(&build_gadget::<
-        //                 Z_N_CycloNTT_CRT<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>,
+        //                 Z_N_CycloNTT_CRT<D, Q1, Q2, W1, W2>,
         //                 N,
         //                 M,
         //                 G_BASE,
@@ -400,28 +296,12 @@ impl<
         const Q: u64,
         const Q1: u64,
         const Q2: u64,
-        const Q1_INV: u64,
-        const Q2_INV: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > NegEncryptionScheme
-    for RingGSWNTTCRT<
-        N_MINUS_1,
-        N,
-        M,
-        P,
-        Q,
-        Q1,
-        Q2,
-        Q1_INV,
-        Q2_INV,
-        D,
-        G_BASE,
-        G_LEN,
-        NOISE_WIDTH_MILLIONTHS,
-    >
+    for RingGSWNTTCRT<N_MINUS_1, N, M, P, Q, Q1, Q2, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext { ct: -&ct.ct }
@@ -453,8 +333,6 @@ macro_rules! gsw_from_params {
             { $params.Q1 * $params.Q2 },
             { $params.Q1 },
             { $params.Q2 },
-            { mod_inverse($params.Q1, $params.Q2) },
-            { mod_inverse($params.Q2, $params.Q1) },
             { $params.D },
             { $params.G_BASE },
             { ceil_log($params.G_BASE, $params.Q1 * $params.Q2) },

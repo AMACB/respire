@@ -26,8 +26,6 @@ pub struct SPIRALImpl<
     const Q: u64,
     const Q_A: u64,
     const Q_B: u64,
-    const Q_A_INV: u64,
-    const Q_B_INV: u64,
     const D: usize,
     const Z_GSW: u64,
     const T_GSW: usize,
@@ -83,8 +81,6 @@ impl SPIRALParamsRaw {
             Q: q,
             Q_A: self.Q_A,
             Q_B: self.Q_B,
-            Q_A_INV: mod_inverse(self.Q_A, self.Q_B),
-            Q_B_INV: mod_inverse(self.Q_B, self.Q_A),
             D: self.D,
             Z_GSW: z_gsw,
             T_GSW: self.T_GSW,
@@ -116,8 +112,6 @@ pub struct SPIRALParams {
     pub Q: u64,
     pub Q_A: u64,
     pub Q_B: u64,
-    pub Q_A_INV: u64,
-    pub Q_B_INV: u64,
     pub D: usize,
     pub Z_GSW: u64,
     pub T_GSW: usize,
@@ -240,8 +234,6 @@ macro_rules! spiral {
             {$params.Q},
             {$params.Q_A},
             {$params.Q_B},
-            {$params.Q_A_INV},
-            {$params.Q_B_INV},
             {$params.D},
             {$params.Z_GSW},
             {$params.T_GSW},
@@ -328,8 +320,6 @@ impl<
         const Q: u64,
         const Q_A: u64,
         const Q_B: u64,
-        const Q_A_INV: u64,
-        const Q_B_INV: u64,
         const D: usize,
         const Z_GSW: u64,
         const T_GSW: usize,
@@ -356,8 +346,6 @@ impl<
         Q,
         Q_A,
         Q_B,
-        Q_A_INV,
-        Q_B_INV,
         D,
         Z_GSW,
         T_GSW,
@@ -385,8 +373,8 @@ impl<
     type RingP = IntModCyclo<D, P>;
     type RingQ = IntModCyclo<D, Q>;
     type Ring0 = IntModCyclo<D, 0>;
-    type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B, Q_A_INV, Q_B_INV>;
-    type Ring0Fast = IntModCycloCRTEval<D, 0, 0, 0, 0>;
+    type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B>;
+    type Ring0Fast = IntModCycloCRTEval<D, 0, 0>;
     type RegevCiphertext = Matrix<2, 1, Self::RingQFast>;
     type RegevCiphertext0 = Matrix<2, 1, Self::Ring0Fast>;
     type RegevSmall = (
@@ -700,8 +688,6 @@ impl<
         const Q: u64,
         const Q_A: u64,
         const Q_B: u64,
-        const Q_A_INV: u64,
-        const Q_B_INV: u64,
         const D: usize,
         const Z_GSW: u64,
         const T_GSW: usize,
@@ -728,8 +714,6 @@ impl<
         Q,
         Q_A,
         Q_B,
-        Q_A_INV,
-        Q_B_INV,
         D,
         Z_GSW,
         T_GSW,

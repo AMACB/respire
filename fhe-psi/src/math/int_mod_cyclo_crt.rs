@@ -19,22 +19,14 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C, align(32))]
-pub struct IntModCycloCRT<
-    const D: usize,
-    const N1: u64,
-    const N2: u64,
-    const N1_INV: u64,
-    const N2_INV: u64,
-> {
+pub struct IntModCycloCRT<const D: usize, const N1: u64, const N2: u64> {
     pub proj1: IntModCyclo<D, N1>,
     pub proj2: IntModCyclo<D, N2>,
 }
 
 /// Conversions
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<u64>
-    for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
-{
+impl<const D: usize, const N1: u64, const N2: u64> From<u64> for IntModCycloCRT<D, N1, N2> {
     fn from(a: u64) -> Self {
         Self {
             proj1: a.into(),
@@ -43,8 +35,8 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    From<(IntModCyclo<D, N1>, IntModCyclo<D, N2>)> for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+impl<const D: usize, const N1: u64, const N2: u64> From<(IntModCyclo<D, N1>, IntModCyclo<D, N2>)>
+    for IntModCycloCRT<D, N1, N2>
 {
     fn from(a: (IntModCyclo<D, N1>, IntModCyclo<D, N2>)) -> Self {
         Self {
@@ -54,14 +46,8 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
     }
 }
 
-impl<
-        const D: usize,
-        const N1: u64,
-        const N2: u64,
-        const N1_INV: u64,
-        const N2_INV: u64,
-        const N: u64,
-    > From<&IntModCyclo<D, N>> for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+impl<const D: usize, const N1: u64, const N2: u64, const N: u64> From<&IntModCyclo<D, N>>
+    for IntModCycloCRT<D, N1, N2>
 {
     fn from(a: &IntModCyclo<D, N>) -> Self {
         assert_eq!(N, N1 * N2);
@@ -72,35 +58,33 @@ impl<
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    From<IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>>
-    for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV>
+impl<const D: usize, const N1: u64, const N2: u64> From<IntModCycloCRT<D, N1, N2>>
+    for IntModCycloCRTEval<D, N1, N2>
 {
-    fn from(a: IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>) -> Self {
+    fn from(a: IntModCycloCRT<D, N1, N2>) -> Self {
         let p1_ntt: IntModCycloEval<D, N1> = a.proj1.into();
         let p2_ntt: IntModCycloEval<D, N2> = a.proj2.into();
         (p1_ntt, p2_ntt).into()
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    From<&IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV>>
-    for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+impl<const D: usize, const N1: u64, const N2: u64> From<&IntModCycloCRTEval<D, N1, N2>>
+    for IntModCycloCRT<D, N1, N2>
 {
-    fn from(a: &IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV>) -> Self {
+    fn from(a: &IntModCycloCRTEval<D, N1, N2>) -> Self {
         let p1_raw: IntModCyclo<D, N1> = (&a.proj1).into();
         let p2_raw: IntModCyclo<D, N2> = (&a.proj2).into();
         (p1_raw, p2_raw).into()
     }
 }
 
-// impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<[Z_N<N>; D]> for Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV> {
+// impl<const D: usize, const N1: u64, const N2: u64> From<[Z_N<N>; D]> for Z_N_CycloRaw_CRT<D, N1, N2> {
 //     fn from(coeff: [Z_N<N>; D]) -> Self {
 //         Self { coeff }
 //     }
 // }
 
-// impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<PolynomialZ_N<N>> for Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV> {
+// impl<const D: usize, const N1: u64, const N2: u64> From<PolynomialZ_N<N>> for Z_N_CycloRaw_CRT<D, N1, N2> {
 //     fn from(polynomial: PolynomialZ_N<N>) -> Self {
 //         let mut coeff: [Z_N<N>; D] = [0_u64.into(); D];
 //         for (i, x) in polynomial.coeff_iter().enumerate() {
@@ -114,9 +98,7 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
 //     }
 // }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    From<Vec<u64>> for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
-{
+impl<const D: usize, const N1: u64, const N2: u64> From<Vec<u64>> for IntModCycloCRT<D, N1, N2> {
     fn from(coeff: Vec<u64>) -> Self {
         IntModCycloCRT {
             proj1: IntModCyclo::from(IntModPoly::from(coeff.clone())),
@@ -125,46 +107,14 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
     }
 }
 
-// impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> From<Vec<Z_N<N>>> for Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV> {
-//     fn from(coeff: Vec<Z_N<N>>) -> Self {
-//         Z_N_CycloRaw_CRT::from(PolynomialZ_N::from(coeff))
-//     }
-// }
-
-// impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> TryFrom<&Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV>> for Z_N<N> {
-//     type Error = ();
-
-//     /// Inverse of `From<u64>`. Errors if element is not a constant.
-//     fn try_from(a: &Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV>) -> Result<Self, Self::Error> {
-//         for i in 1..D {
-//             if a.coeff[i] != Z_N::zero() {
-//                 return Err(());
-//             }
-//         }
-//         Ok(a.coeff[0])
-//     }
-// }
-
-// impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W: u64> From<Z_N_CycloNTT<D, N, W>>
-//     for Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV>
-// {
-//     fn from(a: Z_N_CycloNTT<D, N, W>) -> Self {
-//         (&a).into()
-//     }
-// }
-
 /// [`RingElementRef`] implementation
-
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    RingElementRef<IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>>
-    for &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+impl<const D: usize, const N1: u64, const N2: u64> RingElementRef<IntModCycloCRT<D, N1, N2>>
+    for &IntModCycloCRT<D, N1, N2>
 {
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Add
-    for &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
-{
-    type Output = IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>;
+impl<const D: usize, const N1: u64, const N2: u64> Add for &IntModCycloCRT<D, N1, N2> {
+    type Output = IntModCycloCRT<D, N1, N2>;
     fn add(self, rhs: Self) -> Self::Output {
         IntModCycloCRT {
             proj1: &self.proj1 + &rhs.proj1,
@@ -173,10 +123,8 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Sub
-    for &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
-{
-    type Output = IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>;
+impl<const D: usize, const N1: u64, const N2: u64> Sub for &IntModCycloCRT<D, N1, N2> {
+    type Output = IntModCycloCRT<D, N1, N2>;
     fn sub(self, rhs: Self) -> Self::Output {
         IntModCycloCRT {
             proj1: &self.proj1 - &rhs.proj1,
@@ -185,10 +133,8 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Mul
-    for &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
-{
-    type Output = IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>;
+impl<const D: usize, const N1: u64, const N2: u64> Mul for &IntModCycloCRT<D, N1, N2> {
+    type Output = IntModCycloCRT<D, N1, N2>;
     fn mul(self, rhs: Self) -> Self::Output {
         IntModCycloCRT {
             proj1: &self.proj1 * &rhs.proj1,
@@ -197,10 +143,8 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Neg
-    for &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
-{
-    type Output = IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>;
+impl<const D: usize, const N1: u64, const N2: u64> Neg for &IntModCycloCRT<D, N1, N2> {
+    type Output = IntModCycloCRT<D, N1, N2>;
     fn neg(self) -> Self::Output {
         IntModCycloCRT {
             proj1: -&self.proj1,
@@ -211,16 +155,14 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
 
 /// [`RingElement`] implementation
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> RingElement
-    for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
-{
-    fn zero() -> IntModCycloCRT<D, N1, N2, N1_INV, N2_INV> {
+impl<const D: usize, const N1: u64, const N2: u64> RingElement for IntModCycloCRT<D, N1, N2> {
+    fn zero() -> IntModCycloCRT<D, N1, N2> {
         IntModCycloCRT {
             proj1: IntModCyclo::zero(),
             proj2: IntModCyclo::zero(),
         }
     }
-    fn one() -> IntModCycloCRT<D, N1, N2, N1_INV, N2_INV> {
+    fn one() -> IntModCycloCRT<D, N1, N2> {
         IntModCycloCRT {
             proj1: IntModCyclo::one(),
             proj2: IntModCyclo::one(),
@@ -228,8 +170,8 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
     }
 }
 
-impl<'a, const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    AddAssign<&'a Self> for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+impl<'a, const D: usize, const N1: u64, const N2: u64> AddAssign<&'a Self>
+    for IntModCycloCRT<D, N1, N2>
 {
     fn add_assign(&mut self, rhs: &'a Self) {
         self.proj1 += &rhs.proj1;
@@ -237,8 +179,8 @@ impl<'a, const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const 
     }
 }
 
-impl<'a, const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    SubAssign<&'a Self> for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+impl<'a, const D: usize, const N1: u64, const N2: u64> SubAssign<&'a Self>
+    for IntModCycloCRT<D, N1, N2>
 {
     fn sub_assign(&mut self, rhs: &'a Self) {
         self.proj1 -= &rhs.proj1;
@@ -246,30 +188,23 @@ impl<'a, const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const 
     }
 }
 
-// impl<'a, const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> MulAssign<Z_N<N>> for Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV> {
+// impl<'a, const D: usize, const N1: u64, const N2: u64> MulAssign<Z_N<N>> for Z_N_CycloRaw_CRT<D, N1, N2> {
 //     fn mul_assign(&mut self, rhs: Z_N<N>) {
 //         self.p1 *= &rhs.p1;
 //         self.p2 *= &rhs.p2;
 //     }
 // }
 
-impl<'a, const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    MulAssign<&'a Self> for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+impl<'a, const D: usize, const N1: u64, const N2: u64> MulAssign<&'a Self>
+    for IntModCycloCRT<D, N1, N2>
 {
     fn mul_assign(&mut self, _: &'a Self) {
         todo!()
     }
 }
 
-impl<
-        const D: usize,
-        const N1: u64,
-        const N2: u64,
-        const N1_INV: u64,
-        const N2_INV: u64,
-        const BASE: u64,
-        const LEN: usize,
-    > RingElementDecomposable<BASE, LEN> for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+impl<const D: usize, const N1: u64, const N2: u64, const BASE: u64, const LEN: usize>
+    RingElementDecomposable<BASE, LEN> for IntModCycloCRT<D, N1, N2>
 {
     fn decompose_into_mat<const N: usize, const M: usize>(
         &self,
@@ -278,13 +213,13 @@ impl<
         j: usize,
     ) {
         for coeff_idx in 0..D {
-            let coeff = u64::from(IntModCRT::<N1, N2, N1_INV, N2_INV>::from((
+            let coeff = u64::from(IntModCRT::<N1, N2>::from((
                 self.proj1.coeff[coeff_idx],
                 self.proj2.coeff[coeff_idx],
             )));
             let decomp = IntModDecomposition::<BASE, LEN>::new(coeff, N1 * N2);
             for (k, u) in decomp.enumerate() {
-                let u_crt = IntModCRT::<N1, N2, N1_INV, N2_INV>::from(u);
+                let u_crt = IntModCRT::<N1, N2>::from(u);
                 mat[(i + k, j)].proj1.coeff[coeff_idx] = u_crt.proj1;
                 mat[(i + k, j)].proj2.coeff[coeff_idx] = u_crt.proj2;
             }
@@ -294,8 +229,8 @@ impl<
 
 /// Random sampling
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    RandUniformSampled for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+impl<const D: usize, const N1: u64, const N2: u64> RandUniformSampled
+    for IntModCycloCRT<D, N1, N2>
 {
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
         IntModCycloCRT {
@@ -305,8 +240,8 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    RandZeroOneSampled for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+impl<const D: usize, const N1: u64, const N2: u64> RandZeroOneSampled
+    for IntModCycloCRT<D, N1, N2>
 {
     fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
         let mut v = vec![0u64; D];
@@ -328,8 +263,8 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    RandDiscreteGaussianSampled for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+impl<const D: usize, const N1: u64, const N2: u64> RandDiscreteGaussianSampled
+    for IntModCycloCRT<D, N1, N2>
 {
     fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
         let mut v = vec![0i64; D];
@@ -345,9 +280,7 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
 
 // Other polynomial-specific operations.
 
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
-{
+impl<const D: usize, const N1: u64, const N2: u64> IntModCycloCRT<D, N1, N2> {
     pub fn auto(&self, k: usize) -> Self {
         (self.proj1.auto(k), self.proj2.auto(k)).into()
     }
@@ -355,7 +288,7 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
     pub fn norm(&self) -> u64 {
         let mut worst: u64 = 0;
         for i in 0..D {
-            let val: IntModCRT<N1, N2, N1_INV, N2_INV> = (self.proj1[i], self.proj2[i]).into();
+            let val: IntModCRT<N1, N2> = (self.proj1[i], self.proj2[i]).into();
             worst = max(worst, val.norm());
         }
         worst
@@ -365,38 +298,28 @@ impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_I
     pub fn round_down_into<const M: u64>(&self) -> IntModCyclo<D, M> {
         let mut rounded_coeffs = [IntMod::zero(); D];
         for i in 0..D {
-            let coeff: IntModCRT<N1, N2, N1_INV, N2_INV> = (self.proj1[i], self.proj2[i]).into();
+            let coeff: IntModCRT<N1, N2> = (self.proj1[i], self.proj2[i]).into();
             rounded_coeffs[i] = coeff.round_down_into();
         }
         rounded_coeffs.into()
     }
 }
 
-unsafe impl<
-        const D: usize,
-        const N1: u64,
-        const N2: u64,
-        const N1_INV: u64,
-        const N2_INV: u64,
-        const M1: u64,
-        const M2: u64,
-        const M1_INV: u64,
-        const M2_INV: u64,
-    > RingCompatible<IntModCycloCRT<D, M1, M2, M1_INV, M2_INV>>
-    for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
+unsafe impl<const D: usize, const N1: u64, const N2: u64, const M1: u64, const M2: u64>
+    RingCompatible<IntModCycloCRT<D, M1, M2>> for IntModCycloCRT<D, N1, N2>
 {
 }
 
 // TODO: this should be a TryFrom
-impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64>
-    From<&IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>> for IntModCRT<N1, N2, N1_INV, N2_INV>
+impl<const D: usize, const N1: u64, const N2: u64> From<&IntModCycloCRT<D, N1, N2>>
+    for IntModCRT<N1, N2>
 {
-    fn from(a: &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>) -> Self {
+    fn from(a: &IntModCycloCRT<D, N1, N2>) -> Self {
         (a.proj1[0], a.proj2[0]).into()
     }
 }
 
-// impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64> Index<usize> for Z_N_CycloRaw_CRT<D, N1, N2, N1_INV, N2_INV> {
+// impl<const D: usize, const N1: u64, const N2: u64> Index<usize> for Z_N_CycloRaw_CRT<D, N1, N2> {
 //     type Output = (Z_N<N1>, Z_N<N2>);
 //     fn index(&self, index: usize) -> &Self::Output {
 //         &(self.p1[0], self.p2[0])

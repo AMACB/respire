@@ -3,12 +3,9 @@ use fhe_psi::math::gadget::{base_from_len, gadget_inverse};
 use fhe_psi::math::int_mod_cyclo::IntModCyclo;
 use fhe_psi::math::int_mod_cyclo_crt::IntModCycloCRT;
 use fhe_psi::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
-use fhe_psi::math::int_mod_cyclo_eval::IntModCycloEval;
 use fhe_psi::math::matrix::Matrix;
 use fhe_psi::math::ntt::{ntt_neg_backward, ntt_neg_forward};
-use fhe_psi::math::number_theory::find_sqrt_primitive_root;
 use fhe_psi::math::rand_sampled::RandUniformSampled;
-use fhe_psi::math::utils::mod_inverse;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
@@ -16,28 +13,26 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("math::ntt_neg_forward", |b| {
         const D: usize = 2048;
         const P: u64 = 268369921;
-        const W: u64 = find_sqrt_primitive_root(D, P);
         type RCoeff = IntModCyclo<D, P>;
 
         let mut rng = ChaCha20Rng::from_entropy();
         let elem = RCoeff::rand_uniform(&mut rng);
         let mut points = elem.into_aligned();
         b.iter(|| {
-            ntt_neg_forward::<D, P, W>(black_box(&mut points));
+            ntt_neg_forward::<D, P>(black_box(&mut points));
         });
     });
 
     c.bench_function("math::ntt_neg_backward", |b| {
         const D: usize = 2048;
         const P: u64 = 268369921;
-        const W: u64 = find_sqrt_primitive_root(D, P);
         type RCoeff = IntModCyclo<D, P>;
 
         let mut rng = ChaCha20Rng::from_entropy();
         let elem = RCoeff::rand_uniform(&mut rng);
         let mut points = elem.into_aligned();
         b.iter(|| {
-            ntt_neg_backward::<D, P, W>(black_box(&mut points));
+            ntt_neg_backward::<D, P>(black_box(&mut points));
         });
     });
 
@@ -47,22 +42,10 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     const D: usize = 2048;
 
-    type Ring = IntModCyclo<D, Q_A>;
-
-    type RingEval = IntModCycloEval<D, Q_A, { find_sqrt_primitive_root(D, Q_A) }>;
-
-    type RingCRT =
-        IntModCycloCRT<D, Q_A, Q_B, { mod_inverse(Q_A, Q_B) }, { mod_inverse(Q_B, Q_A) }>;
-
-    type RingCRTEval = IntModCycloCRTEval<
-        2048,
-        Q_A,
-        Q_B,
-        { mod_inverse(Q_A, Q_B) },
-        { mod_inverse(Q_B, Q_A) },
-        { find_sqrt_primitive_root(D, Q_A) },
-        { find_sqrt_primitive_root(D, Q_B) },
-    >;
+    // type Ring = IntModCyclo<D, Q_A>;
+    // type RingEval = IntModCycloEval<D, Q_A>;
+    type RingCRT = IntModCycloCRT<D, Q_A, Q_B>;
+    type RingCRTEval = IntModCycloCRTEval<2048, Q_A, Q_B>;
 
     c.bench_function("math::IntModCycloCRT automorph", |b| {
         let mut rng = ChaCha20Rng::from_entropy();

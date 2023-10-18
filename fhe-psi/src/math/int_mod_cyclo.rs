@@ -102,20 +102,14 @@ impl<const D: usize, const N: u64> TryFrom<&IntModCyclo<D, N>> for IntMod<N> {
     }
 }
 
-impl<
-        const D: usize,
-        const N1: u64,
-        const N2: u64,
-        const N1_INV: u64,
-        const N2_INV: u64,
-        const N: u64,
-    > From<&IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>> for IntModCyclo<D, N>
+impl<const D: usize, const N1: u64, const N2: u64, const N: u64> From<&IntModCycloCRT<D, N1, N2>>
+    for IntModCyclo<D, N>
 {
-    fn from(a: &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>) -> Self {
+    fn from(a: &IntModCycloCRT<D, N1, N2>) -> Self {
         assert_eq!(N, N1 * N2);
         let mut result = IntModCyclo::zero();
         for i in 0..D {
-            result.coeff[i] = IntMod::from(u64::from(IntModCRT::<N1, N2, N1_INV, N2_INV>::from((
+            result.coeff[i] = IntMod::from(u64::from(IntModCRT::<N1, N2>::from((
                 a.proj1[i], a.proj2[i],
             ))));
         }
@@ -123,16 +117,10 @@ impl<
     }
 }
 
-impl<
-        const D: usize,
-        const N1: u64,
-        const N2: u64,
-        const N1_INV: u64,
-        const N2_INV: u64,
-        const N: u64,
-    > From<&IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV>> for IntModCyclo<D, N>
+impl<const D: usize, const N1: u64, const N2: u64, const N: u64>
+    From<&IntModCycloCRTEval<D, N1, N2>> for IntModCyclo<D, N>
 {
-    fn from(a: &IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV>) -> Self {
+    fn from(a: &IntModCycloCRTEval<D, N1, N2>) -> Self {
         IntModCyclo::from(&IntModCycloCRT::from(a))
     }
 }

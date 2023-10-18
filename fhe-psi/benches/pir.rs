@@ -22,6 +22,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         ETA1: 9,
         ETA2: 6,
         Z_FOLD: 2,
+        Q_SWITCH1: 1 << 10, // 4P
+        Q_SWITCH2: 2056193, // must be prime
+        D_SWITCH: 1024,
+        T_SWITCH: 21,
     }
     .expand();
     type SPIRALTest = spiral!(SPIRAL_TEST_PARAMS);
@@ -165,7 +169,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("pir::answer_first_dim", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
         let records: Vec<_> = (0..)
-            .map(|_| <SPIRALTest as SPIRAL>::RingP::rand_uniform(&mut rng))
+            .map(|_| <SPIRALTest as SPIRAL>::RingP::rand_uniform(&mut rng).project_dim())
             .take(SPIRALTest::DB_SIZE)
             .collect();
         let db = SPIRALTest::preprocess(records.iter());
