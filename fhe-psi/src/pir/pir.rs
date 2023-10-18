@@ -293,7 +293,7 @@ pub trait SPIRAL {
     type Ring0Fast;
     type RegevCiphertext;
     type RegevCiphertext0;
-    type RegevSmallModulus;
+    type RegevSmall;
     type GSWCiphertext;
     type EncodingKey;
     type AutoKey<const T: usize>;
@@ -332,9 +332,9 @@ pub trait SPIRAL {
     fn setup() -> (Self::QueryKey, Self::PublicParams);
     fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
     fn answer(pp: &Self::PublicParams, db: &Self::Database, q: &Self::Query) -> Self::ResponseRaw;
-    fn response_compress(r: &Self::ResponseRaw) -> Self::Response;
+    fn response_compress(pp: &Self::PublicParams, r: &Self::ResponseRaw) -> Self::Response;
     fn response_extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
-    fn response_stats(
+    fn response_raw_stats(
         qk: &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::ResponseRaw,
         actual: &<Self as SPIRAL>::Record,
@@ -414,7 +414,10 @@ impl<
     type Ring0Fast = IntModCycloCRTEval<D, 0, 0, 0, 0, 0, 0>;
     type RegevCiphertext = Matrix<2, 1, Self::RingQFast>;
     type RegevCiphertext0 = Matrix<2, 1, Self::Ring0Fast>;
-    type RegevSmallModulus = (IntModCyclo<D, Q_SWITCH2>, IntModCyclo<D, Q_SWITCH1>);
+    type RegevSmall = (
+        IntModCyclo<D_SWITCH, Q_SWITCH2>,
+        IntModCyclo<D_SWITCH, Q_SWITCH1>,
+    );
     type GSWCiphertext = Matrix<2, M_GSW, Self::RingQFast>;
 
     type EncodingKey = Self::RingQFast;
@@ -428,7 +431,10 @@ impl<
     );
 
     // Associated types
-    type QueryKey = Self::EncodingKey;
+    type QueryKey = (
+        Self::EncodingKey,                                        // main key
+        IntModCycloEval<D_SWITCH, Q_SWITCH2, W_SWITCH2_D_SWITCH>, // small ring key
+    );
     type PublicParams = (
         (
             Self::AutoKeyGSW,
@@ -436,11 +442,12 @@ impl<
             Vec<Self::AutoKeyGSW>,
         ),
         Self::RegevToGSWKey,
+        Self::KeySwitchKey,
     );
     type Query = Self::RegevCiphertext;
     type QueryExpanded = (Vec<Self::RegevCiphertext>, Vec<Self::GSWCiphertext>);
     type ResponseRaw = Self::RegevCiphertext;
-    type Response = Self::RegevSmallModulus;
+    type Response = Self::RegevSmall;
     type Record = IntModCyclo<D_SWITCH, P>;
     type RecordLarge = IntModCyclo<D, P>;
 
@@ -529,6 +536,18 @@ impl<
         // Regev/GSW secret key
         let s_encode = Self::encode_setup();
 
+        // Small ring key
+        let s_small = {
+            let mut rng = ChaCha20Rng::from_entropy();
+            IntModCycloEval::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng)
+        };
+
+        // Key switching key
+        let s_encode_q2 =
+            IntModCycloEval::from(IntModCyclo::<D, Q>::from(&s_encode).round_down_into());
+        let s_small_q2 = IntModCycloEval::from(IntModCyclo::from(&s_small).include_dim());
+        let s_switch = Self::key_switch_setup(&s_encode_q2, &s_small_q2);
+
         // Automorphism keys
         let auto_key_first = Self::auto_setup::<T_COEFF_GSW, Z_COEFF_GSW>(D + 1, &s_encode);
 
@@ -553,15 +572,19 @@ impl<
         let regev_to_gsw_key = Self::regev_to_gsw_setup(&s_encode);
 
         (
-            s_encode,
+            (s_encode, s_small),
             (
                 (auto_key_first, auto_keys_regev, auto_keys_gsw),
                 regev_to_gsw_key,
+                s_switch,
             ),
         )
     }
 
-    fn query(s_encode: &<Self as SPIRAL>::QueryKey, idx: usize) -> <Self as SPIRAL>::Query {
+    fn query(
+        (s_encode, _s_small): &<Self as SPIRAL>::QueryKey,
+        idx: usize,
+    ) -> <Self as SPIRAL>::Query {
         assert!(idx < Self::DB_SIZE);
         let (idx_i, idx_j) = (idx / Self::DB_DIM2_SIZE, idx % Self::DB_DIM2_SIZE);
 
@@ -624,26 +647,61 @@ impl<
         result
     }
 
-    fn response_compress(r: &Self::ResponseRaw) -> Self::Response {
-        Self::modulus_switch(r)
+    fn response_compress(
+        (_auto_keys, _regev_to_gsw_key, (a_t, b_t)): &Self::PublicParams,
+        r: &Self::ResponseRaw,
+    ) -> Self::Response {
+        let c0 = IntModCyclo::<D, Q>::from(&r[(0, 0)]);
+        let c1 = IntModCyclo::<D, Q>::from(&r[(1, 0)]);
+        let mut c0_scaled = IntModCyclo::zero();
+        for i in 0..D {
+            let numer = Q_SWITCH2 as u128 * u64::from(c0.coeff[i]) as u128;
+            let denom = Q as u128;
+            let div = (numer + denom / 2) / denom;
+            c0_scaled.coeff[i] = IntMod::from(div as u64);
+        }
+        let g_inv_c0_scaled = gadget_inverse_scalar::<_, Z_SWITCH, T_SWITCH>(&c0_scaled)
+            .into_ring(|x| IntModCycloEval::from(x));
+        let c0_hat: IntModCyclo<D_SWITCH, Q_SWITCH2> =
+            IntModCyclo::from(&(a_t * &g_inv_c0_scaled)[(0, 0)]).project_dim();
+        let c1_hat: IntModCyclo<D_SWITCH, Q_SWITCH1> = {
+            let b_t_g_inv = IntModCyclo::from(&(b_t * &g_inv_c0_scaled)[(0, 0)]);
+            let mut result = IntModCyclo::<D, Q_SWITCH1>::zero();
+            for i in 0..D {
+                let numer = Q_SWITCH1 as u128 * Q_SWITCH2 as u128 * u64::from(c1.coeff[i]) as u128
+                    + Q as u128 * Q_SWITCH1 as u128 * u64::from(b_t_g_inv.coeff[i]) as u128;
+                let denom = Q as u128 * Q_SWITCH2 as u128;
+                let div = (numer + denom / 2) / denom;
+                result.coeff[i] = IntMod::from(div as u64);
+            }
+            result.project_dim()
+        };
+        (c0_hat, c1_hat)
     }
 
     fn response_extract(
-        s_encode: &<Self as SPIRAL>::QueryKey,
-        r: &<Self as SPIRAL>::Response,
+        (_s_encode, s_small): &<Self as SPIRAL>::QueryKey,
+        (c0_hat, c1_hat): &<Self as SPIRAL>::Response,
     ) -> <Self as SPIRAL>::Record {
-        Self::modulus_switch_recover(s_encode, r)
-            .round_down_into()
-            .project_dim()
+        let neg_s_small_c0 = IntModCyclo::from(-&(s_small * &IntModCycloEval::from(c0_hat)));
+        let mut result = IntModCyclo::zero();
+        for i in 0..D_SWITCH {
+            let numer = Q_SWITCH1 as u128 * u64::from(neg_s_small_c0.coeff[i]) as u128;
+            let denom = Q_SWITCH2 as u128;
+            let div = (numer + denom / 2) / denom;
+            result.coeff[i] = IntMod::from(div as u64);
+        }
+        result += c1_hat;
+        result.round_down_into()
     }
 
-    fn response_stats(
-        qk: &<Self as SPIRAL>::QueryKey,
+    fn response_raw_stats(
+        (s_encode, _s_small): &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::ResponseRaw,
         actual: &<Self as SPIRAL>::Record,
     ) -> f64 {
         let actual_scaled = actual.scale_up_into();
-        let decoded = Self::decode_regev(qk, r).project_dim();
+        let decoded = Self::decode_regev(s_encode, r).project_dim();
         let diff = &actual_scaled - &decoded;
 
         let mut sum = 0_f64;
@@ -726,7 +784,7 @@ impl<
     >
 {
     pub fn answer_query_expand(
-        ((auto_key_first, auto_keys_regev, auto_keys_gsw), regev_to_gsw_key): &<Self as SPIRAL>::PublicParams,
+        ((auto_key_first, auto_keys_regev, auto_keys_gsw), regev_to_gsw_key, _key_switch_key): &<Self as SPIRAL>::PublicParams,
         q: &<Self as SPIRAL>::Query,
     ) -> <Self as SPIRAL>::QueryExpanded {
         assert_eq!(auto_keys_regev.len(), Self::REGEV_EXPAND_ITERS);
@@ -1191,54 +1249,6 @@ impl<
 
         // No permutation needed for scalar regev
         result
-    }
-
-    pub fn modulus_switch(
-        c: &<Self as SPIRAL>::RegevCiphertext,
-    ) -> <Self as SPIRAL>::RegevSmallModulus {
-        let c0_q = IntModCyclo::<D, Q>::from(&c[(0, 0)]);
-        let c1_q = IntModCyclo::<D, Q>::from(&c[(1, 0)]);
-
-        let mut c0_q2 = IntModCyclo::<D, Q_SWITCH2>::zero();
-        for (i, c) in c0_q.coeff.iter().enumerate() {
-            // round((q2/q) * c0)
-            let mul = u64::from(*c) as u128 * Q_SWITCH2 as u128;
-            let div = ((mul + Q as u128 / 2) / Q as u128) as u64;
-            c0_q2.coeff[i] = IntMod::from(div);
-        }
-
-        let mut c1_q1 = IntModCyclo::<D, Q_SWITCH1>::zero();
-        for (i, c) in c1_q.coeff.iter().enumerate() {
-            // round((q1/q) * c1)
-            let mul = u64::from(*c) as u128 * Q_SWITCH1 as u128;
-            let div = ((mul + Q as u128 / 2) / Q as u128) as u64;
-            c1_q1.coeff[i] = IntMod::from(div);
-        }
-
-        (c0_q2, c1_q1)
-    }
-
-    pub fn modulus_switch_recover(
-        s_encode: &<Self as SPIRAL>::QueryKey,
-        (c0_q2, c1_q1): &<Self as SPIRAL>::RegevSmallModulus,
-    ) -> IntModCyclo<D, Q_SWITCH1> {
-        let c0_q2_eval = IntModCycloEval::<D, Q_SWITCH2, W_SWITCH2_D>::from(c0_q2);
-        let s_q2_eval = {
-            let s_q = IntModCyclo::<D, Q>::from(s_encode);
-            let s_q2 =
-                IntModCyclo::<D, Q_SWITCH2>::from(s_q.coeff.map(|x| IntMod::from(i64::from(x))));
-            IntModCycloEval::from(s_q2)
-        };
-
-        let neg_s_c0 = IntModCyclo::from(-&(&s_q2_eval * &c0_q2_eval));
-        let mut recovered = IntModCyclo::<D, Q_SWITCH1>::zero();
-        for i in 0..D {
-            let numer = Q_SWITCH1 as u128 * u64::from(neg_s_c0.coeff[i]) as u128;
-            let denom = Q_SWITCH2 as u128;
-            let div = ((numer + denom / 2) / denom) as u64;
-            recovered.coeff[i] = IntMod::from(div + u64::from(c1_q1.coeff[i]));
-        }
-        recovered
     }
 
     pub fn key_switch_setup(

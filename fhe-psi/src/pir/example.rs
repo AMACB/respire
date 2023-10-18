@@ -114,7 +114,7 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<1024, 256>>, I: Iterato
         let answer_total = answer_end - answer_start;
 
         let response_compress_start = Instant::now();
-        let response = TheSPIRAL::response_compress(&response_raw);
+        let response = TheSPIRAL::response_compress(&pp, &response_raw);
         let response_compress_end = Instant::now();
         let response_compress_total = response_compress_end - response_compress_start;
 
@@ -135,7 +135,7 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<1024, 256>>, I: Iterato
         eprintln!("    {:?} to answer", answer_total);
         eprintln!("    {:?} to compress response", response_compress_total);
         eprintln!("    {:?} to extract response", response_extract_total);
-        let rel_noise = TheSPIRAL::response_stats(&qk, &response_raw, &records[idx]);
+        let rel_noise = TheSPIRAL::response_raw_stats(&qk, &response_raw, &records[idx]);
 
         eprintln!(
             "  relative coefficient noise (sample): 2^({})",
@@ -151,10 +151,7 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<1024, 256>>, I: Iterato
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
-    use crate::math::int_mod_cyclo_eval::IntModCycloEval;
     use crate::math::int_mod_poly::IntModPoly;
-    use crate::math::rand_sampled::RandDiscreteGaussianSampled;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
 
@@ -218,68 +215,14 @@ mod test {
     }
 
     #[test]
-    fn test_modulus_switch() {
-        let s = SPIRALTest::encode_setup();
-        let mu = <SPIRALTest as SPIRAL>::RingP::from(99_u64);
-        let c = SPIRALTest::encode_regev(&s, &mu.scale_up_into());
-        let c_switch = SPIRALTest::modulus_switch(&c);
-        let mu_recovered = SPIRALTest::modulus_switch_recover(&s, &c_switch);
-        assert_eq!(mu, mu_recovered.round_down_into());
-    }
-
-    #[test]
-    fn test_key_switch() {
-        let mut rng = ChaCha20Rng::from_entropy();
-
-        let s_from_q = IntModCycloCRTEval::from(&IntModCyclo::<
-            { SPIRAL_TEST_PARAMS.D },
-            { SPIRAL_TEST_PARAMS.Q },
-        >::rand_discrete_gaussian::<
-            _,
-            { SPIRAL_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS },
-        >(&mut rng));
-        let s_from = {
-            let s_from_q_coeff =
-                IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, { SPIRAL_TEST_PARAMS.Q }>::from(&s_from_q);
-            let s_from_q2 =
-                IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, { SPIRAL_TEST_PARAMS.Q_SWITCH2 }>::from(
-                    s_from_q_coeff.coeff.map(|x| IntMod::from(i64::from(x))),
-                );
-            IntModCycloEval::from(s_from_q2)
-        };
-        let s_to_small = IntModCyclo::<
-            { SPIRAL_TEST_PARAMS.D_SWITCH },
-            { SPIRAL_TEST_PARAMS.Q_SWITCH2 },
-        >::rand_discrete_gaussian::<_, { SPIRAL_TEST_PARAMS.NOISE_WIDTH_MILLIONTHS }>(
-            &mut rng
-        );
-        let s_to = IntModCycloEval::from(s_to_small.include_dim());
-        let switch_key = SPIRALTest::key_switch_setup(&s_from, &s_to);
-
-        let mu = <SPIRALTest as SPIRAL>::RingP::from(222_u64);
-        let c = SPIRALTest::encode_regev(&s_from_q, &mu.scale_up_into());
-        let c_scaled = c.into_ring(|x| {
-            IntModCycloEval::from(
-                &IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, { SPIRAL_TEST_PARAMS.Q }>::from(x)
-                    .round_down_into(),
-            )
-        });
-        let c_switch = SPIRALTest::key_switch(&switch_key, &c_scaled);
-        let c_switch_proj = c_switch.into_ring(|x| {
-            IntModCycloEval::<
-                { SPIRAL_TEST_PARAMS.D_SWITCH },
-                { SPIRAL_TEST_PARAMS.Q_SWITCH2 },
-                { SPIRAL_TEST_PARAMS.W_SWITCH2_D_SWITCH },
-            >::from(
-                IntModCyclo::from(x).project_dim::<{ SPIRAL_TEST_PARAMS.D_SWITCH }>()
-            )
-        });
-        let decrypted = &(-&(&IntModCycloEval::from(s_to_small) * &c_switch_proj[(0, 0)]))
-            + &c_switch_proj[(1, 0)];
-        assert_eq!(
-            IntModCyclo::from(decrypted).round_down_into(),
-            mu.project_dim()
-        );
+    fn test_post_process_only() {
+        let (qk, pp) = SPIRALTest::setup();
+        let (s_encode, _) = &qk;
+        let m = <SPIRALTest as SPIRAL>::Record::from(77_u64);
+        let c = SPIRALTest::encode_regev(s_encode, &m.include_dim().scale_up_into());
+        let compressed = SPIRALTest::response_compress(&pp, &c);
+        let extracted = SPIRALTest::response_extract(&qk, &compressed);
+        assert_eq!(m, extracted);
     }
 
     #[test]
