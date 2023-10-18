@@ -1,9 +1,9 @@
 //! Discrete gaussian distribution over the integers. Related to [RandDiscreteGaussianSampled].
 
 use once_cell::sync::Lazy;
-use rand::distributions::WeightedIndex;
 use rand::prelude::Distribution;
 use rand::Rng;
+use rand_distr::WeightedAliasIndex;
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::RwLock;
@@ -14,25 +14,23 @@ pub const NUM_WIDTHS: usize = 8;
 /// A single table used for sampling a discrete gaussian of a particular width.
 struct DiscreteGaussianTable {
     choices: Vec<i64>,
-    dist: WeightedIndex<f64>,
+    dist: WeightedAliasIndex<f64>,
 }
 
 impl DiscreteGaussianTable {
     fn init(noise_width: f64) -> Self {
         let max_val = (noise_width * (NUM_WIDTHS as f64)).ceil() as i64;
         let mut choices = Vec::new();
-        let mut table = vec![0f64; 0];
+        let mut weights = vec![0f64; 0];
         for i in -max_val..max_val + 1 {
             let p_val = f64::exp(-PI * f64::powi(i as f64, 2) / f64::powi(noise_width, 2));
             choices.push(i);
-            table.push(p_val);
+            weights.push(p_val);
         }
-        let dist = WeightedIndex::new(&table).unwrap();
-
+        let dist = WeightedAliasIndex::new(weights).unwrap();
         Self { choices, dist }
     }
 
-    // FIXME: not constant-time
     fn sample<T: Rng>(&self, rng: &mut T) -> i64 {
         self.choices[self.dist.sample(rng)]
     }
