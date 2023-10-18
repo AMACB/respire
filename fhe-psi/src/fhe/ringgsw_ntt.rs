@@ -14,7 +14,6 @@ pub struct RingGSWNTT<
     const P: u64,
     const Q: u64,
     const D: usize,
-    const W: u64,
     const G_BASE: u64,
     const G_LEN: usize,
     const NOISE_WIDTH_MILLIONTHS: u64,
@@ -27,11 +26,10 @@ pub struct RingGSWNTTCiphertext<
     const P: u64,
     const Q: u64,
     const D: usize,
-    const W: u64,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    ct: Matrix<N, M, IntModCycloEval<D, Q, W>>,
+    ct: Matrix<N, M, IntModCycloEval<D, Q>>,
 }
 
 #[derive(Clone, Debug)]
@@ -41,11 +39,10 @@ pub struct RingGSWNTTPublicKey<
     const P: u64,
     const Q: u64,
     const D: usize,
-    const W: u64,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    A: Matrix<N, M, IntModCycloEval<D, Q, W>>,
+    A: Matrix<N, M, IntModCycloEval<D, Q>>,
 }
 
 #[derive(Clone, Debug)]
@@ -55,11 +52,10 @@ pub struct RingGSWNTTSecretKey<
     const P: u64,
     const Q: u64,
     const D: usize,
-    const W: u64,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    s_T: Matrix<1, N, IntModCycloEval<D, Q, W>>,
+    s_T: Matrix<1, N, IntModCycloEval<D, Q>>,
 }
 
 impl<
@@ -69,11 +65,10 @@ impl<
         const P: u64,
         const Q: u64,
         const D: usize,
-        const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
-    > FHEScheme for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    > FHEScheme for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
 }
 
@@ -84,17 +79,16 @@ impl<
         const P: u64,
         const Q: u64,
         const D: usize,
-        const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > EncryptionScheme
-    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     type Plaintext = IntModCyclo<D, P>;
-    type Ciphertext = RingGSWNTTCiphertext<N, M, P, Q, D, W, G_BASE, G_LEN>;
-    type PublicKey = RingGSWNTTPublicKey<N, M, P, Q, D, W, G_BASE, G_LEN>;
-    type SecretKey = RingGSWNTTSecretKey<N, M, P, Q, D, W, G_BASE, G_LEN>;
+    type Ciphertext = RingGSWNTTCiphertext<N, M, P, Q, D, G_BASE, G_LEN>;
+    type PublicKey = RingGSWNTTPublicKey<N, M, P, Q, D, G_BASE, G_LEN>;
+    type SecretKey = RingGSWNTTSecretKey<N, M, P, Q, D, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
         let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, _, NOISE_WIDTH_MILLIONTHS>();
@@ -133,12 +127,11 @@ impl<
         const P: u64,
         const Q: u64,
         const D: usize,
-        const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > AddHomEncryptionScheme
-    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn add_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -154,12 +147,11 @@ impl<
         const P: u64,
         const Q: u64,
         const D: usize,
-        const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > MulHomEncryptionScheme
-    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_hom(lhs: &Self::Ciphertext, rhs: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext {
@@ -175,12 +167,11 @@ impl<
         const P: u64,
         const Q: u64,
         const D: usize,
-        const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > AddScalarEncryptionScheme<IntModCyclo<D, P>>
-    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn add_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
         let rhs_q = rhs.include_into().into();
@@ -197,12 +188,11 @@ impl<
         const P: u64,
         const Q: u64,
         const D: usize,
-        const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > MulScalarEncryptionScheme<IntModCyclo<D, P>>
-    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn mul_scalar(lhs: &Self::Ciphertext, rhs: &Self::Plaintext) -> Self::Ciphertext {
         let rhs_q = rhs.include_into().into();
@@ -219,12 +209,11 @@ impl<
         const P: u64,
         const Q: u64,
         const D: usize,
-        const W: u64,
         const G_BASE: u64,
         const G_LEN: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
     > NegEncryptionScheme
-    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, W, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
+    for RingGSWNTT<N_MINUS_1, N, M, P, Q, D, G_BASE, G_LEN, NOISE_WIDTH_MILLIONTHS>
 {
     fn negate(ct: &Self::Ciphertext) -> Self::Ciphertext {
         Self::Ciphertext { ct: -&ct.ct }
@@ -237,7 +226,6 @@ pub struct Params {
     pub P: u64,
     pub Q: u64,
     pub D: usize,
-    pub W: u64,
     pub G_BASE: u64,
     pub NOISE_WIDTH_MILLIONTHS: u64,
 }
@@ -251,7 +239,6 @@ macro_rules! ring_gsw_ntt_from_params {
             { $params.P },
             { $params.Q },
             { $params.D },
-            { $params.W },
             { $params.G_BASE },
             { ceil_log($params.G_BASE, $params.Q) },
             { $params.NOISE_WIDTH_MILLIONTHS },
@@ -265,7 +252,6 @@ pub const RING_GSW_NTT_TEST_PARAMS: Params = Params {
     P: 31,
     Q: 268369921,
     D: 4,
-    W: 185593570,
     G_BASE: 2,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
 };
@@ -276,9 +262,7 @@ pub const RING_GSW_NTT_TEST_MEDIUM_PARAMS: Params = Params {
     P: 31,
     Q: 268369921,
     // D: 256,
-    // W: 63703579,
     D: 2048,
-    W: 66294444,
     G_BASE: 2,
     NOISE_WIDTH_MILLIONTHS: 1,
 };

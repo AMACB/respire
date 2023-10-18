@@ -129,30 +129,24 @@ impl<
         const N2: u64,
         const N1_INV: u64,
         const N2_INV: u64,
-        const W1: u64,
-        const W2: u64,
         const N: u64,
-    > From<&IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>> for IntModCyclo<D, N>
+    > From<&IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV>> for IntModCyclo<D, N>
 {
-    fn from(a: &IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>) -> Self {
+    fn from(a: &IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV>) -> Self {
         IntModCyclo::from(&IntModCycloCRT::from(a))
     }
 }
 
-impl<const D: usize, const N: u64, const W: u64> From<IntModCycloEval<D, N, W>>
-    for IntModCyclo<D, N>
-{
-    fn from(a_eval: IntModCycloEval<D, N, W>) -> Self {
+impl<const D: usize, const N: u64> From<IntModCycloEval<D, N>> for IntModCyclo<D, N> {
+    fn from(a_eval: IntModCycloEval<D, N>) -> Self {
         let mut values_aligned = a_eval.into_aligned();
-        ntt_neg_backward::<D, N, W>(&mut values_aligned);
+        ntt_neg_backward::<D, N>(&mut values_aligned);
         IntModCyclo::from(values_aligned.0)
     }
 }
 
 // TODO: this does a clone, which the user may not be aware about...
-impl<const D: usize, const N: u64, const W: u64> From<&IntModCyclo<D, N>>
-    for IntModCycloEval<D, N, W>
-{
+impl<const D: usize, const N: u64> From<&IntModCyclo<D, N>> for IntModCycloEval<D, N> {
     fn from(a: &IntModCyclo<D, N>) -> Self {
         (a.clone()).into()
     }

@@ -18,8 +18,6 @@ pub struct RingGSWNTTCRT<
     const Q2: u64,
     const Q1_INV: u64,
     const Q2_INV: u64,
-    const W1: u64,
-    const W2: u64,
     const D: usize,
     const G_BASE: u64,
     const G_LEN: usize,
@@ -36,13 +34,11 @@ pub struct RingGSWNTTCRTCiphertext<
     const Q2: u64,
     const Q1_INV: u64,
     const Q2_INV: u64,
-    const W1: u64,
-    const W2: u64,
     const D: usize,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    ct: Matrix<N, M, IntModCycloCRTEval<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>>,
+    ct: Matrix<N, M, IntModCycloCRTEval<D, Q1, Q2, Q1_INV, Q2_INV>>,
 }
 
 #[derive(Clone, Debug)]
@@ -55,13 +51,11 @@ pub struct RingGSWNTTCRTPublicKey<
     const Q2: u64,
     const Q1_INV: u64,
     const Q2_INV: u64,
-    const W1: u64,
-    const W2: u64,
     const D: usize,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    A: Matrix<N, M, IntModCycloCRTEval<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>>,
+    A: Matrix<N, M, IntModCycloCRTEval<D, Q1, Q2, Q1_INV, Q2_INV>>,
 }
 
 #[derive(Clone, Debug)]
@@ -74,13 +68,11 @@ pub struct RingGSWNTTCRTSecretKey<
     const Q2: u64,
     const Q1_INV: u64,
     const Q2_INV: u64,
-    const W1: u64,
-    const W2: u64,
     const D: usize,
     const G_BASE: u64,
     const G_LEN: usize,
 > {
-    s_T: Matrix<1, N, IntModCycloCRTEval<D, Q1, Q2, Q1_INV, Q2_INV, W1, W2>>,
+    s_T: Matrix<1, N, IntModCycloCRTEval<D, Q1, Q2, Q1_INV, Q2_INV>>,
 }
 
 impl<
@@ -93,8 +85,6 @@ impl<
         const Q2: u64,
         const Q1_INV: u64,
         const Q2_INV: u64,
-        const W1: u64,
-        const W2: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
@@ -110,8 +100,6 @@ impl<
         Q2,
         Q1_INV,
         Q2_INV,
-        W1,
-        W2,
         D,
         G_BASE,
         G_LEN,
@@ -130,8 +118,6 @@ impl<
         const Q2: u64,
         const Q1_INV: u64,
         const Q2_INV: u64,
-        const W1: u64,
-        const W2: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
@@ -147,8 +133,6 @@ impl<
         Q2,
         Q1_INV,
         Q2_INV,
-        W1,
-        W2,
         D,
         G_BASE,
         G_LEN,
@@ -156,12 +140,9 @@ impl<
     >
 {
     type Plaintext = IntModCyclo<D, P>;
-    type Ciphertext =
-        RingGSWNTTCRTCiphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
-    type PublicKey =
-        RingGSWNTTCRTPublicKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
-    type SecretKey =
-        RingGSWNTTCRTSecretKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, W1, W2, D, G_BASE, G_LEN>;
+    type Ciphertext = RingGSWNTTCRTCiphertext<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, D, G_BASE, G_LEN>;
+    type PublicKey = RingGSWNTTCRTPublicKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, D, G_BASE, G_LEN>;
+    type SecretKey = RingGSWNTTCRTSecretKey<N, M, P, Q, Q1, Q2, Q1_INV, Q2_INV, D, G_BASE, G_LEN>;
 
     fn keygen() -> (Self::PublicKey, Self::SecretKey) {
         let (A, s_T) = gsw_keygen::<N_MINUS_1, N, M, _, NOISE_WIDTH_MILLIONTHS>();
@@ -209,8 +190,6 @@ impl<
         const Q2: u64,
         const Q1_INV: u64,
         const Q2_INV: u64,
-        const W1: u64,
-        const W2: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
@@ -226,8 +205,6 @@ impl<
         Q2,
         Q1_INV,
         Q2_INV,
-        W1,
-        W2,
         D,
         G_BASE,
         G_LEN,
@@ -251,8 +228,6 @@ impl<
         const Q2: u64,
         const Q1_INV: u64,
         const Q2_INV: u64,
-        const W1: u64,
-        const W2: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
@@ -268,8 +243,6 @@ impl<
         Q2,
         Q1_INV,
         Q2_INV,
-        W1,
-        W2,
         D,
         G_BASE,
         G_LEN,
@@ -293,8 +266,6 @@ impl<
         const Q2: u64,
         const Q1_INV: u64,
         const Q2_INV: u64,
-        const W1: u64,
-        const W2: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
@@ -310,8 +281,6 @@ impl<
         Q2,
         Q1_INV,
         Q2_INV,
-        W1,
-        W2,
         D,
         G_BASE,
         G_LEN,
@@ -344,8 +313,6 @@ impl<
         const Q2: u64,
         const Q1_INV: u64,
         const Q2_INV: u64,
-        const W1: u64,
-        const W2: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
@@ -361,8 +328,6 @@ impl<
         Q2,
         Q1_INV,
         Q2_INV,
-        W1,
-        W2,
         D,
         G_BASE,
         G_LEN,
@@ -437,8 +402,6 @@ impl<
         const Q2: u64,
         const Q1_INV: u64,
         const Q2_INV: u64,
-        const W1: u64,
-        const W2: u64,
         const D: usize,
         const G_BASE: u64,
         const G_LEN: usize,
@@ -454,8 +417,6 @@ impl<
         Q2,
         Q1_INV,
         Q2_INV,
-        W1,
-        W2,
         D,
         G_BASE,
         G_LEN,
@@ -477,8 +438,6 @@ pub struct Params {
     pub P: u64,
     pub Q1: u64,
     pub Q2: u64,
-    pub W1: u64,
-    pub W2: u64,
     pub D: usize,
     pub G_BASE: u64,
     pub NOISE_WIDTH_MILLIONTHS: u64,
@@ -496,8 +455,6 @@ macro_rules! gsw_from_params {
             { $params.Q2 },
             { mod_inverse($params.Q1, $params.Q2) },
             { mod_inverse($params.Q2, $params.Q1) },
-            { $params.W1 },
-            { $params.W2 },
             { $params.D },
             { $params.G_BASE },
             { ceil_log($params.G_BASE, $params.Q1 * $params.Q2) },
@@ -517,8 +474,6 @@ pub const RING_GSW_NTT_CRT_TEST_PARAMS: Params = Params {
     P: 31,
     Q1: 268369921,
     Q2: 249561089,
-    W1: 185593570,
-    W2: 188090060,
     D: 4,
     G_BASE: 2,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
@@ -529,11 +484,7 @@ pub const RING_GSW_NTT_CRT_TEST_MEDIUM_PARAMS: Params = Params {
     P: 31,
     Q1: 268369921,
     Q2: 249561089,
-    W1: 66294444,
-    W2: 30909463,
     D: 2048,
-    // W1: 63703579,
-    // W2: 162490677,
     // D: 256,
     G_BASE: 16088,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,

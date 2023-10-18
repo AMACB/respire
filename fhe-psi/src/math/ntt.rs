@@ -1,9 +1,10 @@
 use crate::math::int_mod::IntMod;
+use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::simd_utils::Aligned32;
 use crate::math::utils::{floor_log, get_ratio32, mod_inverse, reverse_bits};
 
 /// Compile time lookup table for NTT-related operations
-struct NTTTable<const D: usize, const N: u64, const W: u64> {}
+struct NTTTable<const D: usize, const N: u64> {}
 
 #[derive(Copy, Clone)]
 struct MulTable<const N: u64> {
@@ -21,22 +22,20 @@ impl<const N: u64> MulTable<N> {
     }
 }
 
-impl<const D: usize, const N: u64, const W: u64> NTTTable<D, N, W> {
-    const W_POWERS_BIT_REVERSED: [MulTable<N>; D] = get_powers_bit_reversed::<D, N, W>(false);
-    const W_INV_POWERS_BIT_REVERSED: [MulTable<N>; D] = get_powers_bit_reversed::<D, N, W>(true);
+impl<const D: usize, const N: u64> NTTTable<D, N> {
+    const W_POWERS_BIT_REVERSED: [MulTable<N>; D] = get_powers_bit_reversed::<D, N>(false);
+    const W_INV_POWERS_BIT_REVERSED: [MulTable<N>; D] = get_powers_bit_reversed::<D, N>(true);
     const LOG_D: usize = floor_log(2, D as u64);
     const INV_D: IntMod<N> = IntMod::from_u64_const(mod_inverse(D as u64, N));
     #[allow(unused)]
     const INV_D_RATIO32: u64 = get_ratio32::<N>(mod_inverse(D as u64, N) % N);
 }
 
-const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
-    invert: bool,
-) -> [MulTable<N>; D] {
+const fn get_powers_bit_reversed<const D: usize, const N: u64>(invert: bool) -> [MulTable<N>; D] {
     let root = if invert {
-        IntMod::from_u64_const(mod_inverse(W, N))
+        IntMod::from_u64_const(mod_inverse(IntModCycloEval::<D, N>::W, N))
     } else {
-        IntMod::from_u64_const(W)
+        IntMod::from_u64_const(IntModCycloEval::<D, N>::W)
     };
 
     let mut table = [MulTable::zero(); D];
@@ -56,11 +55,9 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64, const W: u64>(
     table
 }
 
-fn ntt_neg_forward_fallback<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned32<[IntMod<N>; D]>,
-) {
+fn ntt_neg_forward_fallback<const D: usize, const N: u64>(values: &mut Aligned32<[IntMod<N>; D]>) {
     // Algorithm 2 of https://arxiv.org/pdf/2103.16400.pdf
-    for round in 0..NTTTable::<D, N, W>::LOG_D {
+    for round in 0..NTTTable::<D, N>::LOG_D {
         let block_count = 1_usize << round;
         let block_half_stride = D >> (1_usize + round);
         let block_stride = 2 * block_half_stride;
@@ -69,7 +66,7 @@ fn ntt_neg_forward_fallback<const D: usize, const N: u64, const W: u64>(
                 (block_idx * block_stride)..(block_idx * block_stride + block_half_stride);
 
             let w: IntMod<N> = unsafe {
-                NTTTable::<D, N, W>::W_POWERS_BIT_REVERSED
+                NTTTable::<D, N>::W_POWERS_BIT_REVERSED
                     .get_unchecked(block_count + block_idx)
                     .value
             };
@@ -88,22 +85,18 @@ fn ntt_neg_forward_fallback<const D: usize, const N: u64, const W: u64>(
 }
 
 #[cfg(not(target_feature = "avx2"))]
-pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned32<[IntMod<N>; D]>,
-) {
-    ntt_neg_forward_fallback::<D, N, W>(values)
+pub fn ntt_neg_forward<const D: usize, const N: u64>(values: &mut Aligned32<[IntMod<N>; D]>) {
+    ntt_neg_forward_fallback::<D, N>(values)
 }
 
 #[cfg(target_feature = "avx2")]
-pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned32<[IntMod<N>; D]>,
-) {
+pub fn ntt_neg_forward<const D: usize, const N: u64>(values: &mut Aligned32<[IntMod<N>; D]>) {
     use crate::math::simd_utils::*;
     use std::arch::x86_64::*;
     use std::num::Wrapping;
 
     if N >= (1 << 30) {
-        return ntt_neg_forward_fallback::<D, N, W>(values);
+        return ntt_neg_forward_fallback::<D, N>(values);
     }
 
     let values = values as *mut Aligned32<[IntMod<N>; D]>;
@@ -114,7 +107,7 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     let double_modulus = unsafe { _mm256_set1_epi64x(2 * N as i64) };
 
     // Algorithm 2/6 of https://arxiv.org/pdf/2103.16400.pdf
-    for round in 0..NTTTable::<D, N, W>::LOG_D {
+    for round in 0..NTTTable::<D, N>::LOG_D {
         let block_count = 1_usize << round;
         let block_half_stride = D >> (1_usize + round);
         let block_stride = 2 * block_half_stride;
@@ -123,8 +116,8 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
                 (block_idx * block_stride)..(block_idx * block_stride + block_half_stride);
 
             unsafe {
-                let w_table = *NTTTable::<D, N, W>::W_POWERS_BIT_REVERSED
-                    .get_unchecked(block_count + block_idx);
+                let w_table =
+                    *NTTTable::<D, N>::W_POWERS_BIT_REVERSED.get_unchecked(block_count + block_idx);
 
                 let w = _mm256_set1_epi64x(w_table.value.into_u64_const() as i64);
                 let w_ratio32 = _mm256_set1_epi64x(w_table.ratio32 as i64);
@@ -186,11 +179,9 @@ pub fn ntt_neg_forward<const D: usize, const N: u64, const W: u64>(
     }
 }
 
-fn ntt_neg_backward_fallback<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned32<[IntMod<N>; D]>,
-) {
+fn ntt_neg_backward_fallback<const D: usize, const N: u64>(values: &mut Aligned32<[IntMod<N>; D]>) {
     // Algorithm 3 of https://arxiv.org/pdf/2103.16400.pdf
-    for round in 0..NTTTable::<D, N, W>::LOG_D {
+    for round in 0..NTTTable::<D, N>::LOG_D {
         let block_count = D >> (1_usize + round);
         let block_half_stride = 1 << round;
         let block_stride = 2 * block_half_stride;
@@ -200,7 +191,7 @@ fn ntt_neg_backward_fallback<const D: usize, const N: u64, const W: u64>(
                 (block_idx * block_stride)..(block_idx * block_stride + block_half_stride);
 
             let w: IntMod<N> = unsafe {
-                NTTTable::<D, N, W>::W_INV_POWERS_BIT_REVERSED
+                NTTTable::<D, N>::W_INV_POWERS_BIT_REVERSED
                     .get_unchecked(block_count + block_idx)
                     .value
             };
@@ -219,27 +210,23 @@ fn ntt_neg_backward_fallback<const D: usize, const N: u64, const W: u64>(
     }
 
     for value in values.0.iter_mut() {
-        *value *= NTTTable::<D, N, W>::INV_D;
+        *value *= NTTTable::<D, N>::INV_D;
     }
 }
 
 #[cfg(not(target_feature = "avx2"))]
-pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned32<[IntMod<N>; D]>,
-) {
-    ntt_neg_backward_fallback::<D, N, W>(values)
+pub fn ntt_neg_backward<const D: usize, const N: u64>(values: &mut Aligned32<[IntMod<N>; D]>) {
+    ntt_neg_backward_fallback::<D, N>(values)
 }
 
 #[cfg(target_feature = "avx2")]
-pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
-    values: &mut Aligned32<[IntMod<N>; D]>,
-) {
+pub fn ntt_neg_backward<const D: usize, const N: u64>(values: &mut Aligned32<[IntMod<N>; D]>) {
     use crate::math::simd_utils::*;
     use std::arch::x86_64::*;
     use std::num::Wrapping;
 
     if N >= (1 << 30) {
-        return ntt_neg_backward_fallback::<D, N, W>(values);
+        return ntt_neg_backward_fallback::<D, N>(values);
     }
 
     let values = values as *mut Aligned32<[IntMod<N>; D]>;
@@ -250,7 +237,7 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
     let double_modulus = unsafe { _mm256_set1_epi64x(2 * N as i64) };
 
     // Algorithm 3/7 of https://arxiv.org/pdf/2103.16400.pdf
-    for round in 0..NTTTable::<D, N, W>::LOG_D {
+    for round in 0..NTTTable::<D, N>::LOG_D {
         let block_count = D >> (1_usize + round);
         let block_half_stride = 1 << round;
         let block_stride = 2 * block_half_stride;
@@ -260,8 +247,7 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
                 (block_idx * block_stride)..(block_idx * block_stride + block_half_stride);
 
             let w_table = unsafe {
-                NTTTable::<D, N, W>::W_INV_POWERS_BIT_REVERSED
-                    .get_unchecked(block_count + block_idx)
+                NTTTable::<D, N>::W_INV_POWERS_BIT_REVERSED.get_unchecked(block_count + block_idx)
             };
 
             if block_left_half_range.len() < 4 {
@@ -314,8 +300,8 @@ pub fn ntt_neg_backward<const D: usize, const N: u64, const W: u64>(
     }
 
     unsafe {
-        let inv_d = _mm256_set1_epi64x(u64::from(NTTTable::<D, N, W>::INV_D) as i64);
-        let inv_d_ratio32 = _mm256_set1_epi64x(NTTTable::<D, N, W>::INV_D_RATIO32 as i64);
+        let inv_d = _mm256_set1_epi64x(u64::from(NTTTable::<D, N>::INV_D) as i64);
+        let inv_d_ratio32 = _mm256_set1_epi64x(NTTTable::<D, N>::INV_D_RATIO32 as i64);
 
         for i in (0..D).step_by(4) {
             let val = _mm256_load_si256(values.0.get_unchecked(i) as *const u64 as *const __m256i);
@@ -335,7 +321,6 @@ mod test {
     use crate::math::int_mod_cyclo::IntModCyclo;
     use crate::math::int_mod_cyclo_eval::IntModCycloEval;
     use crate::math::int_mod_poly::IntModPoly;
-    use crate::math::number_theory::find_sqrt_primitive_root;
     use crate::math::rand_sampled::RandUniformSampled;
     use crate::math::ring_elem::RingElement;
     use rand::SeedableRng;
@@ -345,7 +330,6 @@ mod test {
 
     const D: usize = 4;
     const P: u64 = 268369921_u64;
-    const W: u64 = find_sqrt_primitive_root(D, P);
 
     #[test]
     fn test_ntt_neg_forward() {
@@ -353,9 +337,9 @@ mod test {
             Aligned32([1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()]);
         let coeff_poly = IntModPoly::from(vec![1_u64, 2_u64, 3_u64, 4_u64]);
 
-        let w = IntMod::from(W);
+        let w = IntMod::from(IntModCycloEval::<D, P>::W);
 
-        ntt_neg_forward::<D, P, W>(&mut values);
+        ntt_neg_forward::<D, P>(&mut values);
         let expected = [
             coeff_poly.eval(w),
             coeff_poly.eval(w.pow(5)), // swapped, since order is bit reversed
@@ -372,8 +356,8 @@ mod test {
             Aligned32([1_u64.into(), 2_u64.into(), 3_u64.into(), 4_u64.into()]);
         let expected = values.0;
 
-        ntt_neg_forward::<D, P, W>(&mut values);
-        ntt_neg_backward::<D, P, W>(&mut values);
+        ntt_neg_forward::<D, P>(&mut values);
+        ntt_neg_backward::<D, P>(&mut values);
 
         assert_eq!(values.0, expected);
     }
@@ -385,15 +369,15 @@ mod test {
         let mut values2: Aligned32<[IntMod<P>; 4]> =
             Aligned32([5_u64.into(), 6_u64.into(), 7_u64.into(), 8_u64.into()]);
 
-        ntt_neg_forward::<D, P, W>(&mut values1);
-        ntt_neg_forward::<D, P, W>(&mut values2);
+        ntt_neg_forward::<D, P>(&mut values1);
+        ntt_neg_forward::<D, P>(&mut values2);
         let mut result_points = Aligned32([
             values1.0[0] * values2.0[0],
             values1.0[1] * values2.0[1],
             values1.0[2] * values2.0[2],
             values1.0[3] * values2.0[3],
         ]);
-        ntt_neg_backward::<D, P, W>(&mut result_points);
+        ntt_neg_backward::<D, P>(&mut result_points);
 
         let coeff1_poly = IntModPoly::from(vec![1_u64, 2_u64, 3_u64, 4_u64]);
         let coeff2_poly = IntModPoly::from(vec![5_u64, 6_u64, 7_u64, 8_u64]);
@@ -410,7 +394,7 @@ mod test {
         assert_eq!(expected, result_points.0);
     }
 
-    fn test_ntt_forward_size<const DD: usize, const WW: u64>() {
+    fn test_ntt_forward_size<const DD: usize>() {
         let mut vec_mod = vec![];
         for i in 0..DD as u64 {
             vec_mod.push(IntMod::from(i + 1));
@@ -419,9 +403,9 @@ mod test {
         let mut values: Aligned32<[IntMod<P>; DD]> = Aligned32(vec_mod.clone().try_into().unwrap());
         let coeff_poly = IntModPoly::<P>::from(vec_mod);
 
-        let w = IntMod::from(WW);
+        let w = IntMod::from(IntModCycloEval::<DD, P>::W);
 
-        ntt_neg_forward::<DD, P, WW>(&mut values);
+        ntt_neg_forward::<DD, P>(&mut values);
         let mut expected = vec![];
         expected.resize(DD, IntMod::zero());
         for i in 0..DD {
@@ -433,27 +417,27 @@ mod test {
 
     #[test]
     fn test_ntt_forward_8() {
-        test_ntt_forward_size::<8, { find_sqrt_primitive_root(8, P) }>();
+        test_ntt_forward_size::<8>();
     }
 
     #[test]
     fn test_ntt_forward_16() {
-        test_ntt_forward_size::<16, { find_sqrt_primitive_root(16, P) }>();
+        test_ntt_forward_size::<16>();
     }
 
     #[test]
     fn test_ntt_forward_32() {
-        test_ntt_forward_size::<32, { find_sqrt_primitive_root(32, P) }>();
+        test_ntt_forward_size::<32>();
     }
 
     #[test]
     fn test_ntt_forward_64() {
-        test_ntt_forward_size::<64, { find_sqrt_primitive_root(64, P) }>();
+        test_ntt_forward_size::<64>();
     }
 
     #[test]
     fn test_ntt_forward_128() {
-        test_ntt_forward_size::<128, { find_sqrt_primitive_root(128, P) }>();
+        test_ntt_forward_size::<128>();
     }
 
     #[ignore]
@@ -462,7 +446,7 @@ mod test {
         const D: usize = 2048;
         const P: u64 = 268369921;
         type RCoeff = IntModCyclo<D, P>;
-        type REval = IntModCycloEval<D, P, { find_sqrt_primitive_root(D, P) }>;
+        type REval = IntModCycloEval<D, P>;
 
         const NUM_ITER: usize = 1 << 16;
 
