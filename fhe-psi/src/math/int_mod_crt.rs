@@ -191,14 +191,14 @@ impl<const N1: u64, const N2: u64> RingElementRef<IntModCRT<N1, N2>> for &IntMod
 impl<const N1: u64, const N2: u64> Neg for &IntModCRT<N1, N2> {
     type Output = IntModCRT<N1, N2>;
     fn neg(self) -> Self::Output {
-        -self.clone()
+        -*self
     }
 }
 
 impl<const N1: u64, const N2: u64> Add for &IntModCRT<N1, N2> {
     type Output = IntModCRT<N1, N2>;
     fn add(self, rhs: Self) -> Self::Output {
-        self.clone() + rhs.clone()
+        *self + *rhs
     }
 }
 
@@ -212,7 +212,7 @@ impl<const N1: u64, const N2: u64> AddAssign<&IntModCRT<N1, N2>> for IntModCRT<N
 impl<const N1: u64, const N2: u64> Sub for &IntModCRT<N1, N2> {
     type Output = IntModCRT<N1, N2>;
     fn sub(self, rhs: Self) -> Self::Output {
-        self.clone() - rhs.clone()
+        *self - *rhs
     }
 }
 
@@ -226,7 +226,7 @@ impl<const N1: u64, const N2: u64> SubAssign<&IntModCRT<N1, N2>> for IntModCRT<N
 impl<const N1: u64, const N2: u64> Mul for &IntModCRT<N1, N2> {
     type Output = IntModCRT<N1, N2>;
     fn mul(self, rhs: Self) -> Self::Output {
-        self.clone() * rhs.clone()
+        *self * *rhs
     }
 }
 

@@ -103,8 +103,8 @@ impl<const D: usize, const N: u64> Add for &IntModCycloEval<D, N> {
     type Output = IntModCycloEval<D, N>;
     fn add(self, rhs: Self) -> Self::Output {
         let mut result_evals: [IntMod<N>; D] = [0_u64.into(); D];
-        for i in 0..D {
-            result_evals[i] = self.evals[i] + rhs.evals[i];
+        for (idx, out) in result_evals.iter_mut().enumerate() {
+            *out = self.evals[idx] + rhs.evals[idx];
         }
         result_evals.into()
     }
@@ -114,8 +114,8 @@ impl<const D: usize, const N: u64> Sub for &IntModCycloEval<D, N> {
     type Output = IntModCycloEval<D, N>;
     fn sub(self, rhs: Self) -> Self::Output {
         let mut result_evals: [IntMod<N>; D] = [0_u64.into(); D];
-        for i in 0..D {
-            result_evals[i] = self.evals[i] - rhs.evals[i];
+        for (idx, out) in result_evals.iter_mut().enumerate() {
+            *out = self.evals[idx] - rhs.evals[idx];
         }
         result_evals.into()
     }
@@ -125,8 +125,8 @@ impl<const D: usize, const N: u64> Mul for &IntModCycloEval<D, N> {
     type Output = IntModCycloEval<D, N>;
     fn mul(self, rhs: Self) -> Self::Output {
         let mut result_evals: [IntMod<N>; D] = [0_u64.into(); D];
-        for i in 0..D {
-            result_evals[i] = self.evals[i] * rhs.evals[i];
+        for (idx, out) in result_evals.iter_mut().enumerate() {
+            *out = self.evals[idx] * rhs.evals[idx];
         }
         result_evals.into()
     }
@@ -136,8 +136,8 @@ impl<const D: usize, const N: u64> Neg for &IntModCycloEval<D, N> {
     type Output = IntModCycloEval<D, N>;
     fn neg(self) -> Self::Output {
         let mut result_evals: [IntMod<N>; D] = [0_u64.into(); D];
-        for i in 0..D {
-            result_evals[i] = -self.evals[i];
+        for (idx, out) in result_evals.iter_mut().enumerate() {
+            *out = -self.evals[idx];
         }
         result_evals.into()
     }
@@ -197,8 +197,8 @@ impl<const D: usize, const NN: u64, const BASE: u64, const LEN: usize>
         }
         for k in 0..LEN {
             let mut result_coeff = IntModCyclo::zero();
-            for coeff_idx in 0..D {
-                result_coeff.coeff[coeff_idx] = IntMod::from(decomps[coeff_idx].next().unwrap());
+            for (out, decomp) in result_coeff.coeff.iter_mut().zip(&mut decomps) {
+                *out = IntMod::from(decomp.next().unwrap());
             }
             mat[(i + k, j)] = IntModCycloEval::from(result_coeff);
         }

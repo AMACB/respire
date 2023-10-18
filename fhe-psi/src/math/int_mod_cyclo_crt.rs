@@ -297,9 +297,9 @@ impl<const D: usize, const N1: u64, const N2: u64> IntModCycloCRT<D, N1, N2> {
     /// Applies `Z_N::round_down_into` coefficient-wise.
     pub fn round_down_into<const M: u64>(&self) -> IntModCyclo<D, M> {
         let mut rounded_coeffs = [IntMod::zero(); D];
-        for i in 0..D {
-            let coeff: IntModCRT<N1, N2> = (self.proj1[i], self.proj2[i]).into();
-            rounded_coeffs[i] = coeff.round_down_into();
+        for (idx, out) in rounded_coeffs.iter_mut().enumerate() {
+            let coeff: IntModCRT<N1, N2> = (self.proj1[idx], self.proj2[idx]).into();
+            *out = coeff.round_down_into();
         }
         rounded_coeffs.into()
     }

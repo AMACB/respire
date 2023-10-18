@@ -178,7 +178,7 @@ where
 {
     /// Converts a matrix over the ring `R` into a matrix over the ring `S`, given that `R` can be
     /// converted to `S`.
-    pub fn into_ring<S: RingElement, F: Fn(&R) -> S>(&self, func: F) -> Matrix<N, M, S>
+    pub fn map_ring<S: RingElement, F: Fn(&R) -> S>(&self, func: F) -> Matrix<N, M, S>
     where
         for<'a> &'a S: RingElementRef<S>,
     {

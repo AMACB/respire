@@ -618,7 +618,7 @@ impl<
             *c0_scaled_coeff = IntMod::from(div as u64);
         }
         let g_inv_c0_scaled = gadget_inverse_scalar::<_, Z_SWITCH, T_SWITCH>(&c0_scaled)
-            .into_ring(|x| IntModCycloEval::from(x));
+            .map_ring(|x| IntModCycloEval::from(x));
         let c0_hat: IntModCyclo<D_SWITCH, Q_SWITCH2> =
             IntModCyclo::from(&(a_t * &g_inv_c0_scaled)[(0, 0)]).project_dim();
         let c1_hat: IntModCyclo<D_SWITCH, Q_SWITCH1> = {
