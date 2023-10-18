@@ -11,19 +11,24 @@ use crate::math::matrix::Matrix;
 use crate::math::ntt::*;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
-use crate::math::utils::ceil_log;
+use crate::math::simd_utils::Aligned32;
 use rand::Rng;
 use std::cmp::max;
 use std::ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign};
-use std::slice::Iter;
 
 /// The raw (coefficient) representation of an element of a cyclotomic ring.
 ///
 /// Internally, this is an array of coefficients where the `i`th index corresponds to `x^i`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C)]
+#[repr(C, align(32))]
 pub struct IntModCyclo<const D: usize, const N: u64> {
-    pub(in crate::math) coeff: [IntMod<N>; D],
+    pub coeff: [IntMod<N>; D],
+}
+
+impl<const D: usize, const N: u64> IntModCyclo<D, N> {
+    pub fn into_aligned(self) -> Aligned32<[IntMod<N>; D]> {
+        Aligned32(self.coeff)
+    }
 }
 
 /// Conversions
@@ -110,7 +115,7 @@ impl<
         let mut result = IntModCyclo::zero();
         for i in 0..D {
             result.coeff[i] = IntMod::from(u64::from(IntModCRT::<N1, N2, N1_INV, N2_INV>::from((
-                a.p1[i], a.p2[i],
+                a.proj1[i], a.proj2[i],
             ))));
         }
         result
@@ -137,13 +142,9 @@ impl<const D: usize, const N: u64, const W: u64> From<IntModCycloEval<D, N, W>>
     for IntModCyclo<D, N>
 {
     fn from(a_eval: IntModCycloEval<D, N, W>) -> Self {
-        // TODO: this should be in the type, probably
-        let log_d = ceil_log(2, D as u64);
-        debug_assert_eq!(1 << log_d, D);
-
-        let mut coeff: [IntMod<N>; D] = a_eval.points;
-        ntt_neg_backward::<D, N, W>(&mut coeff);
-        IntModCyclo::from(coeff)
+        let mut values_aligned = a_eval.into_aligned();
+        ntt_neg_backward::<D, N, W>(&mut values_aligned);
+        IntModCyclo::from(values_aligned.0)
     }
 }
 
@@ -207,11 +208,11 @@ impl<const D: usize, const N: u64> Neg for &IntModCyclo<D, N> {
 
 impl<const D: usize, const N: u64> RingElement for IntModCyclo<D, N> {
     fn zero() -> IntModCyclo<D, N> {
-        [0_u64.into(); D].into()
+        [IntMod::zero(); D].into()
     }
     fn one() -> IntModCyclo<D, N> {
         let mut result = Self::zero();
-        result.coeff[0] = 1_u64.into();
+        result.coeff[0] = IntMod::one();
         result
     }
 }
@@ -232,7 +233,7 @@ impl<'a, const D: usize, const N: u64> SubAssign<&'a Self> for IntModCyclo<D, N>
     }
 }
 
-impl<'a, const D: usize, const N: u64> MulAssign<IntMod<N>> for IntModCyclo<D, N> {
+impl<const D: usize, const N: u64> MulAssign<IntMod<N>> for IntModCyclo<D, N> {
     fn mul_assign(&mut self, rhs: IntMod<N>) {
         for i in 0..D {
             self.coeff[i] *= rhs;
@@ -260,7 +261,7 @@ impl<const D: usize, const NN: u64, const BASE: u64, const LEN: usize>
             decomps.push(IntModDecomposition::<BASE, LEN>::new(
                 u64::from(self.coeff[coeff_idx]),
                 NN,
-            ))
+            ));
         }
         for k in 0..LEN {
             for coeff_idx in 0..D {
@@ -393,13 +394,6 @@ impl<const D: usize, const N: u64> RandDiscreteGaussianSampled for IntModCyclo<D
 
 /// Other polynomial-specific operations.
 
-// TODO: maybe don't need this bc of index
-impl<const D: usize, const N: u64> IntModCyclo<D, N> {
-    pub fn coeff_iter(&self) -> Iter<'_, IntMod<{ N }>> {
-        self.coeff.iter()
-    }
-}
-
 impl<const D: usize, const N: u64> NormedRingElement for IntModCyclo<D, N> {
     fn norm(&self) -> u64 {
         let mut worst: u64 = 0;
@@ -447,7 +441,7 @@ mod test {
         let x2 = IntModCyclo::<D, P>::from(vec![0_u64, 0, 1, 0]);
         let x3 = IntModCyclo::<D, P>::from(vec![0_u64, 0, 0, 1]);
         for off in [0, 8, 16] {
-            assert_eq!(x1.mul_x_pow(0 + off), x1);
+            assert_eq!(x1.mul_x_pow(off), x1);
             assert_eq!(x1.mul_x_pow(1 + off), x2);
             assert_eq!(x1.mul_x_pow(2 + off), x3);
             assert_eq!(x1.mul_x_pow(3 + off), -&x0);

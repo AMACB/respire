@@ -3,3 +3,4 @@
 fhe-psi/target
 fhe-psi/*.trace
 target/
+**/.cargo/

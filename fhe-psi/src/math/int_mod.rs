@@ -86,10 +86,11 @@ impl<const N: u64> From<IntMod<N>> for i64 {
 
 impl<const N: u64> RingElement for IntMod<N> {
     fn zero() -> Self {
-        0_u64.into()
+        NoReduce(0_u64).into()
     }
     fn one() -> Self {
-        1_u64.into()
+        // mod 1 is prohibited
+        NoReduce(1_u64).into()
     }
 }
 
@@ -257,11 +258,12 @@ unsafe impl<const N: u64, const M: u64> RingCompatible<IntMod<M>> for IntMod<N> 
 
 impl<const N: u64> fmt::Debug for IntMod<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.a <= 3 * (N / 4) {
-            write!(f, "{}", self.a)
-        } else {
-            write!(f, "-{}", N - self.a)
-        }
+        write!(f, "{}", self.a)
+        // if self.a <= 3 * (N / 4) {
+        //     write!(f, "{}", self.a)
+        // } else {
+        //     write!(f, "-{}", N - self.a)
+        // }
     }
 }
 
@@ -319,7 +321,11 @@ impl<const N: u64> MulAssign<&IntMod<N>> for IntMod<N> {
 
 impl<const N: u64> RandUniformSampled for IntMod<N> {
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
-        rng.gen_range(0..N).into()
+        if N == 0 {
+            rng.gen::<u64>().into()
+        } else {
+            rng.gen_range(0..N).into()
+        }
     }
 }
 
@@ -367,6 +373,10 @@ impl<const N: u64> IntMod<N> {
     // Const functions
     pub const fn from_u64_const(a: u64) -> Self {
         Self { a: a % N }
+    }
+
+    pub const fn into_u64_const(self) -> u64 {
+        self.a
     }
 
     pub const fn mul_const(lhs: Self, rhs: Self) -> Self {

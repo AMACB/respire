@@ -9,6 +9,7 @@ use crate::math::ntt::*;
 use crate::math::number_theory::mod_pow;
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
+use crate::math::simd_utils::Aligned32;
 use crate::math::utils::reverse_bits;
 use rand::Rng;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -20,19 +21,26 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 /// The DFT (pointwise evaluations) representation of an element of a cyclotomic ring.
 ///
 /// Internally, this is an array of evaluations, where the `i`th index corresponds to `f(w^{2*bit_reverse(i)+1})`.
-/// `w` here is the `2*D`th root of unity.
+/// `w` here is the `2*D`th root of unity. However, implementations should not rely on the ordering
+/// of `evals`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C)]
+#[repr(C, align(32))]
 pub struct IntModCycloEval<const D: usize, const N: u64, const W: u64> {
-    pub(in crate::math) points: [IntMod<N>; D],
+    pub evals: [IntMod<N>; D],
+}
+
+impl<const D: usize, const N: u64, const W: u64> IntModCycloEval<D, N, W> {
+    pub fn into_aligned(self) -> Aligned32<[IntMod<N>; D]> {
+        Aligned32(self.evals)
+    }
 }
 
 /// Conversions
 
 impl<const D: usize, const N: u64, const W: u64> From<u64> for IntModCycloEval<D, N, W> {
     fn from(a: u64) -> Self {
-        let points = [a.into(); D];
-        Self { points }
+        let evals = [a.into(); D];
+        Self { evals }
     }
 }
 
@@ -40,8 +48,8 @@ impl<const D: usize, const N: u64, const W: u64> From<u64> for IntModCycloEval<D
 // It is currently kept intact since other functions require this.
 
 impl<const D: usize, const N: u64, const W: u64> From<[IntMod<N>; D]> for IntModCycloEval<D, N, W> {
-    fn from(points: [IntMod<N>; D]) -> Self {
-        Self { points }
+    fn from(evals: [IntMod<N>; D]) -> Self {
+        Self { evals }
     }
 }
 
@@ -58,9 +66,9 @@ impl<const D: usize, const N: u64, const W: u64> From<IntModCyclo<D, N>>
     for IntModCycloEval<D, N, W>
 {
     fn from(a: IntModCyclo<D, N>) -> Self {
-        let mut points: [IntMod<N>; D] = a.coeff;
-        ntt_neg_forward::<D, N, W>(&mut points);
-        IntModCycloEval::from(points)
+        let mut values_aligned = a.into_aligned();
+        ntt_neg_forward::<D, N, W>(&mut values_aligned);
+        IntModCycloEval::from(values_aligned.0)
     }
 }
 
@@ -89,11 +97,11 @@ impl<const D: usize, const N: u64, const W: u64> TryFrom<&IntModCycloEval<D, N, 
     /// Inverse of `From<u64>`. Errors if element is not a constant.
     fn try_from(a: &IntModCycloEval<D, N, W>) -> Result<Self, Self::Error> {
         for i in 1..D {
-            if a.points[i] != a.points[0] {
+            if a.evals[i] != a.evals[0] {
                 return Err(());
             }
         }
-        Ok(a.points[0])
+        Ok(a.evals[0])
     }
 }
 
@@ -107,44 +115,44 @@ impl<const D: usize, const N: u64, const W: u64> RingElementRef<IntModCycloEval<
 impl<const D: usize, const N: u64, const W: u64> Add for &IntModCycloEval<D, N, W> {
     type Output = IntModCycloEval<D, N, W>;
     fn add(self, rhs: Self) -> Self::Output {
-        let mut result_points: [IntMod<N>; D] = [0_u64.into(); D];
+        let mut result_evals: [IntMod<N>; D] = [0_u64.into(); D];
         for i in 0..D {
-            result_points[i] = self.points[i] + rhs.points[i];
+            result_evals[i] = self.evals[i] + rhs.evals[i];
         }
-        result_points.into()
+        result_evals.into()
     }
 }
 
 impl<const D: usize, const N: u64, const W: u64> Sub for &IntModCycloEval<D, N, W> {
     type Output = IntModCycloEval<D, N, W>;
     fn sub(self, rhs: Self) -> Self::Output {
-        let mut result_points: [IntMod<N>; D] = [0_u64.into(); D];
+        let mut result_evals: [IntMod<N>; D] = [0_u64.into(); D];
         for i in 0..D {
-            result_points[i] = self.points[i] - rhs.points[i];
+            result_evals[i] = self.evals[i] - rhs.evals[i];
         }
-        result_points.into()
+        result_evals.into()
     }
 }
 
 impl<const D: usize, const N: u64, const W: u64> Mul for &IntModCycloEval<D, N, W> {
     type Output = IntModCycloEval<D, N, W>;
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut result_points: [IntMod<N>; D] = [0_u64.into(); D];
+        let mut result_evals: [IntMod<N>; D] = [0_u64.into(); D];
         for i in 0..D {
-            result_points[i] = self.points[i] * rhs.points[i];
+            result_evals[i] = self.evals[i] * rhs.evals[i];
         }
-        result_points.into()
+        result_evals.into()
     }
 }
 
 impl<const D: usize, const N: u64, const W: u64> Neg for &IntModCycloEval<D, N, W> {
     type Output = IntModCycloEval<D, N, W>;
     fn neg(self) -> Self::Output {
-        let mut result_points: [IntMod<N>; D] = [0_u64.into(); D];
+        let mut result_evals: [IntMod<N>; D] = [0_u64.into(); D];
         for i in 0..D {
-            result_points[i] = -self.points[i];
+            result_evals[i] = -self.evals[i];
         }
-        result_points.into()
+        result_evals.into()
     }
 }
 
@@ -152,10 +160,10 @@ impl<const D: usize, const N: u64, const W: u64> Neg for &IntModCycloEval<D, N, 
 
 impl<const D: usize, const N: u64, const W: u64> RingElement for IntModCycloEval<D, N, W> {
     fn zero() -> IntModCycloEval<D, N, W> {
-        [0_u64.into(); D].into()
+        [IntMod::zero(); D].into()
     }
     fn one() -> IntModCycloEval<D, N, W> {
-        [1_u64.into(); D].into()
+        [IntMod::one(); D].into()
     }
 }
 
@@ -164,7 +172,7 @@ impl<'a, const D: usize, const N: u64, const W: u64> AddAssign<&'a Self>
 {
     fn add_assign(&mut self, rhs: &'a Self) {
         for i in 0..D {
-            self.points[i] += rhs.points[i];
+            self.evals[i] += rhs.evals[i];
         }
     }
 }
@@ -174,7 +182,7 @@ impl<'a, const D: usize, const N: u64, const W: u64> SubAssign<&'a Self>
 {
     fn sub_assign(&mut self, rhs: &'a Self) {
         for i in 0..D {
-            self.points[i] -= rhs.points[i];
+            self.evals[i] -= rhs.evals[i];
         }
     }
 }
@@ -184,7 +192,7 @@ impl<'a, const D: usize, const N: u64, const W: u64> MulAssign<&'a Self>
 {
     fn mul_assign(&mut self, rhs: &'a Self) {
         for i in 0..D {
-            self.points[i] *= rhs.points[i];
+            self.evals[i] *= rhs.evals[i];
         }
     }
 }
@@ -223,7 +231,7 @@ impl<const D: usize, const N: u64, const W: u64> RandUniformSampled for IntModCy
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
         let mut result = Self::zero();
         for i in 0..D {
-            result.points[i] = IntMod::<N>::rand_uniform(rng);
+            result.evals[i] = IntMod::<N>::rand_uniform(rng);
         }
         result
     }
@@ -252,9 +260,9 @@ impl<const D: usize, const N: u64, const W: u64> IntModCycloEval<D, N, W> {
         let mut result = Self::zero();
         let k_half = (k - 1) / 2;
         for i in 0..D {
-            let to = i;
-            let from = (2 * k_half * i + k_half + i) % D;
-            result.points[reverse_bits::<D>(to)] = self.points[reverse_bits::<D>(from)];
+            let rev_i = reverse_bits::<D>(i);
+            let from = (2 * k_half * rev_i + k_half + rev_i) % D;
+            result.evals[i] = self.evals[reverse_bits::<D>(from)];
         }
         result
     }
@@ -266,7 +274,7 @@ impl<const D: usize, const N: u64, const W: u64> IntModCycloEval<D, N, W> {
         let w_k_sq = w_curr * w_curr;
         for i in 0..D {
             let i_rev = reverse_bits::<D>(i);
-            result.points[i_rev] = self.points[i_rev] * w_curr;
+            result.evals[i_rev] = self.evals[i_rev] * w_curr;
             w_curr *= w_k_sq;
         }
         result
@@ -300,8 +308,8 @@ mod test {
         let root: IntMod<P> = W.into();
         p = IntModCycloEval::<D, P, W>::from([
             root.pow(1u64),
-            root.pow(3u64),
             root.pow(5u64),
+            root.pow(3u64),
             root.pow(7u64),
         ]);
         q = IntModCycloEval::<D, P, W>::from(IntModCyclo::from(vec![0u64, 1u64]));

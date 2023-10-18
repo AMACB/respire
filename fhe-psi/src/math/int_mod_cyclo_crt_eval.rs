@@ -1,4 +1,4 @@
-use crate::math::gadget::{IntModDecomposition, RingElementDecomposable};
+use crate::math::gadget::RingElementDecomposable;
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_crt::IntModCRT;
 use crate::math::int_mod_cyclo::IntModCyclo;
@@ -14,7 +14,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 // TODO: documentation
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C)]
+#[repr(C, align(32))]
 pub struct IntModCycloCRTEval<
     const D: usize,
     const N1: u64,
@@ -24,8 +24,8 @@ pub struct IntModCycloCRTEval<
     const W1: u64,
     const W2: u64,
 > {
-    pub(in crate::math) p1: IntModCycloEval<D, N1, W1>,
-    pub(in crate::math) p2: IntModCycloEval<D, N2, W2>,
+    pub proj1: IntModCycloEval<D, N1, W1>,
+    pub proj2: IntModCycloEval<D, N2, W2>,
 }
 
 /// Conversions
@@ -42,8 +42,8 @@ impl<
 {
     fn from(a: u64) -> Self {
         Self {
-            p1: a.into(),
-            p2: a.into(),
+            proj1: a.into(),
+            proj2: a.into(),
         }
     }
 }
@@ -60,7 +60,10 @@ impl<
     for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
 {
     fn from(a: (IntModCycloEval<D, N1, W1>, IntModCycloEval<D, N2, W2>)) -> Self {
-        IntModCycloCRTEval { p1: a.0, p2: a.1 }
+        IntModCycloCRTEval {
+            proj1: a.0,
+            proj2: a.1,
+        }
     }
 }
 
@@ -76,8 +79,8 @@ impl<
     for IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>
 {
     fn from(a: IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>) -> Self {
-        let p1_raw: IntModCyclo<D, N1> = a.p1.into();
-        let p2_raw: IntModCyclo<D, N2> = a.p2.into();
+        let p1_raw: IntModCyclo<D, N1> = a.proj1.into();
+        let p2_raw: IntModCyclo<D, N2> = a.proj2.into();
         (p1_raw, p2_raw).into()
     }
 }
@@ -110,8 +113,8 @@ impl<
     for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
 {
     fn from(a: &IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>) -> Self {
-        let p1_eval: IntModCycloEval<D, N1, W1> = (&a.p1).into();
-        let p2_eval: IntModCycloEval<D, N2, W2> = (&a.p2).into();
+        let p1_eval: IntModCycloEval<D, N1, W1> = (&a.proj1).into();
+        let p2_eval: IntModCycloEval<D, N2, W2> = (&a.proj2).into();
         (p1_eval, p2_eval).into()
     }
 }
@@ -148,8 +151,8 @@ impl<
 {
     fn from(coeff: Vec<u64>) -> Self {
         IntModCycloCRTEval {
-            p1: IntModCycloEval::from(IntModPoly::from(coeff.clone())),
-            p2: IntModCycloEval::from(IntModPoly::from(coeff)),
+            proj1: IntModCycloEval::from(IntModPoly::from(coeff.clone())),
+            proj2: IntModCycloEval::from(IntModPoly::from(coeff)),
         }
     }
 }
@@ -246,8 +249,8 @@ impl<
     type Output = IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>;
     fn add(self, rhs: Self) -> Self::Output {
         IntModCycloCRTEval {
-            p1: &self.p1 + &rhs.p1,
-            p2: &self.p2 + &rhs.p2,
+            proj1: &self.proj1 + &rhs.proj1,
+            proj2: &self.proj2 + &rhs.proj2,
         }
     }
 }
@@ -265,8 +268,8 @@ impl<
     type Output = IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>;
     fn sub(self, rhs: Self) -> Self::Output {
         IntModCycloCRTEval {
-            p1: &self.p1 - &rhs.p1,
-            p2: &self.p2 - &rhs.p2,
+            proj1: &self.proj1 - &rhs.proj1,
+            proj2: &self.proj2 - &rhs.proj2,
         }
     }
 }
@@ -284,8 +287,8 @@ impl<
     type Output = IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>;
     fn mul(self, rhs: Self) -> Self::Output {
         IntModCycloCRTEval {
-            p1: &self.p1 * &rhs.p1,
-            p2: &self.p2 * &rhs.p2,
+            proj1: &self.proj1 * &rhs.proj1,
+            proj2: &self.proj2 * &rhs.proj2,
         }
     }
 }
@@ -303,8 +306,26 @@ impl<
     type Output = IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>;
     fn neg(self) -> Self::Output {
         IntModCycloCRTEval {
-            p1: -&self.p1,
-            p2: -&self.p2,
+            proj1: -&self.proj1,
+            proj2: -&self.proj2,
+        }
+    }
+}
+
+impl<
+        const D: usize,
+        const N1: u64,
+        const N2: u64,
+        const N1_INV: u64,
+        const N2_INV: u64,
+        const W1: u64,
+        const W2: u64,
+    > IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
+{
+    fn add_eq_mul_fallback(&mut self, a: &Self, b: &Self) {
+        for i in 0..D {
+            self.proj1.evals[i] += a.proj1.evals[i] * b.proj1.evals[i];
+            self.proj2.evals[i] += a.proj2.evals[i] * b.proj2.evals[i];
         }
     }
 }
@@ -323,21 +344,49 @@ impl<
 {
     fn zero() -> IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2> {
         IntModCycloCRTEval {
-            p1: IntModCycloEval::zero(),
-            p2: IntModCycloEval::zero(),
+            proj1: IntModCycloEval::zero(),
+            proj2: IntModCycloEval::zero(),
         }
     }
     fn one() -> IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2> {
         IntModCycloCRTEval {
-            p1: IntModCycloEval::one(),
-            p2: IntModCycloEval::one(),
+            proj1: IntModCycloEval::one(),
+            proj2: IntModCycloEval::one(),
         }
     }
 
+    #[cfg(not(target_feature = "avx2"))]
     fn add_eq_mul(&mut self, a: &Self, b: &Self) {
-        for i in 0..D {
-            self.p1.points[i] += a.p1.points[i] * b.p1.points[i];
-            self.p2.points[i] += a.p2.points[i] * b.p2.points[i];
+        self.add_eq_mul_fallback(a, b);
+    }
+
+    #[cfg(target_feature = "avx2")]
+    fn add_eq_mul(&mut self, a: &Self, b: &Self) {
+        if N1 != 0 || N2 != 0 || D % 4 != 0 {
+            return self.add_eq_mul_fallback(a, b);
+        }
+
+        use crate::math::simd_utils::*;
+        use std::arch::x86_64::*;
+        unsafe {
+            for i in 0..D / 4 {
+                let a_p1_ptr =
+                    a.proj1.evals.get_unchecked(4 * i) as *const IntMod<N1> as *const __m256i;
+                let b_p1_ptr =
+                    b.proj1.evals.get_unchecked(4 * i) as *const IntMod<N1> as *const __m256i;
+                let self_p1_ptr =
+                    self.proj1.evals.get_unchecked_mut(4 * i) as *mut IntMod<N1> as *mut __m256i;
+                _mm256_ptr_add_eq_mul32(self_p1_ptr, a_p1_ptr, b_p1_ptr);
+            }
+            for i in 0..D / 4 {
+                let a_p2_ptr =
+                    a.proj2.evals.get_unchecked(4 * i) as *const IntMod<N2> as *const __m256i;
+                let b_p2_ptr =
+                    b.proj2.evals.get_unchecked(4 * i) as *const IntMod<N2> as *const __m256i;
+                let self_p2_ptr =
+                    self.proj2.evals.get_unchecked_mut(4 * i) as *mut IntMod<N2> as *mut __m256i;
+                _mm256_ptr_add_eq_mul32(self_p2_ptr, a_p2_ptr, b_p2_ptr);
+            }
         }
     }
 }
@@ -354,8 +403,8 @@ impl<
     > AddAssign<&'a Self> for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
 {
     fn add_assign(&mut self, rhs: &'a Self) {
-        self.p1 += &rhs.p1;
-        self.p2 += &rhs.p2;
+        self.proj1 += &rhs.proj1;
+        self.proj2 += &rhs.proj2;
     }
 }
 
@@ -371,8 +420,8 @@ impl<
     > SubAssign<&'a Self> for IntModCycloCRTEval<D, N1, N2, N1_INV, N2_INV, W1, W2>
 {
     fn sub_assign(&mut self, rhs: &'a Self) {
-        self.p1 -= &rhs.p1;
-        self.p2 -= &rhs.p2;
+        self.proj1 -= &rhs.proj1;
+        self.proj2 -= &rhs.proj2;
     }
 }
 
@@ -417,27 +466,12 @@ impl<
         i: usize,
         j: usize,
     ) {
-        let self_coeff = IntModCycloCRT::from(self);
-        let mut decomps = Vec::<IntModDecomposition<BASE, LEN>>::with_capacity(D);
-        for coeff_idx in 0..D {
-            let coeff = u64::from(IntModCRT::<N1, N2, N1_INV, N2_INV>::from((
-                self_coeff.p1.coeff[coeff_idx],
-                self_coeff.p2.coeff[coeff_idx],
-            )));
-            decomps.push(IntModDecomposition::<BASE, LEN>::new(
-                u64::from(coeff),
-                N1 * N2,
-            ));
-        }
+        // TODO: do the decomposition and/or NTTs in place
+        let self_coeff = IntModCycloCRT::<D, N1, N2, N1_INV, N2_INV>::from(self);
+        let mut tmp = Matrix::<LEN, 1, IntModCycloCRT<D, N1, N2, N1_INV, N2_INV>>::zero();
+        <IntModCycloCRT<D, N1, N2, N1_INV, N2_INV> as RingElementDecomposable<BASE, LEN>>::decompose_into_mat(&self_coeff, &mut tmp, 0, 0);
         for k in 0..LEN {
-            let mut result_coeff = IntModCycloCRT::zero();
-            for coeff_idx in 0..D {
-                let result =
-                    IntModCRT::<N1, N2, N1_INV, N2_INV>::from(decomps[coeff_idx].next().unwrap());
-                result_coeff.p1.coeff[coeff_idx] = result.a1;
-                result_coeff.p2.coeff[coeff_idx] = result.a2;
-            }
-            mat[(i + k, j)] = IntModCycloCRTEval::from(result_coeff);
+            mat[(i + k, j)] = IntModCycloCRTEval::from(tmp[(k, 0)].clone());
         }
     }
 }
@@ -456,8 +490,8 @@ impl<
 {
     fn rand_uniform<T: Rng>(rng: &mut T) -> Self {
         IntModCycloCRTEval {
-            p1: IntModCycloEval::rand_uniform(rng),
-            p2: IntModCycloEval::rand_uniform(rng),
+            proj1: IntModCycloEval::rand_uniform(rng),
+            proj2: IntModCycloEval::rand_uniform(rng),
         }
     }
 }
@@ -494,13 +528,6 @@ impl<
 
 // Other polynomial-specific operations.
 
-// TODO: maybe don't need this bc of index
-// impl<const D: usize, const N1: u64, const N2: u64, const N1_INV: u64, const N2_INV: u64, const W1: u64, const W2: u64> Z_N_CycloNTT_CRT<D, N1, N2, N1_INV, N2_INV, W1, W2> {
-//     pub fn coeff_iter(&self) -> Iter<'_, Z_N<{ N }>> {
-//         self.coeff.iter()
-//     }
-// }
-
 impl<
         const D: usize,
         const N1: u64,
@@ -529,17 +556,17 @@ impl<
 {
     pub fn reduce_mod(a: &mut IntModCycloCRTEval<D, 0, 0, 0, 0, 0, 0>) {
         for i in 0..D {
-            a.p1.points[i] = IntMod::<N1>::from(u64::from(a.p1.points[i])).convert();
-            a.p2.points[i] = IntMod::<N2>::from(u64::from(a.p2.points[i])).convert();
+            a.proj1.evals[i] = IntMod::<N1>::from(u64::from(a.proj1.evals[i])).convert();
+            a.proj2.evals[i] = IntMod::<N2>::from(u64::from(a.proj2.evals[i])).convert();
         }
     }
 
     pub fn auto(&self, k: usize) -> Self {
-        (self.p1.auto(k), self.p2.auto(k)).into()
+        (self.proj1.auto(k), self.proj2.auto(k)).into()
     }
 
     pub fn mul_x_pow(&self, k: usize) -> Self {
-        (self.p1.mul_x_pow(k), self.p2.mul_x_pow(k)).into()
+        (self.proj1.mul_x_pow(k), self.proj2.mul_x_pow(k)).into()
     }
 }
 

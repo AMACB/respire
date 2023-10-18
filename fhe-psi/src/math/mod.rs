@@ -14,3 +14,5 @@ pub mod number_theory;
 pub mod rand_sampled;
 pub mod ring_elem;
 pub mod utils;
+
+pub mod simd_utils;
