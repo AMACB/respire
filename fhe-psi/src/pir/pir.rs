@@ -1,7 +1,7 @@
 use std::cmp::max;
 use std::f64::consts::PI;
-use std::slice;
 use std::time::Instant;
+use std::{iter, slice};
 
 use crate::math::discrete_gaussian::NUM_WIDTHS;
 use rand::SeedableRng;
@@ -263,11 +263,8 @@ pub trait SPIRAL {
     // Type aliases
     type RingP;
     type RingQ;
-    type Ring0;
     type RingQFast;
-    type Ring0Fast;
     type RegevCiphertext;
-    type RegevCiphertext0;
     type RegevSmall;
     type GSWCiphertext;
     type EncodingKey;
@@ -372,11 +369,8 @@ impl<
     // Type aliases
     type RingP = IntModCyclo<D, P>;
     type RingQ = IntModCyclo<D, Q>;
-    type Ring0 = IntModCyclo<D, 0>;
     type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B>;
-    type Ring0Fast = IntModCycloCRTEval<D, 0, 0>;
     type RegevCiphertext = Matrix<2, 1, Self::RingQFast>;
-    type RegevCiphertext0 = Matrix<2, 1, Self::Ring0Fast>;
     type RegevSmall = (
         IntModCyclo<D_SWITCH, Q_SWITCH2>,
         IntModCyclo<D_SWITCH, Q_SWITCH1>,
@@ -442,7 +436,7 @@ impl<
         let records_eval: Vec<<Self as SPIRAL>::RingQFast> = records_iter
             .map(|r| {
                 let r_large = r.include_dim();
-                <Self as SPIRAL>::RingQFast::from(&IntModCyclo::from(r_large).include_into::<Q>())
+                <Self as SPIRAL>::RingQFast::from(&r_large.include_into::<Q>())
             })
             .collect();
 
@@ -554,10 +548,7 @@ impl<
         assert!(idx < Self::DB_SIZE);
         let (idx_i, idx_j) = (idx / Self::DB_DIM2_SIZE, idx % Self::DB_DIM2_SIZE);
 
-        let mut packed_vec: Vec<IntMod<Q>> = Vec::with_capacity(D);
-        for _ in 0..D {
-            packed_vec.push(IntMod::zero());
-        }
+        let mut packed_vec: Vec<IntMod<Q>> = iter::repeat(IntMod::zero()).take(D).collect();
 
         let inv_even = IntMod::from(mod_inverse(1 << (1 + Self::REGEV_EXPAND_ITERS), Q));
         for i in 0_usize..Self::DB_DIM1_SIZE {
@@ -620,11 +611,11 @@ impl<
         let c0 = IntModCyclo::<D, Q>::from(&r[(0, 0)]);
         let c1 = IntModCyclo::<D, Q>::from(&r[(1, 0)]);
         let mut c0_scaled = IntModCyclo::zero();
-        for i in 0..D {
-            let numer = Q_SWITCH2 as u128 * u64::from(c0.coeff[i]) as u128;
+        for (c0_scaled_coeff, c0_coeff) in c0_scaled.coeff.iter_mut().zip(c0.coeff) {
+            let numer = Q_SWITCH2 as u128 * u64::from(c0_coeff) as u128;
             let denom = Q as u128;
             let div = (numer + denom / 2) / denom;
-            c0_scaled.coeff[i] = IntMod::from(div as u64);
+            *c0_scaled_coeff = IntMod::from(div as u64);
         }
         let g_inv_c0_scaled = gadget_inverse_scalar::<_, Z_SWITCH, T_SWITCH>(&c0_scaled)
             .into_ring(|x| IntModCycloEval::from(x));
@@ -633,12 +624,16 @@ impl<
         let c1_hat: IntModCyclo<D_SWITCH, Q_SWITCH1> = {
             let b_t_g_inv = IntModCyclo::from(&(b_t * &g_inv_c0_scaled)[(0, 0)]);
             let mut result = IntModCyclo::<D, Q_SWITCH1>::zero();
-            for i in 0..D {
-                let numer = Q_SWITCH1 as u128 * Q_SWITCH2 as u128 * u64::from(c1.coeff[i]) as u128
-                    + Q as u128 * Q_SWITCH1 as u128 * u64::from(b_t_g_inv.coeff[i]) as u128;
+            for (result_coeff, (c1_coeff, b_t_g_inv_coeff)) in result
+                .coeff
+                .iter_mut()
+                .zip(c1.coeff.iter().copied().zip(b_t_g_inv.coeff))
+            {
+                let numer = Q_SWITCH1 as u128 * Q_SWITCH2 as u128 * u64::from(c1_coeff) as u128
+                    + Q as u128 * Q_SWITCH1 as u128 * u64::from(b_t_g_inv_coeff) as u128;
                 let denom = Q as u128 * Q_SWITCH2 as u128;
                 let div = (numer + denom / 2) / denom;
-                result.coeff[i] = IntMod::from(div as u64);
+                *result_coeff = IntMod::from(div as u64);
             }
             result.project_dim()
         };
@@ -651,11 +646,13 @@ impl<
     ) -> <Self as SPIRAL>::Record {
         let neg_s_small_c0 = IntModCyclo::from(-&(s_small * &IntModCycloEval::from(c0_hat)));
         let mut result = IntModCyclo::zero();
-        for i in 0..D_SWITCH {
-            let numer = Q_SWITCH1 as u128 * u64::from(neg_s_small_c0.coeff[i]) as u128;
+        for (result_coeff, neg_s_small_c0_coeff) in
+            result.coeff.iter_mut().zip(neg_s_small_c0.coeff)
+        {
+            let numer = Q_SWITCH1 as u128 * u64::from(neg_s_small_c0_coeff) as u128;
             let denom = Q_SWITCH2 as u128;
             let div = (numer + denom / 2) / denom;
-            result.coeff[i] = IntMod::from(div as u64);
+            *result_coeff = IntMod::from(div as u64);
         }
         result += c1_hat;
         result.round_down_into()
