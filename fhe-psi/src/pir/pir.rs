@@ -543,8 +543,11 @@ impl<
         };
 
         // Key switching key
-        let s_encode_q2 =
-            IntModCycloEval::from(IntModCyclo::<D, Q>::from(&s_encode).round_down_into());
+        let s_encode_q2 = IntModCycloEval::from(IntModCyclo::from(
+            IntModCyclo::<D, Q>::from(&s_encode)
+                .coeff
+                .map(|x| IntMod::from(i64::from(x))),
+        ));
         let s_small_q2 = IntModCycloEval::from(IntModCyclo::from(&s_small).include_dim());
         let s_switch = Self::key_switch_setup(&s_encode_q2, &s_small_q2);
 
@@ -1274,22 +1277,5 @@ impl<
         b_t += &(&a_t * s_to);
         b_t += &e_t;
         (a_t, b_t)
-    }
-
-    pub fn key_switch(
-        (a_t, b_t): &<Self as SPIRAL>::KeySwitchKey,
-        c: &Matrix<2, 1, IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>>,
-    ) -> Matrix<2, 1, IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>> {
-        let c0 = &c[(0, 0)];
-        let c1 = &c[(1, 0)];
-        let g_inv_c0 = gadget_inverse_scalar::<_, Z_SWITCH, T_SWITCH>(c0);
-        let mut c_hat = Matrix::<2, 1, IntModCycloEval<D, Q_SWITCH2, W_SWITCH2_D>>::zero();
-        c_hat[(0, 0)] = (a_t * &g_inv_c0)[(0, 0)].clone();
-        c_hat[(1, 0)] = {
-            let mut c1_hat = (b_t * &g_inv_c0)[(0, 0)].clone();
-            c1_hat += c1;
-            c1_hat
-        };
-        c_hat
     }
 }
