@@ -18,11 +18,11 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     // Z_COEFF_GSW: 2,
     // Z_CONV: 16088,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
-    P: 2,
+    P: 16,
     ETA1: 9,
     ETA2: 6,
     Z_FOLD: 2,
-    Q_SWITCH1: 8, // 4P
+    Q_SWITCH1: 64, // 4P
     Q_SWITCH2: 114689, // must be prime
     D_SWITCH: 512,
     T_SWITCH: 17,
@@ -51,7 +51,7 @@ pub fn has_avx2() -> bool {
 //     extract_time: Duration,
 // }
 
-pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 2>>, I: Iterator<Item = usize>>(
+pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 16>>, I: Iterator<Item = usize>>(
     iter: I,
 ) {
     eprintln!(
@@ -69,7 +69,7 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 2>>, I: Iterator<I
     eprintln!("Parameters: {:#?}", SPIRAL_TEST_PARAMS);
     let mut records: Vec<<TheSPIRAL as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);
     for i in 0..TheSPIRAL::DB_SIZE as u64 {
-        let mut record_coeff = [IntMod::<2>::zero(); 512];
+        let mut record_coeff = [IntMod::<16>::zero(); 512];
         let bytes = [
             (i % 256) as u8,
             ((i / 256) % 256) as u8,
@@ -81,9 +81,8 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 2>>, I: Iterator<I
             ((i / 100 / 100 / 100) % 100) as u8,
         ];
         for (i, b) in bytes.iter().enumerate() {
-            for bit_idx in 0..8 {
-                record_coeff[8*i + bit_idx] = IntMod::<2>::from(((b >> bit_idx) & 1) as u64);
-            }
+            record_coeff[2*i] = IntMod::<16>::from((b & 15) as u64);
+            record_coeff[2*i + 1] = IntMod::<16>::from(((b >> 4) & 15) as u64);
         }
         records.push(<TheSPIRAL as SPIRAL>::Record::from(record_coeff));
     }
