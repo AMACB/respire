@@ -18,14 +18,14 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     // Z_COEFF_GSW: 2,
     // Z_CONV: 16088,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
-    P: 1 << 8,
+    P: 2,
     ETA1: 9,
     ETA2: 6,
     Z_FOLD: 2,
-    Q_SWITCH1: 1 << 10, // 4P
-    Q_SWITCH2: 2056193, // must be prime
-    D_SWITCH: 1024,
-    T_SWITCH: 21,
+    Q_SWITCH1: 8, // 4P
+    Q_SWITCH2: 114689, // must be prime
+    D_SWITCH: 512,
+    T_SWITCH: 17,
 }
 .expand();
 
@@ -51,7 +51,7 @@ pub fn has_avx2() -> bool {
 //     extract_time: Duration,
 // }
 
-pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<1024, 256>>, I: Iterator<Item = usize>>(
+pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 2>>, I: Iterator<Item = usize>>(
     iter: I,
 ) {
     eprintln!(
@@ -69,15 +69,22 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<1024, 256>>, I: Iterato
     eprintln!("Parameters: {:#?}", SPIRAL_TEST_PARAMS);
     let mut records: Vec<<TheSPIRAL as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);
     for i in 0..TheSPIRAL::DB_SIZE as u64 {
-        let mut record_coeff = [IntMod::<256>::zero(); 1024];
-        record_coeff[0] = (i % 256).into();
-        record_coeff[1] = ((i / 256) % 256).into();
-        record_coeff[2] = 42_u64.into();
-        record_coeff[3] = 0_u64.into();
-        record_coeff[4] = (i % 100).into();
-        record_coeff[5] = ((i / 100) % 100).into();
-        record_coeff[6] = ((i / 100 / 100) % 100).into();
-        record_coeff[7] = ((i / 100 / 100 / 100) % 100).into();
+        let mut record_coeff = [IntMod::<2>::zero(); 512];
+        let bytes = [
+            (i % 256) as u8,
+            ((i / 256) % 256) as u8,
+            42_u8,
+            0_u8,
+            (i % 100) as u8,
+            ((i / 100) % 100) as u8,
+            ((i / 100 / 100) % 100) as u8,
+            ((i / 100 / 100 / 100) % 100) as u8,
+        ];
+        for (i, b) in bytes.iter().enumerate() {
+            for bit_idx in 0..8 {
+                record_coeff[8*i + bit_idx] = IntMod::<2>::from(((b >> bit_idx) & 1) as u64);
+            }
+        }
         records.push(<TheSPIRAL as SPIRAL>::Record::from(record_coeff));
     }
     eprintln!(
@@ -218,7 +225,7 @@ mod test {
     fn test_post_process_only() {
         let (qk, pp) = SPIRALTest::setup();
         let (s_encode, _) = &qk;
-        let m = <SPIRALTest as SPIRAL>::Record::from(77_u64);
+        let m = <SPIRALTest as SPIRAL>::Record::from(177_u64);
         let c = SPIRALTest::encode_regev(s_encode, &m.include_dim().scale_up_into());
         let compressed = SPIRALTest::response_compress(&pp, &c);
         let extracted = SPIRALTest::response_extract(&qk, &compressed);
