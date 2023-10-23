@@ -1,6 +1,5 @@
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
-use crate::math::ring_elem::RingElement;
 use crate::pir::pir::{SPIRALImpl, SPIRALParams, SPIRALParamsRaw, SPIRAL};
 use crate::spiral;
 use std::time::Instant;
@@ -18,14 +17,15 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     // Z_COEFF_GSW: 2,
     // Z_CONV: 16088,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
-    P: 16,
+    P: 256,
+    D_RECORD: 256,
     ETA1: 9,
     ETA2: 6,
     Z_FOLD: 2,
-    Q_SWITCH1: 64, // 4P
-    Q_SWITCH2: 114689, // must be prime
-    D_SWITCH: 512,
-    T_SWITCH: 17,
+    Q_SWITCH1: 1024,    // 4P
+    Q_SWITCH2: 2056193, // 21 bit prime
+    D_SWITCH: 1024,
+    T_SWITCH: 21,
 }
 .expand();
 
@@ -51,12 +51,15 @@ pub fn has_avx2() -> bool {
 //     extract_time: Duration,
 // }
 
-pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 16>>, I: Iterator<Item = usize>>(
+pub fn run_spiral<
+    TheSPIRAL: SPIRAL<Record = IntModCyclo<256, 256>, RecordPackedSmall = IntModCyclo<1024, 256>>,
+    I: Iterator<Item = usize>,
+>(
     iter: I,
 ) {
     eprintln!(
         "Running SPIRAL test with database size {}",
-        SPIRALTest::DB_SIZE
+        TheSPIRAL::PACKED_DB_SIZE
     );
     eprintln!(
         "AVX2 is {}",
@@ -67,24 +70,18 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 16>>, I: Iterator<
         }
     );
     eprintln!("Parameters: {:#?}", SPIRAL_TEST_PARAMS);
-    let mut records: Vec<<TheSPIRAL as SPIRAL>::Record> = Vec::with_capacity(SPIRALTest::DB_SIZE);
+    let mut records: Vec<[u8; 256]> = Vec::with_capacity(TheSPIRAL::DB_SIZE);
     for i in 0..TheSPIRAL::DB_SIZE as u64 {
-        let mut record_coeff = [IntMod::<16>::zero(); 512];
-        let bytes = [
-            (i % 256) as u8,
-            ((i / 256) % 256) as u8,
-            42_u8,
-            0_u8,
-            (i % 100) as u8,
-            ((i / 100) % 100) as u8,
-            ((i / 100 / 100) % 100) as u8,
-            ((i / 100 / 100 / 100) % 100) as u8,
-        ];
-        for (i, b) in bytes.iter().enumerate() {
-            record_coeff[2*i] = IntMod::<16>::from((b & 15) as u64);
-            record_coeff[2*i + 1] = IntMod::<16>::from(((b >> 4) & 15) as u64);
-        }
-        records.push(<TheSPIRAL as SPIRAL>::Record::from(record_coeff));
+        let mut record = [0_u8; 256];
+        record[0] = (i % 256) as u8;
+        record[1] = ((i / 256) % 256) as u8;
+        record[2] = 42_u8;
+        record[3] = 0_u8;
+        record[4] = (i % 100) as u8;
+        record[5] = ((i / 100) % 100) as u8;
+        record[6] = ((i / 100 / 100) % 100) as u8;
+        record[7] = ((i / 100 / 100 / 100) % 100) as u8;
+        records.push(record);
     }
     eprintln!(
         "Estimated relative noise: 2^({})",
@@ -98,7 +95,11 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 16>>, I: Iterator<
     eprintln!();
 
     let pre_start = Instant::now();
-    let db = TheSPIRAL::preprocess(records.iter());
+    let db = TheSPIRAL::preprocess(
+        records
+            .iter()
+            .map(|x| IntModCyclo::<256, 256>::from(x.map(|x| IntMod::from(x as u64)))),
+    );
     let pre_end = Instant::now();
     eprintln!("{:?} to preprocess", pre_end - pre_start);
 
@@ -109,8 +110,9 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 16>>, I: Iterator<
 
     let check = |idx: usize| {
         eprintln!("Testing record index {}", idx);
+        let (idx_db, idx_off) = (idx / TheSPIRAL::PACK_RATIO, idx % TheSPIRAL::PACK_RATIO);
         let query_start = Instant::now();
-        let q = TheSPIRAL::query(&qk, idx);
+        let q = TheSPIRAL::query(&qk, idx_db);
         let query_end = Instant::now();
         let query_total = query_end - query_start;
 
@@ -129,9 +131,22 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 16>>, I: Iterator<
         let response_extract_end = Instant::now();
         let response_extract_total = response_extract_end - response_extract_start;
 
-        if extracted != records[idx] {
+        let extracted_record: [u8; 256] = extracted
+            .coeff
+            .iter()
+            .skip(idx_off / 2)
+            .step_by(4)
+            .map(|x| u64::from(*x) as u8)
+            .collect::<Vec<u8>>()
+            .try_into()
+            .unwrap();
+
+        if extracted_record != records[idx] {
             eprintln!("  **** **** **** **** ERROR **** **** **** ****");
             eprintln!("  protocol failed");
+            dbg!(idx, idx / TheSPIRAL::PACK_RATIO);
+            dbg!(extracted_record);
+            dbg!(extracted);
         }
         eprintln!(
             "  {:?} total",
@@ -141,12 +156,13 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 16>>, I: Iterator<
         eprintln!("    {:?} to answer", answer_total);
         eprintln!("    {:?} to compress response", response_compress_total);
         eprintln!("    {:?} to extract response", response_extract_total);
-        let rel_noise = TheSPIRAL::response_raw_stats(&qk, &response_raw, &records[idx]);
 
-        eprintln!(
-            "  relative coefficient noise (sample): 2^({})",
-            rel_noise.log2()
-        );
+        // FIXME
+        // let rel_noise = TheSPIRAL::response_raw_stats(&qk, &response_raw, &records[idx]);
+        // eprintln!(
+        //     "  relative coefficient noise (sample): 2^({})",
+        //     rel_noise.log2()
+        // );
     };
 
     for i in iter {
@@ -224,7 +240,7 @@ mod test {
     fn test_post_process_only() {
         let (qk, pp) = SPIRALTest::setup();
         let (s_encode, _) = &qk;
-        let m = <SPIRALTest as SPIRAL>::Record::from(177_u64);
+        let m = <SPIRALTest as SPIRAL>::RecordPackedSmall::from(177_u64);
         let c = SPIRALTest::encode_regev(s_encode, &m.include_dim().scale_up_into());
         let compressed = SPIRALTest::response_compress(&pp, &c);
         let extracted = SPIRALTest::response_extract(&qk, &compressed);
@@ -240,6 +256,6 @@ mod test {
     #[test]
     fn test_spiral_stress() {
         let mut rng = ChaCha20Rng::from_entropy();
-        run_spiral::<SPIRALTest, _>((0..).map(|_| rng.gen_range(0_usize..SPIRALTest::DB_SIZE)))
+        run_spiral::<SPIRALTest, _>((0..).map(|_| rng.gen_range(0_usize..SPIRALTest::DB_SIZE)));
     }
 }

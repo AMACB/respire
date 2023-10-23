@@ -161,7 +161,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("pir::answer_query_expand", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
         let (qk, pp) = SPIRALTest::setup();
-        let idx = rng.gen_range(0..<SPIRALTest as SPIRAL>::DB_SIZE);
+        let idx = rng.gen_range(0..<SPIRALTest as SPIRAL>::PACKED_DB_SIZE);
         let q = SPIRALTest::query(&qk, idx);
         b.iter(|| SPIRALTest::answer_query_expand(black_box(&pp), black_box(&q)))
     });
@@ -170,7 +170,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut rng = ChaCha20Rng::from_entropy();
         let records: Vec<_> = (0..)
             .map(|_| <SPIRALTest as SPIRAL>::RingP::rand_uniform(&mut rng).project_dim())
-            .take(SPIRALTest::DB_SIZE)
+            .take(SPIRALTest::PACKED_DB_SIZE)
             .collect();
         let db = SPIRALTest::preprocess(records.iter());
         let regevs: Vec<_> = (0..)

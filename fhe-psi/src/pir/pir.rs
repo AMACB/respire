@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::cmp::max;
 use std::f64::consts::PI;
 use std::time::Instant;
@@ -39,6 +40,7 @@ pub struct SPIRALImpl<
     const M_GSW: usize,
     const NOISE_WIDTH_MILLIONTHS: u64,
     const P: u64,
+    const D_RECORD: usize,
     const ETA1: usize,
     const ETA2: usize,
     const Z_FOLD: usize,
@@ -60,6 +62,7 @@ pub struct SPIRALParamsRaw {
     pub T_CONV: usize,
     pub NOISE_WIDTH_MILLIONTHS: u64,
     pub P: u64,
+    pub D_RECORD: usize,
     pub ETA1: usize,
     pub ETA2: usize,
     pub Z_FOLD: usize,
@@ -94,6 +97,7 @@ impl SPIRALParamsRaw {
             M_GSW: 2 * self.T_GSW,
             NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
             P: self.P,
+            D_RECORD: self.D_RECORD,
             ETA1: self.ETA1,
             ETA2: self.ETA2,
             Z_FOLD: self.Z_FOLD,
@@ -125,6 +129,7 @@ pub struct SPIRALParams {
     pub M_GSW: usize,
     pub NOISE_WIDTH_MILLIONTHS: u64,
     pub P: u64,
+    pub D_RECORD: usize,
     pub ETA1: usize,
     pub ETA2: usize,
     pub Z_FOLD: usize,
@@ -247,6 +252,7 @@ macro_rules! spiral {
             {$params.M_GSW},
             {$params.NOISE_WIDTH_MILLIONTHS},
             {$params.P},
+            {$params.D_RECORD},
             {$params.ETA1},
             {$params.ETA2},
             {$params.Z_FOLD},
@@ -282,13 +288,16 @@ pub trait SPIRAL {
     type ResponseRaw;
     type Response;
     type Record;
-    type RecordLarge;
+    type RecordPackedSmall;
+    type RecordPacked;
     type Database;
 
     // Constants
-    const DB_DIM1_SIZE: usize;
-    const DB_DIM2_SIZE: usize;
+    const PACKED_DIM1_SIZE: usize;
+    const PACKED_DIM2_SIZE: usize;
+    const PACKED_DB_SIZE: usize;
     const DB_SIZE: usize;
+    const PACK_RATIO: usize;
     const ETA1: usize;
     const ETA2: usize;
     const REGEV_COUNT: usize;
@@ -296,20 +305,17 @@ pub trait SPIRAL {
     const GSW_COUNT: usize;
     const GSW_EXPAND_ITERS: usize;
 
-    fn preprocess<'a, I: ExactSizeIterator<Item = &'a Self::Record>>(
-        records_iter: I,
-    ) -> Self::Database
-    where
-        Self::Record: 'a;
+    fn preprocess<'a, I: ExactSizeIterator<Item = Self::Record>>(records_iter: I)
+        -> Self::Database;
     fn setup() -> (Self::QueryKey, Self::PublicParams);
     fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
     fn answer(pp: &Self::PublicParams, db: &Self::Database, q: &Self::Query) -> Self::ResponseRaw;
     fn response_compress(pp: &Self::PublicParams, r: &Self::ResponseRaw) -> Self::Response;
-    fn response_extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::Record;
+    fn response_extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::RecordPackedSmall;
     fn response_raw_stats(
         qk: &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::ResponseRaw,
-        actual: &<Self as SPIRAL>::Record,
+        actual: &<Self as SPIRAL>::RecordPackedSmall,
     ) -> f64;
 }
 
@@ -330,6 +336,7 @@ impl<
         const M_GSW: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
         const P: u64,
+        const D_RECORD: usize,
         const ETA1: usize,
         const ETA2: usize,
         const Z_FOLD: usize,
@@ -356,6 +363,7 @@ impl<
         M_GSW,
         NOISE_WIDTH_MILLIONTHS,
         P,
+        D_RECORD,
         ETA1,
         ETA2,
         Z_FOLD,
@@ -405,8 +413,9 @@ impl<
     type QueryExpanded = (Vec<Self::RegevCiphertext>, Vec<Self::GSWCiphertext>);
     type ResponseRaw = Self::RegevCiphertext;
     type Response = Self::RegevSmall;
-    type Record = IntModCyclo<D_SWITCH, P>;
-    type RecordLarge = IntModCyclo<D, P>;
+    type Record = IntModCyclo<D_RECORD, P>;
+    type RecordPackedSmall = IntModCyclo<D_SWITCH, P>;
+    type RecordPacked = IntModCyclo<D, P>;
 
     /// We structure the database as `[2] x [D / S] x [DIM2_SIZE] x [DIM1_SIZE] x [S]` for optimal first dimension
     /// processing. The outermost pair is the first resp. second CRT projections, packed as two u32 into one u64;
@@ -414,9 +423,11 @@ impl<
     type Database = Vec<SimdVec>;
 
     // Constants
-    const DB_DIM1_SIZE: usize = 2_usize.pow(ETA1 as u32);
-    const DB_DIM2_SIZE: usize = Z_FOLD.pow(ETA2 as u32);
-    const DB_SIZE: usize = Self::DB_DIM1_SIZE * Self::DB_DIM2_SIZE;
+    const PACKED_DIM1_SIZE: usize = 2_usize.pow(ETA1 as u32);
+    const PACKED_DIM2_SIZE: usize = Z_FOLD.pow(ETA2 as u32);
+    const PACKED_DB_SIZE: usize = Self::PACKED_DIM1_SIZE * Self::PACKED_DIM2_SIZE;
+    const DB_SIZE: usize = Self::PACKED_DB_SIZE * Self::PACK_RATIO;
+    const PACK_RATIO: usize = D / D_RECORD;
     const ETA1: usize = ETA1;
     const ETA2: usize = ETA2;
 
@@ -425,31 +436,39 @@ impl<
     const GSW_COUNT: usize = ETA2 * (Z_FOLD - 1) * T_GSW;
     const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
 
-    fn preprocess<'a, I: ExactSizeIterator<Item = &'a Self::Record>>(
+    fn preprocess<'a, I: ExactSizeIterator<Item = Self::Record>>(
         records_iter: I,
-    ) -> Self::Database
-    where
-        Self::Record: 'a,
-    {
+    ) -> Self::Database {
         assert_eq!(records_iter.len(), Self::DB_SIZE);
 
         let records_eval: Vec<<Self as SPIRAL>::RingQFast> = records_iter
-            .map(|r| {
-                let r_large = r.include_dim();
-                <Self as SPIRAL>::RingQFast::from(&r_large.include_into::<Q>())
+            .chunks(Self::PACK_RATIO)
+            .into_iter()
+            .map(|chunk| {
+                let mut record_packed = IntModCyclo::<D, P>::zero();
+                for (record_in_chunk, record) in chunk.enumerate() {
+                    for (coeff_idx, coeff) in record.coeff.iter().enumerate() {
+                        record_packed.coeff[Self::PACK_RATIO * coeff_idx + record_in_chunk] =
+                            *coeff;
+                    }
+                }
+                <Self as SPIRAL>::RingQFast::from(&record_packed.include_into::<Q>())
             })
             .collect();
 
         #[cfg(not(target_feature = "avx2"))]
         {
-            let mut db: Vec<SimdVec> = (0..(D * Self::DB_SIZE)).map(|_| 0_u64).collect();
+            let mut db: Vec<SimdVec> = (0..(D * Self::PACKED_DB_SIZE)).map(|_| 0_u64).collect();
             for eval_vec_idx in 0..D {
-                for db_idx in 0..Self::DB_SIZE {
+                for db_idx in 0..Self::PACKED_DB_SIZE {
                     // Transpose the index
-                    let (db_i, db_j) = (db_idx / Self::DB_DIM2_SIZE, db_idx % Self::DB_DIM2_SIZE);
-                    let db_idx_t = db_j * Self::DB_DIM1_SIZE + db_i;
+                    let (db_i, db_j) = (
+                        db_idx / Self::PACKED_DIM2_SIZE,
+                        db_idx % Self::PACKED_DIM2_SIZE,
+                    );
+                    let db_idx_t = db_j * Self::PACKED_DIM1_SIZE + db_i;
 
-                    let to_idx = eval_vec_idx * Self::DB_SIZE + db_idx_t;
+                    let to_idx = eval_vec_idx * Self::PACKED_DB_SIZE + db_idx_t;
                     let from_idx = eval_vec_idx;
                     let lo = u64::from(records_eval[db_idx].proj1.evals[from_idx]);
                     let hi = u64::from(records_eval[db_idx].proj2.evals[from_idx]);
@@ -462,15 +481,18 @@ impl<
 
         #[cfg(target_feature = "avx2")]
         {
-            let mut db: Vec<SimdVec> = (0..((D / SIMD_LANES) * Self::DB_SIZE))
+            let mut db: Vec<SimdVec> = (0..((D / SIMD_LANES) * Self::PACKED_DB_SIZE))
                 .map(|_| Aligned32([0_u64; 4]))
                 .collect();
 
             for eval_vec_idx in 0..(D / SIMD_LANES) {
-                for db_idx in 0..Self::DB_SIZE {
+                for db_idx in 0..Self::PACKED_DB_SIZE {
                     // Transpose the index
-                    let (db_i, db_j) = (db_idx / Self::DB_DIM2_SIZE, db_idx % Self::DB_DIM2_SIZE);
-                    let db_idx_t = db_j * Self::DB_DIM1_SIZE + db_i;
+                    let (db_i, db_j) = (
+                        db_idx / Self::PACKED_DIM2_SIZE,
+                        db_idx % Self::PACKED_DIM2_SIZE,
+                    );
+                    let db_idx_t = db_j * Self::PACKED_DIM1_SIZE + db_i;
 
                     let mut db_vec: SimdVec = Aligned32([0_u64; 4]);
                     for lane in 0..SIMD_LANES {
@@ -480,7 +502,7 @@ impl<
                         db_vec.0[lane] = (hi << 32) | lo;
                     }
 
-                    let to_idx = eval_vec_idx * Self::DB_SIZE + db_idx_t;
+                    let to_idx = eval_vec_idx * Self::PACKED_DB_SIZE + db_idx_t;
                     db[to_idx] = db_vec;
                 }
             }
@@ -545,13 +567,13 @@ impl<
         (s_encode, _s_small): &<Self as SPIRAL>::QueryKey,
         idx: usize,
     ) -> <Self as SPIRAL>::Query {
-        assert!(idx < Self::DB_SIZE);
-        let (idx_i, idx_j) = (idx / Self::DB_DIM2_SIZE, idx % Self::DB_DIM2_SIZE);
+        assert!(idx < Self::PACKED_DB_SIZE);
+        let (idx_i, idx_j) = (idx / Self::PACKED_DIM2_SIZE, idx % Self::PACKED_DIM2_SIZE);
 
         let mut packed_vec: Vec<IntMod<Q>> = iter::repeat(IntMod::zero()).take(D).collect();
 
         let inv_even = IntMod::from(mod_inverse(1 << (1 + Self::REGEV_EXPAND_ITERS), Q));
-        for i in 0_usize..Self::DB_DIM1_SIZE {
+        for i in 0_usize..Self::PACKED_DIM1_SIZE {
             packed_vec[2 * i] = (IntMod::<P>::from((i == idx_i) as u64)).scale_up_into() * inv_even;
         }
 
@@ -643,7 +665,7 @@ impl<
     fn response_extract(
         (_s_encode, s_small): &<Self as SPIRAL>::QueryKey,
         (c0_hat, c1_hat): &<Self as SPIRAL>::Response,
-    ) -> <Self as SPIRAL>::Record {
+    ) -> <Self as SPIRAL>::RecordPackedSmall {
         let neg_s_small_c0 = IntModCyclo::from(-&(s_small * &IntModCycloEval::from(c0_hat)));
         let mut result = IntModCyclo::zero();
         for (result_coeff, neg_s_small_c0_coeff) in
@@ -661,7 +683,7 @@ impl<
     fn response_raw_stats(
         (s_encode, _s_small): &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::ResponseRaw,
-        actual: &<Self as SPIRAL>::Record,
+        actual: &<Self as SPIRAL>::RecordPackedSmall,
     ) -> f64 {
         let actual_scaled = actual.scale_up_into();
         let decoded = Self::decode_regev(s_encode, r).project_dim();
@@ -698,6 +720,7 @@ impl<
         const M_GSW: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
         const P: u64,
+        const D_RECORD: usize,
         const ETA1: usize,
         const ETA2: usize,
         const Z_FOLD: usize,
@@ -724,6 +747,7 @@ impl<
         M_GSW,
         NOISE_WIDTH_MILLIONTHS,
         P,
+        D_RECORD,
         ETA1,
         ETA2,
         Z_FOLD,
@@ -756,7 +780,7 @@ impl<
                 auto_key_regev,
             );
         }
-        assert_eq!(regevs.len(), Self::DB_DIM1_SIZE);
+        assert_eq!(regevs.len(), Self::PACKED_DIM1_SIZE);
 
         let mut gsws = vec![gsw_base];
         for (i, auto_key_gsw) in auto_keys_gsw.iter().enumerate() {
@@ -781,11 +805,11 @@ impl<
         db: &<Self as SPIRAL>::Database,
         regevs: &[<Self as SPIRAL>::RegevCiphertext],
     ) -> Vec<<Self as SPIRAL>::RegevCiphertext> {
-        assert_eq!(regevs.len(), Self::DB_DIM1_SIZE);
+        assert_eq!(regevs.len(), Self::PACKED_DIM1_SIZE);
 
         // Flatten + transpose the ciphertexts
-        let mut c0s: Vec<SimdVec> = Vec::with_capacity((D / SIMD_LANES) * Self::DB_DIM1_SIZE);
-        let mut c1s: Vec<SimdVec> = Vec::with_capacity((D / SIMD_LANES) * Self::DB_DIM1_SIZE);
+        let mut c0s: Vec<SimdVec> = Vec::with_capacity((D / SIMD_LANES) * Self::PACKED_DIM1_SIZE);
+        let mut c1s: Vec<SimdVec> = Vec::with_capacity((D / SIMD_LANES) * Self::PACKED_DIM1_SIZE);
 
         #[cfg(not(target_feature = "avx2"))]
         for eval_idx in 0..D {
@@ -822,7 +846,7 @@ impl<
         }
 
         // First dimension processing
-        let mut result: Vec<<Self as SPIRAL>::RegevCiphertext> = (0..Self::DB_DIM2_SIZE)
+        let mut result: Vec<<Self as SPIRAL>::RegevCiphertext> = (0..Self::PACKED_DIM2_SIZE)
             .map(|_| <Self as SPIRAL>::RegevCiphertext::zero())
             .collect();
 
@@ -835,22 +859,22 @@ impl<
 
         #[cfg(not(target_feature = "avx2"))]
         for eval_idx in 0..D {
-            for j in 0..Self::DB_DIM2_SIZE {
+            for j in 0..Self::PACKED_DIM2_SIZE {
                 let mut sum0_proj1 = 0_u64;
                 let mut sum0_proj2 = 0_u64;
                 let mut sum1_proj1 = 0_u64;
                 let mut sum1_proj2 = 0_u64;
 
-                for i in 0..Self::DB_DIM1_SIZE {
-                    let lhs0 = c0s[eval_idx * Self::DB_DIM1_SIZE + i];
+                for i in 0..Self::PACKED_DIM1_SIZE {
+                    let lhs0 = c0s[eval_idx * Self::PACKED_DIM1_SIZE + i];
                     let lhs0_proj1 = lhs0 as u32 as u64;
                     let lhs0_proj2 = lhs0 >> 32;
 
-                    let lhs1 = c1s[eval_idx * Self::DB_DIM1_SIZE + i];
+                    let lhs1 = c1s[eval_idx * Self::PACKED_DIM1_SIZE + i];
                     let lhs1_proj1 = lhs1 as u32 as u64;
                     let lhs1_proj2 = lhs1 >> 32;
 
-                    let rhs = db[eval_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i];
+                    let rhs = db[eval_idx * Self::PACKED_DB_SIZE + j * Self::PACKED_DIM1_SIZE + i];
                     let rhs_proj1 = rhs as u32 as u64;
                     let rhs_proj2 = rhs >> 32;
 
@@ -859,7 +883,7 @@ impl<
                     sum1_proj1 += lhs1_proj1 * rhs_proj1;
                     sum1_proj2 += lhs1_proj2 * rhs_proj2;
 
-                    if i % reduce_every == 0 || i == Self::DB_DIM1_SIZE - 1 {
+                    if i % reduce_every == 0 || i == Self::PACKED_DIM1_SIZE - 1 {
                         sum0_proj1 %= Q_A;
                         sum0_proj2 %= Q_B;
                         sum1_proj1 %= Q_A;
@@ -878,21 +902,21 @@ impl<
         for eval_vec_idx in 0..(D / SIMD_LANES) {
             use std::arch::x86_64::*;
             unsafe {
-                for j in 0..Self::DB_DIM2_SIZE {
+                for j in 0..Self::PACKED_DIM2_SIZE {
                     let mut sum0_proj1 = _mm256_setzero_si256();
                     let mut sum0_proj2 = _mm256_setzero_si256();
                     let mut sum1_proj1 = _mm256_setzero_si256();
                     let mut sum1_proj2 = _mm256_setzero_si256();
 
-                    for i in 0..Self::DB_DIM1_SIZE {
-                        let lhs0_ptr = c0s.get_unchecked(eval_vec_idx * Self::DB_DIM1_SIZE + i)
+                    for i in 0..Self::PACKED_DIM1_SIZE {
+                        let lhs0_ptr = c0s.get_unchecked(eval_vec_idx * Self::PACKED_DIM1_SIZE + i)
                             as *const SimdVec
                             as *const __m256i;
-                        let lhs1_ptr = c1s.get_unchecked(eval_vec_idx * Self::DB_DIM1_SIZE + i)
+                        let lhs1_ptr = c1s.get_unchecked(eval_vec_idx * Self::PACKED_DIM1_SIZE + i)
                             as *const SimdVec
                             as *const __m256i;
                         let rhs_ptr = db.get_unchecked(
-                            eval_vec_idx * Self::DB_SIZE + j * Self::DB_DIM1_SIZE + i,
+                            eval_vec_idx * Self::PACKED_DB_SIZE + j * Self::PACKED_DIM1_SIZE + i,
                         ) as *const SimdVec as *const __m256i;
 
                         let lhs0_proj1 = _mm256_load_si256(lhs0_ptr);
@@ -911,7 +935,7 @@ impl<
                         sum1_proj2 =
                             _mm256_add_epi64(sum1_proj2, _mm256_mul_epu32(lhs1_proj2, rhs_proj2));
 
-                        if i % reduce_every == 0 || i == Self::DB_DIM1_SIZE - 1 {
+                        if i % reduce_every == 0 || i == Self::PACKED_DIM1_SIZE - 1 {
                             let mut tmp0_proj1: SimdVec = Aligned32([0_u64; 4]);
                             let mut tmp0_proj2: SimdVec = Aligned32([0_u64; 4]);
                             let mut tmp1_proj1: SimdVec = Aligned32([0_u64; 4]);
