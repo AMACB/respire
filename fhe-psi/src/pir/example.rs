@@ -1,5 +1,6 @@
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
+use crate::math::utils::reverse_bits;
 use crate::pir::pir::{SPIRALImpl, SPIRALParams, SPIRALParamsRaw, SPIRAL};
 use crate::spiral;
 use std::time::Instant;
@@ -110,9 +111,8 @@ pub fn run_spiral<
 
     let check = |idx: usize| {
         eprintln!("Testing record index {}", idx);
-        let (idx_db, idx_off) = (idx / TheSPIRAL::PACK_RATIO, idx % TheSPIRAL::PACK_RATIO);
         let query_start = Instant::now();
-        let q = TheSPIRAL::query(&qk, idx_db);
+        let q = TheSPIRAL::query(&qk, idx);
         let query_end = Instant::now();
         let query_total = query_end - query_start;
 
@@ -134,7 +134,11 @@ pub fn run_spiral<
         let extracted_record: [u8; 256] = extracted
             .coeff
             .iter()
-            .skip(idx_off / 2)
+            // FIXME
+            .skip(reverse_bits(
+                TheSPIRAL::PACK_RATIO_SMALL,
+                idx % TheSPIRAL::PACK_RATIO_SMALL,
+            ))
             .step_by(4)
             .map(|x| u64::from(*x) as u8)
             .collect::<Vec<u8>>()
@@ -255,7 +259,9 @@ mod test {
     #[ignore]
     #[test]
     fn test_spiral_stress() {
-        let mut rng = ChaCha20Rng::from_entropy();
-        run_spiral::<SPIRALTest, _>((0..).map(|_| rng.gen_range(0_usize..SPIRALTest::DB_SIZE)));
+        // FIXME
+        // let mut rng = ChaCha20Rng::from_entropy();
+        // run_spiral::<SPIRALTest, _>((0..).map(|_| rng.gen_range(0_usize..SPIRALTest::DB_SIZE)));
+        run_spiral::<SPIRALTest, _>(0..SPIRALTest::DB_SIZE);
     }
 }

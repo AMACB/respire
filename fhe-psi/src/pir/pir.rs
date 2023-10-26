@@ -18,7 +18,7 @@ use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::ring_elem::{NormedRingElement, RingElement};
-use crate::math::utils::{ceil_log, mod_inverse};
+use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits};
 
 use crate::math::simd_utils::*;
 use crate::pir::noise::{BoundedNoise, Independent, SubGaussianNoise};
@@ -298,15 +298,17 @@ pub trait SPIRAL {
     const PACKED_DB_SIZE: usize;
     const DB_SIZE: usize;
     const PACK_RATIO: usize;
+    const PACK_RATIO_SMALL: usize;
     const ETA1: usize;
     const ETA2: usize;
     const REGEV_COUNT: usize;
     const REGEV_EXPAND_ITERS: usize;
+    const GSW_FOLD_COUNT: usize;
+    const GSW_PROJ_COUNT: usize;
     const GSW_COUNT: usize;
     const GSW_EXPAND_ITERS: usize;
 
-    fn preprocess<'a, I: ExactSizeIterator<Item = Self::Record>>(records_iter: I)
-        -> Self::Database;
+    fn preprocess<I: ExactSizeIterator<Item = Self::Record>>(records_iter: I) -> Self::Database;
     fn setup() -> (Self::QueryKey, Self::PublicParams);
     fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
     fn answer(pp: &Self::PublicParams, db: &Self::Database, q: &Self::Query) -> Self::ResponseRaw;
@@ -410,7 +412,11 @@ impl<
         Self::KeySwitchKey,
     );
     type Query = Self::RegevCiphertext;
-    type QueryExpanded = (Vec<Self::RegevCiphertext>, Vec<Self::GSWCiphertext>);
+    type QueryExpanded = (
+        Vec<Self::RegevCiphertext>,
+        Vec<Self::GSWCiphertext>,
+        Vec<Self::GSWCiphertext>,
+    );
     type ResponseRaw = Self::RegevCiphertext;
     type Response = Self::RegevSmall;
     type Record = IntModCyclo<D_RECORD, P>;
@@ -428,12 +434,17 @@ impl<
     const PACKED_DB_SIZE: usize = Self::PACKED_DIM1_SIZE * Self::PACKED_DIM2_SIZE;
     const DB_SIZE: usize = Self::PACKED_DB_SIZE * Self::PACK_RATIO;
     const PACK_RATIO: usize = D / D_RECORD;
+    const PACK_RATIO_SMALL: usize = D_SWITCH / D_RECORD;
     const ETA1: usize = ETA1;
     const ETA2: usize = ETA2;
 
     const REGEV_COUNT: usize = 1 << ETA1;
     const REGEV_EXPAND_ITERS: usize = ETA1;
-    const GSW_COUNT: usize = ETA2 * (Z_FOLD - 1) * T_GSW;
+    const GSW_FOLD_COUNT: usize = ETA2 * (Z_FOLD - 1);
+
+    // TODO add param to reduce this when we don't care about garbage being in the other slots
+    const GSW_PROJ_COUNT: usize = floor_log(2, Self::PACK_RATIO as u64);
+    const GSW_COUNT: usize = (Self::GSW_FOLD_COUNT + Self::GSW_PROJ_COUNT) * T_GSW;
     const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
 
     fn preprocess<'a, I: ExactSizeIterator<Item = Self::Record>>(
@@ -447,9 +458,10 @@ impl<
             .map(|chunk| {
                 let mut record_packed = IntModCyclo::<D, P>::zero();
                 for (record_in_chunk, record) in chunk.enumerate() {
+                    // Transpose so projection is more significant
+                    let packed_offset = reverse_bits(Self::PACK_RATIO, record_in_chunk);
                     for (coeff_idx, coeff) in record.coeff.iter().enumerate() {
-                        record_packed.coeff[Self::PACK_RATIO * coeff_idx + record_in_chunk] =
-                            *coeff;
+                        record_packed.coeff[Self::PACK_RATIO * coeff_idx + packed_offset] = *coeff;
                     }
                 }
                 <Self as SPIRAL>::RingQFast::from(&record_packed.include_into::<Q>())
@@ -567,7 +579,8 @@ impl<
         (s_encode, _s_small): &<Self as SPIRAL>::QueryKey,
         idx: usize,
     ) -> <Self as SPIRAL>::Query {
-        assert!(idx < Self::PACKED_DB_SIZE);
+        assert!(idx < Self::DB_SIZE);
+        let (idx, proj_idx) = (idx / Self::PACK_RATIO, idx % Self::PACK_RATIO);
         let (idx_i, idx_j) = (idx / Self::PACKED_DIM2_SIZE, idx % Self::PACKED_DIM2_SIZE);
 
         let mut packed_vec: Vec<IntMod<Q>> = iter::repeat(IntMod::zero()).take(D).collect();
@@ -577,6 +590,10 @@ impl<
             packed_vec[2 * i] = (IntMod::<P>::from((i == idx_i) as u64)).scale_up_into() * inv_even;
         }
 
+        // Think of the odd entries of packed as [ETA2] x [Z_FOLD - 1] x [T_GSW] + [GSW_PROJ_COUNT] x [T_GSW]
+        let inv_odd = IntMod::from(mod_inverse(1 << (1 + Self::GSW_EXPAND_ITERS), Q));
+
+        // [ETA2] x [Z_FOLD - 1] x [T_GSW] part
         let mut digits = Vec::with_capacity(ETA2);
         let mut idx_j_curr = idx_j;
         for _ in 0..ETA2 {
@@ -584,8 +601,6 @@ impl<
             idx_j_curr /= Z_FOLD;
         }
 
-        // Think of the odd entries of packed as [ETA2] x [Z_FOLD - 1] x [T_GSW]
-        let inv_odd = IntMod::from(mod_inverse(1 << (1 + Self::GSW_EXPAND_ITERS), Q));
         for (digit_idx, digit) in digits.into_iter().rev().enumerate() {
             for which in 0..Z_FOLD - 1 {
                 let mut msg = IntMod::from((digit == which + 1) as u64);
@@ -594,6 +609,24 @@ impl<
                     packed_vec[2 * pack_idx + 1] = msg * inv_odd;
                     msg *= IntMod::from(Z_GSW);
                 }
+            }
+        }
+
+        // [GSW_PROJ_COUNT] x [T_GSW] part
+        let mut proj_bits = Vec::with_capacity(Self::GSW_PROJ_COUNT);
+        let mut proj_idx_curr = proj_idx;
+        for _ in 0..Self::GSW_PROJ_COUNT {
+            proj_bits.push(proj_idx_curr % 2);
+            proj_idx_curr /= 2;
+        }
+
+        let gsw_proj_offset = ETA2 * (Z_FOLD - 1) * T_GSW;
+        for (proj_idx, proj_bit) in proj_bits.into_iter().rev().enumerate() {
+            let mut msg = IntMod::from(proj_bit as u64);
+            for gsw_pow in 0..T_GSW {
+                let pack_idx = gsw_proj_offset + T_GSW * proj_idx + gsw_pow;
+                packed_vec[2 * pack_idx + 1] = msg * inv_odd;
+                msg *= IntMod::from(Z_GSW);
             }
         }
 
@@ -609,7 +642,7 @@ impl<
         let i0 = Instant::now();
 
         // Query expansion
-        let (regevs, gsws) = Self::answer_query_expand(pp, q);
+        let (regevs, gsws_fold, gsws_proj) = Self::answer_query_expand(pp, q);
         let i1 = Instant::now();
 
         // First dimension
@@ -617,8 +650,11 @@ impl<
         let i2 = Instant::now();
 
         // Folding
-        let result = Self::answer_fold(first_dim_folded, gsws.as_slice());
+        let result = Self::answer_fold(first_dim_folded, gsws_fold.as_slice());
         let i3 = Instant::now();
+
+        // Projecting
+        // todo!()
 
         eprintln!("(*) answer query expand: {:?}", i1 - i0);
         eprintln!("(*) answer first dim: {:?}", i2 - i1);
@@ -790,15 +826,21 @@ impl<
                 auto_key_gsw,
             );
         }
-        gsws.truncate(Self::ETA2 * (Z_FOLD - 1) * T_GSW);
+        gsws.truncate(Self::GSW_COUNT);
 
-        let gsws: Vec<<Self as SPIRAL>::GSWCiphertext> = gsws
+        let mut gsws_iter = gsws
             .chunks_exact(T_GSW)
-            .map(|cs| Self::regev_to_gsw(regev_to_gsw_key, cs))
-            .collect();
-        assert_eq!(gsws.len(), Self::ETA2 * (Z_FOLD - 1));
+            .map(|cs| Self::regev_to_gsw(regev_to_gsw_key, cs));
 
-        (regevs, gsws)
+        let gsws_fold = (0..Self::GSW_FOLD_COUNT)
+            .map(|_| gsws_iter.next().unwrap())
+            .collect();
+        let gsws_proj = (0..Self::GSW_PROJ_COUNT)
+            .map(|_| gsws_iter.next().unwrap())
+            .collect();
+        assert_eq!(gsws_iter.next(), None);
+
+        (regevs, gsws_fold, gsws_proj)
     }
 
     pub fn answer_first_dim(

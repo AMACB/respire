@@ -10,7 +10,7 @@ use crate::math::number_theory::{find_sqrt_primitive_root, mod_pow};
 use crate::math::rand_sampled::*;
 use crate::math::ring_elem::*;
 use crate::math::simd_utils::Aligned32;
-use crate::math::utils::reverse_bits;
+use crate::math::utils::reverse_bits_fast;
 use rand::Rng;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -239,9 +239,9 @@ impl<const D: usize, const N: u64> IntModCycloEval<D, N> {
         let mut result = Self::zero();
         let k_half = (k - 1) / 2;
         for i in 0..D {
-            let rev_i = reverse_bits::<D>(i);
+            let rev_i = reverse_bits_fast::<D>(i);
             let from = (2 * k_half * rev_i + k_half + rev_i) % D;
-            result.evals[i] = self.evals[reverse_bits::<D>(from)];
+            result.evals[i] = self.evals[reverse_bits_fast::<D>(from)];
         }
         result
     }
@@ -252,7 +252,7 @@ impl<const D: usize, const N: u64> IntModCycloEval<D, N> {
         let mut w_curr = IntMod::from(mod_pow(Self::W, k as u64, N));
         let w_k_sq = w_curr * w_curr;
         for i in 0..D {
-            let i_rev = reverse_bits::<D>(i);
+            let i_rev = reverse_bits_fast::<D>(i);
             result.evals[i_rev] = self.evals[i_rev] * w_curr;
             w_curr *= w_k_sq;
         }

@@ -20,7 +20,7 @@ impl<const MAX: usize> ReverseBitsTable<MAX> {
     const TABLE: [usize; MAX] = make_reverse_bits_table::<MAX>();
 }
 
-pub const fn make_reverse_bits_table<const MAX: usize>() -> [usize; MAX] {
+const fn make_reverse_bits_table<const MAX: usize>() -> [usize; MAX] {
     let mut result = [0; MAX];
     let mut i = 0;
     let width = ceil_log(2, MAX as u64 - 1);
@@ -35,8 +35,12 @@ pub const fn make_reverse_bits_table<const MAX: usize>() -> [usize; MAX] {
 /// Compute the bit reversal of `a`, assumed to be of length `d` where `MAX = 2^d`. Note that this
 /// generates a lookup table of size `MAX`.
 ///
-pub const fn reverse_bits<const MAX: usize>(a: usize) -> usize {
+pub const fn reverse_bits_fast<const MAX: usize>(a: usize) -> usize {
     ReverseBitsTable::<MAX>::TABLE[a]
+}
+
+pub const fn reverse_bits(max: usize, a: usize) -> usize {
+    a.reverse_bits() >> ((usize::BITS as usize) - ceil_log(2, max as u64 - 1))
 }
 
 pub const fn floor_log(base: u64, mut x: u64) -> usize {

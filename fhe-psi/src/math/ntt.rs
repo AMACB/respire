@@ -1,7 +1,7 @@
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::simd_utils::Aligned32;
-use crate::math::utils::{floor_log, get_ratio32, mod_inverse, reverse_bits};
+use crate::math::utils::{floor_log, get_ratio32, mod_inverse, reverse_bits_fast};
 
 /// Compile time lookup table for NTT-related operations
 struct NTTTable<const D: usize, const N: u64> {}
@@ -44,7 +44,7 @@ const fn get_powers_bit_reversed<const D: usize, const N: u64>(invert: bool) -> 
 
     while idx < D {
         let ratio32 = get_ratio32::<N>(cur.into_u64_const());
-        table[reverse_bits::<D>(idx)] = MulTable {
+        table[reverse_bits_fast::<D>(idx)] = MulTable {
             value: cur,
             ratio32,
         };
@@ -409,7 +409,7 @@ mod test {
         let mut expected = vec![];
         expected.resize(DD, IntMod::zero());
         for i in 0..DD {
-            expected[reverse_bits::<DD>(i)] = coeff_poly.eval(w.pow(2 * (i as u64) + 1));
+            expected[reverse_bits_fast::<DD>(i)] = coeff_poly.eval(w.pow(2 * (i as u64) + 1));
         }
 
         assert_eq!(values.0, expected.as_slice());
