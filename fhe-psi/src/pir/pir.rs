@@ -654,12 +654,14 @@ impl<
         let i3 = Instant::now();
 
         // Projecting
-        // todo!()
+        let result_projected = Self::answer_project(result, gsws_proj.as_slice());
+        let i4 = Instant::now();
 
         eprintln!("(*) answer query expand: {:?}", i1 - i0);
         eprintln!("(*) answer first dim: {:?}", i2 - i1);
         eprintln!("(*) answer fold: {:?}", i3 - i2);
-        result
+        eprintln!("(*) answer project: {:?}", i4 - i3);
+        result_projected
     }
 
     fn response_compress(
@@ -1076,6 +1078,13 @@ impl<
         curr.remove(0)
     }
 
+    pub fn answer_project(
+        ct: <Self as SPIRAL>::RegevCiphertext,
+        gsws: &[<Self as SPIRAL>::GSWCiphertext],
+    ) -> <Self as SPIRAL>::RegevCiphertext {
+        todo!()
+    }
+
     pub fn encode_setup() -> <Self as SPIRAL>::RingQFast {
         let mut rng = ChaCha20Rng::from_entropy();
         <Self as SPIRAL>::RingQFast::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng)
@@ -1220,9 +1229,15 @@ impl<
         let mut cts_new = Vec::with_capacity(2 * len);
         cts_new.resize(2 * len, Matrix::zero());
         for (j, ct) in cts.iter().enumerate() {
-            let shifted = Self::regev_mul_x_pow(ct, 2 * D - (1 << which_iter));
-            cts_new[j] = ct + &Self::auto_hom::<LEN, BASE>(auto_key, ct);
-            cts_new[j + len] = &shifted + &Self::auto_hom::<LEN, BASE>(auto_key, &shifted);
+            let shift_exp = (1 << which_iter);
+            let shift_auto_exp = (shift_exp * auto_key.1) % (2 * D);
+
+            let ct_shifted = Self::regev_mul_x_pow(ct, 2 * D - shift_exp);
+            let ct_auto = Self::auto_hom::<LEN, BASE>(auto_key, ct);
+            let ct_auto_shifted = Self::regev_mul_x_pow(&ct_auto, 2 * D - shift_auto_exp);
+
+            cts_new[j] = ct + &ct_auto;
+            cts_new[j + len] = &ct_shifted + &ct_auto_shifted;
         }
         cts_new
     }
