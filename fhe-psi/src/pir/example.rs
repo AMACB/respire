@@ -2,6 +2,8 @@ use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::pir::pir::{SPIRALImpl, SPIRALParams, SPIRALParamsRaw, SPIRAL};
 use crate::spiral;
+use bitvec::prelude::*;
+use itertools::Itertools;
 use std::time::Instant;
 
 pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
@@ -17,15 +19,15 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     // Z_COEFF_GSW: 2,
     // Z_CONV: 16088,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
-    P: 257,
-    D_RECORD: 256,
+    P: 17,
+    D_RECORD: 512,
     ETA1: 9,
     ETA2: 6,
     Z_FOLD: 2,
-    Q_SWITCH1: 4 * 257, // 4P
-    Q_SWITCH2: 2056193, // 21 bit prime
-    D_SWITCH: 1024,
-    T_SWITCH: 21,
+    Q_SWITCH1: 4 * 17, // 4P
+    Q_SWITCH2: 114689, // 17 bit prime
+    D_SWITCH: 512,
+    T_SWITCH: 17,
 }
 .expand();
 
@@ -51,8 +53,38 @@ pub fn has_avx2() -> bool {
 //     extract_time: Duration,
 // }
 
+fn encode_record<const D: usize, const N: u64, const BITS_PER: usize, const N_BYTE: usize>(
+    bytes: &[u8; N_BYTE],
+) -> IntModCyclo<D, N> {
+    let bit_iter = BitSlice::<u8, Msb0>::from_slice(bytes);
+    let coeff = bit_iter
+        .chunks(BITS_PER)
+        .map(|c| IntMod::<N>::from(c.iter().fold(0, |acc, b| 2 * acc + *b as u64)))
+        .collect_vec();
+    let coeff_slice: [IntMod<N>; D] = coeff.try_into().unwrap();
+    IntModCyclo::from(coeff_slice)
+}
+
+fn decode_record<const D: usize, const N: u64, const BITS_PER: usize, const N_BYTE: usize>(
+    record: &IntModCyclo<D, N>,
+) -> [u8; N_BYTE] {
+    let bit_iter = record.coeff.iter().flat_map(|x| {
+        u64::from(*x)
+            .into_bitarray::<Msb0>()
+            .into_iter()
+            .skip(64 - BITS_PER)
+            .take(BITS_PER)
+    });
+    let bytes = bit_iter
+        .chunks(8)
+        .into_iter()
+        .map(|c| c.fold(0, |acc, b| 2 * acc + b as u8))
+        .collect_vec();
+    bytes.try_into().unwrap()
+}
+
 pub fn run_spiral<
-    TheSPIRAL: SPIRAL<Record = IntModCyclo<256, 257>, RecordPackedSmall = IntModCyclo<1024, 257>>,
+    TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 17>, RecordPackedSmall = IntModCyclo<512, 17>>,
     I: Iterator<Item = usize>,
 >(
     iter: I,
@@ -95,11 +127,7 @@ pub fn run_spiral<
     eprintln!();
 
     let pre_start = Instant::now();
-    let db = TheSPIRAL::preprocess(
-        records
-            .iter()
-            .map(|x| IntModCyclo::<256, 257>::from(x.map(|x| IntMod::from(x as u64)))),
-    );
+    let db = TheSPIRAL::preprocess(records.iter().map(encode_record::<512, 17, 4, 256>));
     let pre_end = Instant::now();
     eprintln!("{:?} to preprocess", pre_end - pre_start);
 
@@ -130,15 +158,7 @@ pub fn run_spiral<
         let response_extract_end = Instant::now();
         let response_extract_total = response_extract_end - response_extract_start;
 
-        let extracted_record: [u8; 256] = extracted
-            .coeff
-            .iter()
-            .step_by(4)
-            .map(|x| u64::from(*x) as u8)
-            .collect::<Vec<u8>>()
-            .try_into()
-            .unwrap();
-
+        let extracted_record: [u8; 256] = decode_record::<512, 17, 4, 256>(&extracted);
         if extracted_record != records[idx] {
             eprintln!("  **** **** **** **** ERROR **** **** **** ****");
             eprintln!("  protocol failed");
@@ -327,6 +347,23 @@ mod test {
         let compressed = SPIRALTest::response_compress(&pp, &c);
         let extracted = SPIRALTest::response_extract(&qk, &compressed);
         assert_eq!(m, extracted);
+    }
+
+    #[test]
+    fn test_encode_decode() {
+        // 16 x (log2(9) = 3 bits) <=> 6 bytes
+        let bytes = [48_u8, 47, 17, 255, 183, 0];
+        // 00110000 00101111 00010001 11111111 10110111 00000000
+        // 001 100 000 010 111 100 010 001 111 111 111 011 011 100 000 000
+        let encoded = encode_record::<16, 9, 3, 6>(&bytes);
+        assert_eq!(
+            encoded,
+            IntModCyclo::from(
+                [1_u64, 4, 0, 2, 7, 4, 2, 1, 7, 7, 7, 3, 3, 4, 0, 0].map(IntMod::from)
+            )
+        );
+        let decoded = decode_record::<16, 9, 3, 6>(&encoded);
+        assert_eq!(bytes, decoded);
     }
 
     #[test]

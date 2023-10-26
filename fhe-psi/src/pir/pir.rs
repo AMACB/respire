@@ -288,8 +288,14 @@ pub trait SPIRAL {
     type QueryExpanded;
     type ResponseRaw;
     type Response;
+
+    // A single record
     type Record;
+
+    // Packed records from a single response, after compression
     type RecordPackedSmall;
+
+    // Packed records from a single response, before compression
     type RecordPacked;
     type Database;
 
