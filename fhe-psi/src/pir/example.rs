@@ -1,6 +1,5 @@
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
-use crate::math::utils::reverse_bits;
 use crate::pir::pir::{SPIRALImpl, SPIRALParams, SPIRALParamsRaw, SPIRAL};
 use crate::spiral;
 use std::time::Instant;
@@ -18,12 +17,12 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     // Z_COEFF_GSW: 2,
     // Z_CONV: 16088,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
-    P: 256,
+    P: 257,
     D_RECORD: 256,
     ETA1: 9,
     ETA2: 6,
     Z_FOLD: 2,
-    Q_SWITCH1: 1024,    // 4P
+    Q_SWITCH1: 4 * 257, // 4P
     Q_SWITCH2: 2056193, // 21 bit prime
     D_SWITCH: 1024,
     T_SWITCH: 21,
@@ -53,7 +52,7 @@ pub fn has_avx2() -> bool {
 // }
 
 pub fn run_spiral<
-    TheSPIRAL: SPIRAL<Record = IntModCyclo<256, 256>, RecordPackedSmall = IntModCyclo<1024, 256>>,
+    TheSPIRAL: SPIRAL<Record = IntModCyclo<256, 257>, RecordPackedSmall = IntModCyclo<1024, 257>>,
     I: Iterator<Item = usize>,
 >(
     iter: I,
@@ -99,7 +98,7 @@ pub fn run_spiral<
     let db = TheSPIRAL::preprocess(
         records
             .iter()
-            .map(|x| IntModCyclo::<256, 256>::from(x.map(|x| IntMod::from(x as u64)))),
+            .map(|x| IntModCyclo::<256, 257>::from(x.map(|x| IntMod::from(x as u64)))),
     );
     let pre_end = Instant::now();
     eprintln!("{:?} to preprocess", pre_end - pre_start);
@@ -134,11 +133,6 @@ pub fn run_spiral<
         let extracted_record: [u8; 256] = extracted
             .coeff
             .iter()
-            // FIXME
-            .skip(reverse_bits(
-                TheSPIRAL::PACK_RATIO_SMALL,
-                idx % TheSPIRAL::PACK_RATIO_SMALL,
-            ))
             .step_by(4)
             .map(|x| u64::from(*x) as u8)
             .collect::<Vec<u8>>()
@@ -178,6 +172,7 @@ pub fn run_spiral<
 mod test {
     use super::*;
     use crate::math::int_mod_poly::IntModPoly;
+    use crate::math::ring_elem::RingElement;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
 
@@ -241,6 +236,89 @@ mod test {
     }
 
     #[test]
+    fn test_project_hom() {
+        let s = SPIRALTest::encode_setup();
+        let gsw0 = SPIRALTest::encode_gsw(&s, &IntModCyclo::from(0_u64));
+        let gsw1 = SPIRALTest::encode_gsw(&s, &IntModCyclo::from(1_u64));
+        let mut msg_coeff = IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::zero();
+        msg_coeff.coeff[0] = IntMod::from(10_u64);
+        msg_coeff.coeff[1] = IntMod::from(20_u64);
+        msg_coeff.coeff[2] = IntMod::from(11_u64);
+        msg_coeff.coeff[3] = IntMod::from(21_u64);
+        let c = SPIRALTest::encode_regev(&s, &msg_coeff.scale_up_into());
+
+        let auto_key0 = SPIRALTest::auto_setup::<
+            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
+            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        >(SPIRAL_TEST_PARAMS.D + 1, &s);
+        let auto_key1 = SPIRALTest::auto_setup::<
+            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
+            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        >(SPIRAL_TEST_PARAMS.D / 2 + 1, &s);
+
+        let c_proj0 = SPIRALTest::project_hom::<
+            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
+            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        >(0, &c, &gsw0, &auto_key0);
+        let c_proj1 = SPIRALTest::project_hom::<
+            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
+            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        >(0, &c, &gsw1, &auto_key0);
+
+        let c_proj00 = SPIRALTest::project_hom::<
+            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
+            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        >(1, &c_proj0, &gsw0, &auto_key1);
+        let c_proj01 = SPIRALTest::project_hom::<
+            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
+            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        >(1, &c_proj0, &gsw1, &auto_key1);
+        let c_proj10 = SPIRALTest::project_hom::<
+            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
+            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        >(1, &c_proj1, &gsw0, &auto_key1);
+        let c_proj11 = SPIRALTest::project_hom::<
+            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
+            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        >(1, &c_proj1, &gsw1, &auto_key1);
+
+        // let proj0 = SPIRALTest::decode_regev(&s, &c_proj0).round_down_into();
+        let mut proj0_expected = IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::zero();
+        proj0_expected.coeff[0] = IntMod::from(10_u64 * 2);
+        proj0_expected.coeff[2] = IntMod::from(11_u64 * 2);
+
+        let mut proj1_expected = IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::zero();
+        proj1_expected.coeff[0] = IntMod::from(20_u64 * 2);
+        proj1_expected.coeff[2] = IntMod::from(21_u64 * 2);
+
+        assert_eq!(
+            SPIRALTest::decode_regev(&s, &c_proj0).round_down_into(),
+            proj0_expected
+        );
+        assert_eq!(
+            SPIRALTest::decode_regev(&s, &c_proj1).round_down_into(),
+            proj1_expected
+        );
+
+        assert_eq!(
+            SPIRALTest::decode_regev(&s, &c_proj00).round_down_into(),
+            IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::from(10_u64 * 4)
+        );
+        assert_eq!(
+            SPIRALTest::decode_regev(&s, &c_proj01).round_down_into(),
+            IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::from(11_u64 * 4)
+        );
+        assert_eq!(
+            SPIRALTest::decode_regev(&s, &c_proj10).round_down_into(),
+            IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::from(20_u64 * 4)
+        );
+        assert_eq!(
+            SPIRALTest::decode_regev(&s, &c_proj11).round_down_into(),
+            IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::from(21_u64 * 4)
+        );
+    }
+
+    #[test]
     fn test_post_process_only() {
         let (qk, pp) = SPIRALTest::setup();
         let (s_encode, _) = &qk;
@@ -259,9 +337,7 @@ mod test {
     #[ignore]
     #[test]
     fn test_spiral_stress() {
-        // FIXME
-        // let mut rng = ChaCha20Rng::from_entropy();
-        // run_spiral::<SPIRALTest, _>((0..).map(|_| rng.gen_range(0_usize..SPIRALTest::DB_SIZE)));
-        run_spiral::<SPIRALTest, _>(0..SPIRALTest::DB_SIZE);
+        let mut rng = ChaCha20Rng::from_entropy();
+        run_spiral::<SPIRALTest, _>((0..).map(|_| rng.gen_range(0_usize..SPIRALTest::DB_SIZE)));
     }
 }

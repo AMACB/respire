@@ -16,6 +16,7 @@ use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
 use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
+use crate::math::number_theory::mod_pow;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::ring_elem::{NormedRingElement, RingElement};
 use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits};
@@ -447,11 +448,11 @@ impl<
     const GSW_COUNT: usize = (Self::GSW_FOLD_COUNT + Self::GSW_PROJ_COUNT) * T_GSW;
     const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
 
-    fn preprocess<'a, I: ExactSizeIterator<Item = Self::Record>>(
-        records_iter: I,
-    ) -> Self::Database {
+    fn preprocess<I: ExactSizeIterator<Item = Self::Record>>(records_iter: I) -> Self::Database {
         assert_eq!(records_iter.len(), Self::DB_SIZE);
 
+        let proj_inv =
+            IntMod::<P>::from(mod_pow(mod_inverse(2, P), Self::GSW_PROJ_COUNT as u64, P));
         let records_eval: Vec<<Self as SPIRAL>::RingQFast> = records_iter
             .chunks(Self::PACK_RATIO)
             .into_iter()
@@ -464,6 +465,7 @@ impl<
                         record_packed.coeff[Self::PACK_RATIO * coeff_idx + packed_offset] = *coeff;
                     }
                 }
+                record_packed *= proj_inv;
                 <Self as SPIRAL>::RingQFast::from(&record_packed.include_into::<Q>())
             })
             .collect();
@@ -654,7 +656,7 @@ impl<
         let i3 = Instant::now();
 
         // Projecting
-        let result_projected = Self::answer_project(result, gsws_proj.as_slice());
+        let result_projected = Self::answer_project(pp, result, gsws_proj.as_slice());
         let i4 = Instant::now();
 
         eprintln!("(*) answer query expand: {:?}", i1 - i0);
@@ -1079,10 +1081,16 @@ impl<
     }
 
     pub fn answer_project(
-        ct: <Self as SPIRAL>::RegevCiphertext,
+        ((auto_key_gsw0, _, auto_key_gsws), _, _): &<Self as SPIRAL>::PublicParams,
+        mut ct: <Self as SPIRAL>::RegevCiphertext,
         gsws: &[<Self as SPIRAL>::GSWCiphertext],
     ) -> <Self as SPIRAL>::RegevCiphertext {
-        todo!()
+        // TODO use different T/Z/auto keys
+        let auto_keys = [auto_key_gsw0].into_iter().chain(auto_key_gsws);
+        for (iter, (gsw, auto_key)) in gsws.iter().zip(auto_keys).enumerate() {
+            ct = Self::project_hom::<T_COEFF_GSW, Z_COEFF_GSW>(iter, &ct, gsw, auto_key);
+        }
+        ct
     }
 
     pub fn encode_setup() -> <Self as SPIRAL>::RingQFast {
@@ -1164,10 +1172,14 @@ impl<
         c: &<Self as SPIRAL>::RegevCiphertext,
         k: usize,
     ) -> <Self as SPIRAL>::RegevCiphertext {
-        let mut result = Matrix::zero();
-        result[(0, 0)] = c[(0, 0)].mul_x_pow(k);
-        result[(1, 0)] = c[(1, 0)].mul_x_pow(k);
-        result
+        c.map_ring(|x| x.mul_x_pow(k))
+    }
+
+    pub fn gsw_mul_x_pow(
+        c: &<Self as SPIRAL>::GSWCiphertext,
+        k: usize,
+    ) -> <Self as SPIRAL>::GSWCiphertext {
+        c.map_ring(|x| x.mul_x_pow(k))
     }
 
     pub fn auto_setup<const LEN: usize, const BASE: u64>(
@@ -1193,18 +1205,14 @@ impl<
         let c1 = &c[(1, 0)];
         let mut g_inv_tau_c0 = Matrix::<LEN, 1, <Self as SPIRAL>::RingQFast>::zero();
 
-        // 80% + 1%
         <<Self as SPIRAL>::RingQFast as RingElementDecomposable<BASE, LEN>>::decompose_into_mat(
             &c0.auto(*tau_power),
             &mut g_inv_tau_c0,
             0,
             0,
         );
-
-        // 8%
         let mut result = w_mat * &g_inv_tau_c0;
 
-        // 1%
         result[(1, 0)] += &c1.auto(*tau_power);
         result
     }
@@ -1229,7 +1237,7 @@ impl<
         let mut cts_new = Vec::with_capacity(2 * len);
         cts_new.resize(2 * len, Matrix::zero());
         for (j, ct) in cts.iter().enumerate() {
-            let shift_exp = (1 << which_iter);
+            let shift_exp = 1 << which_iter;
             let shift_auto_exp = (shift_exp * auto_key.1) % (2 * D);
 
             let ct_shifted = Self::regev_mul_x_pow(ct, 2 * D - shift_exp);
@@ -1240,6 +1248,21 @@ impl<
             cts_new[j + len] = &ct_shifted + &ct_auto_shifted;
         }
         cts_new
+    }
+
+    pub fn project_hom<const LEN: usize, const BASE: u64>(
+        which_iter: usize,
+        ct: &<Self as SPIRAL>::RegevCiphertext,
+        gsw: &<Self as SPIRAL>::GSWCiphertext,
+        auto_key: &<Self as SPIRAL>::AutoKey<LEN>,
+    ) -> <Self as SPIRAL>::RegevCiphertext {
+        debug_assert_eq!(auto_key.1, D / (1 << which_iter) + 1);
+        let shift_exp = 1 << which_iter;
+        let diff = &Self::gsw_mul_x_pow(gsw, 2 * D - shift_exp) - gsw;
+        let mul = Self::hybrid_mul_hom(ct, &diff);
+        let shifted = &mul + ct;
+        let auto = Self::auto_hom::<LEN, BASE>(auto_key, &shifted);
+        &shifted + &auto
     }
 
     pub fn regev_to_gsw_setup(
