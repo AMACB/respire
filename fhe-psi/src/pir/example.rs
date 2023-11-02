@@ -18,11 +18,13 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     // Z_COEFF_REGEV: 127,
     // Z_COEFF_GSW: 2,
     // Z_CONV: 16088,
+    N_VEC: 4,
+    T_SCAL_TO_VEC: 8,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
     P: 17,
     D_RECORD: 512,
     ETA1: 9,
-    ETA2: 6,
+    ETA2: 9,
     Z_FOLD: 2,
     Q_SWITCH1: 4 * 17, // 4P
     Q_SWITCH2: 114689, // 17 bit prime
@@ -192,6 +194,7 @@ pub fn run_spiral<
 mod test {
     use super::*;
     use crate::math::int_mod_poly::IntModPoly;
+    use crate::math::matrix::Matrix;
     use crate::math::ring_elem::RingElement;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
@@ -336,6 +339,28 @@ mod test {
             SPIRALTest::decode_regev(&s, &c_proj11).round_down_into(),
             IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::from(21_u64 * 4)
         );
+    }
+
+    #[test]
+    fn test_scal_to_vec() {
+        let s_scal = SPIRALTest::encode_setup();
+        let s_vec = SPIRALTest::encode_vec_setup();
+        let s_scal_to_vec = SPIRALTest::scal_to_vec_setup(&s_scal, &s_vec);
+
+        let mut cs =
+            Vec::<<SPIRALTest as SPIRAL>::RegevCiphertext>::with_capacity(SPIRAL_TEST_PARAMS.N_VEC);
+        let mut expected =
+            Matrix::<{ SPIRAL_TEST_PARAMS.N_VEC }, 1, <SPIRALTest as SPIRAL>::RingP>::zero();
+        for i in 0..SPIRAL_TEST_PARAMS.N_VEC {
+            let mu = <SPIRALTest as SPIRAL>::RingP::from(i as u64 + 1_u64);
+            expected[(i, 0)] = mu.clone();
+            cs.push(SPIRALTest::encode_regev(&s_scal, &mu.scale_up_into()));
+        }
+
+        let c_vec = SPIRALTest::scal_to_vec(s_scal_to_vec, cs.as_slice().try_into().unwrap());
+        let decoded = &c_vec.1 - &(&s_vec * &c_vec.0);
+        let actual = decoded.map_ring(|r| <SPIRALTest as SPIRAL>::RingQ::from(r).round_down_into());
+        assert_eq!(expected, actual);
     }
 
     #[test]

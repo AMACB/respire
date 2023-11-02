@@ -39,6 +39,9 @@ pub struct SPIRALImpl<
     const T_CONV: usize,
     const M_CONV: usize,
     const M_GSW: usize,
+    const N_VEC: usize,
+    const Z_SCAL_TO_VEC: u64,
+    const T_SCAL_TO_VEC: usize,
     const NOISE_WIDTH_MILLIONTHS: u64,
     const P: u64,
     const D_RECORD: usize,
@@ -61,6 +64,8 @@ pub struct SPIRALParamsRaw {
     pub T_COEFF_REGEV: usize,
     pub T_COEFF_GSW: usize,
     pub T_CONV: usize,
+    pub N_VEC: usize,
+    pub T_SCAL_TO_VEC: usize,
     pub NOISE_WIDTH_MILLIONTHS: u64,
     pub P: u64,
     pub D_RECORD: usize,
@@ -80,6 +85,7 @@ impl SPIRALParamsRaw {
         let z_coeff_regev = base_from_len(self.T_COEFF_REGEV, q);
         let z_coeff_gsw = base_from_len(self.T_COEFF_GSW, q);
         let z_conv = base_from_len(self.T_CONV, q);
+        let z_scal_to_vec = base_from_len(self.T_SCAL_TO_VEC, q);
         let z_switch = base_from_len(self.T_SWITCH, self.Q_SWITCH2);
         SPIRALParams {
             Q: q,
@@ -94,6 +100,9 @@ impl SPIRALParamsRaw {
             T_COEFF_GSW: self.T_COEFF_GSW,
             Z_CONV: z_conv,
             T_CONV: self.T_CONV,
+            N_VEC: self.N_VEC,
+            T_SCAL_TO_VEC: self.T_SCAL_TO_VEC,
+            Z_SCAL_TO_VEC: z_scal_to_vec,
             M_CONV: 2 * self.T_CONV,
             M_GSW: 2 * self.T_GSW,
             NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
@@ -128,6 +137,9 @@ pub struct SPIRALParams {
     pub T_CONV: usize,
     pub M_CONV: usize,
     pub M_GSW: usize,
+    pub N_VEC: usize,
+    pub Z_SCAL_TO_VEC: u64,
+    pub T_SCAL_TO_VEC: usize,
     pub NOISE_WIDTH_MILLIONTHS: u64,
     pub P: u64,
     pub D_RECORD: usize,
@@ -251,6 +263,9 @@ macro_rules! spiral {
             {$params.T_CONV},
             {$params.M_CONV},
             {$params.M_GSW},
+            {$params.N_VEC},
+            {$params.Z_SCAL_TO_VEC},
+            {$params.T_SCAL_TO_VEC},
             {$params.NOISE_WIDTH_MILLIONTHS},
             {$params.P},
             {$params.D_RECORD},
@@ -275,11 +290,14 @@ pub trait SPIRAL {
     type RegevSmall;
     type GSWCiphertext;
     type EncodingKey;
+    type VecEncodingKey;
     type AutoKey<const T: usize>;
     type AutoKeyRegev;
     type AutoKeyGSW;
     type RegevToGSWKey;
     type KeySwitchKey;
+    type ScalToVecKey;
+    type VecRegevCiphertext;
 
     // Associated types
     type QueryKey;
@@ -343,6 +361,9 @@ impl<
         const T_CONV: usize,
         const M_CONV: usize,
         const M_GSW: usize,
+        const N_VEC: usize,
+        const Z_SCAL_TO_VEC: u64,
+        const T_SCAL_TO_VEC: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
         const P: u64,
         const D_RECORD: usize,
@@ -370,6 +391,9 @@ impl<
         T_CONV,
         M_CONV,
         M_GSW,
+        N_VEC,
+        Z_SCAL_TO_VEC,
+        T_SCAL_TO_VEC,
         NOISE_WIDTH_MILLIONTHS,
         P,
         D_RECORD,
@@ -395,6 +419,7 @@ impl<
     type GSWCiphertext = Matrix<2, M_GSW, Self::RingQFast>;
 
     type EncodingKey = Self::RingQFast;
+    type VecEncodingKey = Matrix<N_VEC, 1, Self::RingQFast>;
     type AutoKey<const T: usize> = (Matrix<2, T, Self::RingQFast>, usize);
     type AutoKeyRegev = Self::AutoKey<T_COEFF_REGEV>;
     type AutoKeyGSW = Self::AutoKey<T_COEFF_GSW>;
@@ -403,6 +428,11 @@ impl<
         Matrix<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>,
         Matrix<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>,
     );
+    type ScalToVecKey = Vec<(
+        Matrix<1, T_SCAL_TO_VEC, Self::RingQFast>,
+        Matrix<N_VEC, T_SCAL_TO_VEC, Self::RingQFast>,
+    )>;
+    type VecRegevCiphertext = (Self::RingQFast, Matrix<N_VEC, 1, Self::RingQFast>);
 
     // Associated types
     type QueryKey = (
@@ -764,6 +794,9 @@ impl<
         const T_CONV: usize,
         const M_CONV: usize,
         const M_GSW: usize,
+        const N_VEC: usize,
+        const Z_SCAL_TO_VEC: u64,
+        const T_SCAL_TO_VEC: usize,
         const NOISE_WIDTH_MILLIONTHS: u64,
         const P: u64,
         const D_RECORD: usize,
@@ -791,6 +824,9 @@ impl<
         T_CONV,
         M_CONV,
         M_GSW,
+        N_VEC,
+        Z_SCAL_TO_VEC,
+        T_SCAL_TO_VEC,
         NOISE_WIDTH_MILLIONTHS,
         P,
         D_RECORD,
@@ -1104,6 +1140,14 @@ impl<
         <Self as SPIRAL>::RingQFast::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng)
     }
 
+    pub fn encode_vec_setup() -> <Self as SPIRAL>::VecEncodingKey {
+        let mut result = Matrix::zero();
+        for i in 0..N_VEC {
+            result[(i, 0)] = Self::encode_setup();
+        }
+        result
+    }
+
     pub fn encode_regev(
         s_encode: &<Self as SPIRAL>::EncodingKey,
         mu: &<Self as SPIRAL>::RingQ,
@@ -1328,5 +1372,50 @@ impl<
         b_t += &(&a_t * s_to);
         b_t += &e_t;
         (a_t, b_t)
+    }
+
+    pub fn scal_to_vec_setup(
+        s_scal: &<Self as SPIRAL>::EncodingKey,
+        s_vec: &<Self as SPIRAL>::VecEncodingKey,
+    ) -> <Self as SPIRAL>::ScalToVecKey {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let mut result = Vec::with_capacity(N_VEC);
+        for i in 0..N_VEC {
+            let mut unit = Matrix::<N_VEC, 1, <Self as SPIRAL>::RingQFast>::zero();
+            unit[(i, 0)] = <Self as SPIRAL>::RingQFast::one();
+            let unit = unit;
+
+            let a_t =
+                Matrix::<1, T_SCAL_TO_VEC, <Self as SPIRAL>::RingQFast>::rand_uniform(&mut rng);
+            let e_mat =
+                Matrix::<N_VEC, T_SCAL_TO_VEC, <Self as SPIRAL>::RingQFast>::rand_discrete_gaussian::<
+                    _,
+                    NOISE_WIDTH_MILLIONTHS,
+                >(&mut rng);
+            let mut bottom = s_vec * &a_t;
+            bottom += &e_mat;
+            let embedding = &(&unit * s_scal)
+                * &build_gadget::<_, 1, T_SCAL_TO_VEC, Z_SCAL_TO_VEC, T_SCAL_TO_VEC>();
+            bottom -= &embedding;
+            result.push((a_t, bottom));
+        }
+        result
+    }
+
+    pub fn scal_to_vec(
+        s_scal_to_vec: <Self as SPIRAL>::ScalToVecKey,
+        cs: &[<Self as SPIRAL>::RegevCiphertext; N_VEC],
+    ) -> <Self as SPIRAL>::VecRegevCiphertext {
+        let mut result_rand = <Self as SPIRAL>::RingQFast::zero();
+        let mut result_embed = Matrix::<N_VEC, 1, <Self as SPIRAL>::RingQFast>::zero();
+        for (i, c) in cs.iter().enumerate() {
+            let c0 = &c[(0, 0)];
+            let c1 = &c[(1, 0)];
+            let g_inv = gadget_inverse_scalar::<_, Z_SCAL_TO_VEC, T_SCAL_TO_VEC>(c0);
+            result_rand += &(&s_scal_to_vec[i].0 * &g_inv)[(0, 0)];
+            result_embed += &(&s_scal_to_vec[i].1 * &g_inv);
+            result_embed[(i, 0)] += c1;
+        }
+        (result_rand, result_embed)
     }
 }
