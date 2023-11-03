@@ -287,10 +287,11 @@ pub trait SPIRAL {
     type RingQ;
     type RingQFast;
     type RegevCiphertext;
-    type RegevSmall;
     type GSWCiphertext;
     type EncodingKey;
     type VecEncodingKey;
+    type VecEncodingKeyQ2;
+    type VecEncodingKeyQ2Small;
     type AutoKey<const T: usize>;
     type AutoKeyRegev;
     type AutoKeyGSW;
@@ -298,11 +299,13 @@ pub trait SPIRAL {
     type KeySwitchKey;
     type ScalToVecKey;
     type VecRegevCiphertext;
+    type VecRegevSmall;
 
     // Associated types
     type QueryKey;
     type PublicParams;
     type Query;
+    type Queries;
     type QueryExpanded;
     type ResponseRaw;
     type Response;
@@ -335,15 +338,17 @@ pub trait SPIRAL {
 
     fn preprocess<I: ExactSizeIterator<Item = Self::Record>>(records_iter: I) -> Self::Database;
     fn setup() -> (Self::QueryKey, Self::PublicParams);
-    fn query(qk: &Self::QueryKey, idx: usize) -> Self::Query;
-    fn answer(pp: &Self::PublicParams, db: &Self::Database, q: &Self::Query) -> Self::ResponseRaw;
+    fn query(qk: &Self::QueryKey, idx: &[usize]) -> Self::Queries;
+    fn answer(pp: &Self::PublicParams, db: &Self::Database, q: &Self::Queries)
+        -> Self::ResponseRaw;
     fn response_compress(pp: &Self::PublicParams, r: &Self::ResponseRaw) -> Self::Response;
     fn response_extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::RecordPackedSmall;
-    fn response_raw_stats(
-        qk: &<Self as SPIRAL>::QueryKey,
-        r: &<Self as SPIRAL>::ResponseRaw,
-        actual: &<Self as SPIRAL>::RecordPackedSmall,
-    ) -> f64;
+
+    // fn response_raw_stats(
+    //     qk: &<Self as SPIRAL>::QueryKey,
+    //     r: &<Self as SPIRAL>::ResponseRaw,
+    //     actual: &<Self as SPIRAL>::RecordPackedSmall,
+    // ) -> f64;
 }
 
 impl<
@@ -412,32 +417,35 @@ impl<
     type RingQ = IntModCyclo<D, Q>;
     type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B>;
     type RegevCiphertext = Matrix<2, 1, Self::RingQFast>;
-    type RegevSmall = (
-        IntModCyclo<D_SWITCH, Q_SWITCH2>,
-        IntModCyclo<D_SWITCH, Q_SWITCH1>,
-    );
     type GSWCiphertext = Matrix<2, M_GSW, Self::RingQFast>;
 
     type EncodingKey = Self::RingQFast;
     type VecEncodingKey = Matrix<N_VEC, 1, Self::RingQFast>;
+    type VecEncodingKeyQ2 = Matrix<N_VEC, 1, IntModCycloEval<D, Q_SWITCH2>>;
+    type VecEncodingKeyQ2Small = Matrix<N_VEC, 1, IntModCycloEval<D_SWITCH, Q_SWITCH2>>;
     type AutoKey<const T: usize> = (Matrix<2, T, Self::RingQFast>, usize);
     type AutoKeyRegev = Self::AutoKey<T_COEFF_REGEV>;
     type AutoKeyGSW = Self::AutoKey<T_COEFF_GSW>;
     type RegevToGSWKey = Matrix<2, M_CONV, Self::RingQFast>;
     type KeySwitchKey = (
         Matrix<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>,
-        Matrix<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>,
+        Matrix<N_VEC, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>,
     );
     type ScalToVecKey = Vec<(
         Matrix<1, T_SCAL_TO_VEC, Self::RingQFast>,
         Matrix<N_VEC, T_SCAL_TO_VEC, Self::RingQFast>,
     )>;
     type VecRegevCiphertext = (Self::RingQFast, Matrix<N_VEC, 1, Self::RingQFast>);
+    type VecRegevSmall = (
+        IntModCyclo<D_SWITCH, Q_SWITCH2>,
+        Matrix<N_VEC, 1, IntModCyclo<D_SWITCH, Q_SWITCH1>>,
+    );
 
     // Associated types
     type QueryKey = (
-        Self::EncodingKey,                    // main key
-        IntModCycloEval<D_SWITCH, Q_SWITCH2>, // small ring key
+        Self::EncodingKey,
+        Self::VecEncodingKey,
+        Self::VecEncodingKeyQ2Small,
     );
     type PublicParams = (
         (
@@ -447,17 +455,19 @@ impl<
         ),
         Self::RegevToGSWKey,
         Self::KeySwitchKey,
+        Self::ScalToVecKey,
     );
     type Query = Self::RegevCiphertext;
+    type Queries = Vec<Self::Query>;
     type QueryExpanded = (
         Vec<Self::RegevCiphertext>,
         Vec<Self::GSWCiphertext>,
         Vec<Self::GSWCiphertext>,
     );
-    type ResponseRaw = Self::RegevCiphertext;
-    type Response = Self::RegevSmall;
+    type ResponseRaw = Self::VecRegevCiphertext;
+    type Response = Self::VecRegevSmall;
     type Record = IntModCyclo<D_RECORD, P>;
-    type RecordPackedSmall = IntModCyclo<D_SWITCH, P>;
+    type RecordPackedSmall = Matrix<N_VEC, 1, IntModCyclo<D_SWITCH, P>>;
     type RecordPacked = IntModCyclo<D, P>;
 
     /// We structure the database as `[2] x [D / S] x [DIM2_SIZE] x [DIM1_SIZE] x [S]` for optimal first dimension
@@ -565,20 +575,31 @@ impl<
         // Regev/GSW secret key
         let s_encode = Self::encode_setup();
 
+        // Vector regev secret key
+        let s_vec: Self::VecEncodingKey = Self::encode_vec_setup();
+
         // Small ring key
-        let s_small = {
+        let s_small: Self::VecEncodingKeyQ2Small = {
             let mut rng = ChaCha20Rng::from_entropy();
-            IntModCycloEval::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng)
+            let mut result = Matrix::zero();
+            for i in 0..N_VEC {
+                result[(i, 0)] =
+                    IntModCycloEval::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+            }
+            result
         };
 
         // Key switching key
-        let s_encode_q2 = IntModCycloEval::from(IntModCyclo::from(
-            IntModCyclo::<D, Q>::from(&s_encode)
-                .coeff
-                .map(|x| IntMod::from(i64::from(x))),
-        ));
-        let s_small_q2 = IntModCycloEval::from(IntModCyclo::from(&s_small).include_dim());
-        let s_switch = Self::key_switch_setup(&s_encode_q2, &s_small_q2);
+        let s_vec_q2 = s_vec.map_ring(|r| {
+            IntModCycloEval::from(IntModCyclo::from(
+                IntModCyclo::<D, Q>::from(r)
+                    .coeff
+                    .map(|x| IntMod::from(i64::from(x))),
+            ))
+        });
+        let s_small_q2 =
+            s_small.map_ring(|r| IntModCycloEval::from(IntModCyclo::from(r).include_dim()));
+        let s_switch = Self::key_switch_setup(&s_vec_q2, &s_small_q2);
 
         // Automorphism keys
         let auto_key_first = Self::auto_setup::<T_COEFF_GSW, Z_COEFF_GSW>(D + 1, &s_encode);
@@ -603,180 +624,207 @@ impl<
         // Regev to GSW key
         let regev_to_gsw_key = Self::regev_to_gsw_setup(&s_encode);
 
+        // Scalar to vector key
+        let scal_to_vec_key = Self::scal_to_vec_setup(&s_encode, &s_vec);
+
         (
-            (s_encode, s_small),
+            (s_encode, s_vec, s_small),
             (
                 (auto_key_first, auto_keys_regev, auto_keys_gsw),
                 regev_to_gsw_key,
                 s_switch,
+                scal_to_vec_key,
             ),
         )
     }
 
     fn query(
-        (s_encode, _s_small): &<Self as SPIRAL>::QueryKey,
-        idx: usize,
-    ) -> <Self as SPIRAL>::Query {
-        assert!(idx < Self::DB_SIZE);
-        let (idx, proj_idx) = (idx / Self::PACK_RATIO, idx % Self::PACK_RATIO);
-        let (idx_i, idx_j) = (idx / Self::PACKED_DIM2_SIZE, idx % Self::PACKED_DIM2_SIZE);
+        (s_encode, _, _): &<Self as SPIRAL>::QueryKey,
+        indices: &[usize],
+    ) -> <Self as SPIRAL>::Queries {
+        let mut result = Vec::with_capacity(indices.len());
+        for idx in indices.iter().copied() {
+            assert!(idx < Self::DB_SIZE);
+            let (idx, proj_idx) = (idx / Self::PACK_RATIO, idx % Self::PACK_RATIO);
+            let (idx_i, idx_j) = (idx / Self::PACKED_DIM2_SIZE, idx % Self::PACKED_DIM2_SIZE);
 
-        let mut packed_vec: Vec<IntMod<Q>> = iter::repeat(IntMod::zero()).take(D).collect();
+            let mut packed_vec: Vec<IntMod<Q>> = iter::repeat(IntMod::zero()).take(D).collect();
 
-        let inv_even = IntMod::from(mod_inverse(1 << (1 + Self::REGEV_EXPAND_ITERS), Q));
-        for i in 0_usize..Self::PACKED_DIM1_SIZE {
-            packed_vec[2 * i] = (IntMod::<P>::from((i == idx_i) as u64)).scale_up_into() * inv_even;
-        }
+            let inv_even = IntMod::from(mod_inverse(1 << (1 + Self::REGEV_EXPAND_ITERS), Q));
+            for i in 0_usize..Self::PACKED_DIM1_SIZE {
+                packed_vec[2 * i] =
+                    (IntMod::<P>::from((i == idx_i) as u64)).scale_up_into() * inv_even;
+            }
 
-        // Think of the odd entries of packed as [ETA2] x [Z_FOLD - 1] x [T_GSW] + [GSW_PROJ_COUNT] x [T_GSW]
-        let inv_odd = IntMod::from(mod_inverse(1 << (1 + Self::GSW_EXPAND_ITERS), Q));
+            // Think of the odd entries of packed as [ETA2] x [Z_FOLD - 1] x [T_GSW] + [GSW_PROJ_COUNT] x [T_GSW]
+            let inv_odd = IntMod::from(mod_inverse(1 << (1 + Self::GSW_EXPAND_ITERS), Q));
 
-        // [ETA2] x [Z_FOLD - 1] x [T_GSW] part
-        let mut digits = Vec::with_capacity(ETA2);
-        let mut idx_j_curr = idx_j;
-        for _ in 0..ETA2 {
-            digits.push(idx_j_curr % Z_FOLD);
-            idx_j_curr /= Z_FOLD;
-        }
+            // [ETA2] x [Z_FOLD - 1] x [T_GSW] part
+            let mut digits = Vec::with_capacity(ETA2);
+            let mut idx_j_curr = idx_j;
+            for _ in 0..ETA2 {
+                digits.push(idx_j_curr % Z_FOLD);
+                idx_j_curr /= Z_FOLD;
+            }
 
-        for (digit_idx, digit) in digits.into_iter().rev().enumerate() {
-            for which in 0..Z_FOLD - 1 {
-                let mut msg = IntMod::from((digit == which + 1) as u64);
+            for (digit_idx, digit) in digits.into_iter().rev().enumerate() {
+                for which in 0..Z_FOLD - 1 {
+                    let mut msg = IntMod::from((digit == which + 1) as u64);
+                    for gsw_pow in 0..T_GSW {
+                        let pack_idx = T_GSW * ((Z_FOLD - 1) * digit_idx + which) + gsw_pow;
+                        packed_vec[2 * pack_idx + 1] = msg * inv_odd;
+                        msg *= IntMod::from(Z_GSW);
+                    }
+                }
+            }
+
+            // [GSW_PROJ_COUNT] x [T_GSW] part
+            let mut proj_bits = Vec::with_capacity(Self::GSW_PROJ_COUNT);
+            let mut proj_idx_curr = proj_idx;
+            for _ in 0..Self::GSW_PROJ_COUNT {
+                proj_bits.push(proj_idx_curr % 2);
+                proj_idx_curr /= 2;
+            }
+
+            let gsw_proj_offset = ETA2 * (Z_FOLD - 1) * T_GSW;
+            for (proj_idx, proj_bit) in proj_bits.into_iter().rev().enumerate() {
+                let mut msg = IntMod::from(proj_bit as u64);
                 for gsw_pow in 0..T_GSW {
-                    let pack_idx = T_GSW * ((Z_FOLD - 1) * digit_idx + which) + gsw_pow;
+                    let pack_idx = gsw_proj_offset + T_GSW * proj_idx + gsw_pow;
                     packed_vec[2 * pack_idx + 1] = msg * inv_odd;
                     msg *= IntMod::from(Z_GSW);
                 }
             }
-        }
 
-        // [GSW_PROJ_COUNT] x [T_GSW] part
-        let mut proj_bits = Vec::with_capacity(Self::GSW_PROJ_COUNT);
-        let mut proj_idx_curr = proj_idx;
-        for _ in 0..Self::GSW_PROJ_COUNT {
-            proj_bits.push(proj_idx_curr % 2);
-            proj_idx_curr /= 2;
+            let mu: IntModCyclo<D, Q> = packed_vec.into();
+            result.push(Self::encode_regev(s_encode, &mu))
         }
-
-        let gsw_proj_offset = ETA2 * (Z_FOLD - 1) * T_GSW;
-        for (proj_idx, proj_bit) in proj_bits.into_iter().rev().enumerate() {
-            let mut msg = IntMod::from(proj_bit as u64);
-            for gsw_pow in 0..T_GSW {
-                let pack_idx = gsw_proj_offset + T_GSW * proj_idx + gsw_pow;
-                packed_vec[2 * pack_idx + 1] = msg * inv_odd;
-                msg *= IntMod::from(Z_GSW);
-            }
-        }
-
-        let mu: IntModCyclo<D, Q> = packed_vec.into();
-        Self::encode_regev(s_encode, &mu)
+        result
     }
 
     fn answer(
         pp: &<Self as SPIRAL>::PublicParams,
         db: &<Self as SPIRAL>::Database,
-        q: &<Self as SPIRAL>::Query,
+        qs: &<Self as SPIRAL>::Queries,
     ) -> <Self as SPIRAL>::ResponseRaw {
-        let i0 = Instant::now();
+        assert_eq!(qs.len(), N_VEC);
+        let mut scalar_results = Vec::with_capacity(qs.len());
+        let (_, _, _, scal_to_vec_key) = pp;
+        for q in qs {
+            let i0 = Instant::now();
 
-        // Query expansion
-        let (regevs, gsws_fold, gsws_proj) = Self::answer_query_expand(pp, q);
-        let i1 = Instant::now();
+            // Query expansion
+            let (regevs, gsws_fold, gsws_proj) = Self::answer_query_expand(pp, q);
+            let i1 = Instant::now();
 
-        // First dimension
-        let first_dim_folded = Self::answer_first_dim(db, &regevs);
-        let i2 = Instant::now();
+            // First dimension
+            let first_dim_folded = Self::answer_first_dim(db, &regevs);
+            let i2 = Instant::now();
 
-        // Folding
-        let result = Self::answer_fold(first_dim_folded, gsws_fold.as_slice());
-        let i3 = Instant::now();
+            // Folding
+            let result = Self::answer_fold(first_dim_folded, gsws_fold.as_slice());
+            let i3 = Instant::now();
 
-        // Projecting
-        let result_projected = Self::answer_project(pp, result, gsws_proj.as_slice());
-        let i4 = Instant::now();
+            // Projecting
+            let result_projected = Self::answer_project(pp, result, gsws_proj.as_slice());
+            let i4 = Instant::now();
 
-        eprintln!("(*) answer query expand: {:?}", i1 - i0);
-        eprintln!("(*) answer first dim: {:?}", i2 - i1);
-        eprintln!("(*) answer fold: {:?}", i3 - i2);
-        eprintln!("(*) answer project: {:?}", i4 - i3);
-        result_projected
+            eprintln!("(*) answer query expand: {:?}", i1 - i0);
+            eprintln!("(*) answer first dim: {:?}", i2 - i1);
+            eprintln!("(*) answer fold: {:?}", i3 - i2);
+            eprintln!("(*) answer project: {:?}", i4 - i3);
+
+            scalar_results.push(result_projected);
+        }
+        Self::scal_to_vec(
+            scal_to_vec_key,
+            scalar_results.as_slice().try_into().unwrap(),
+        )
     }
 
     fn response_compress(
-        (_auto_keys, _regev_to_gsw_key, (a_t, b_t)): &Self::PublicParams,
-        r: &Self::ResponseRaw,
+        (_, _, (a_t, b_mat), _): &Self::PublicParams,
+        (c_r, c_m): &Self::ResponseRaw,
     ) -> Self::Response {
-        let c0 = IntModCyclo::<D, Q>::from(&r[(0, 0)]);
-        let c1 = IntModCyclo::<D, Q>::from(&r[(1, 0)]);
-        let mut c0_scaled = IntModCyclo::zero();
-        for (c0_scaled_coeff, c0_coeff) in c0_scaled.coeff.iter_mut().zip(c0.coeff) {
+        let c_r = IntModCyclo::<D, Q>::from(c_r);
+        let c_m = c_m.map_ring(|r| IntModCyclo::<D, Q>::from(r));
+        let mut cr_scaled = IntModCyclo::zero();
+        for (cr_scaled_coeff, c0_coeff) in cr_scaled.coeff.iter_mut().zip(c_r.coeff) {
             let numer = Q_SWITCH2 as u128 * u64::from(c0_coeff) as u128;
             let denom = Q as u128;
             let div = (numer + denom / 2) / denom;
-            *c0_scaled_coeff = IntMod::from(div as u64);
+            *cr_scaled_coeff = IntMod::from(div as u64);
         }
-        let g_inv_c0_scaled = gadget_inverse_scalar::<_, Z_SWITCH, T_SWITCH>(&c0_scaled)
+        let g_inv_cr_scaled = gadget_inverse_scalar::<_, Z_SWITCH, T_SWITCH>(&cr_scaled)
             .map_ring(|x| IntModCycloEval::from(x));
-        let c0_hat: IntModCyclo<D_SWITCH, Q_SWITCH2> =
-            IntModCyclo::from(&(a_t * &g_inv_c0_scaled)[(0, 0)]).project_dim();
-        let c1_hat: IntModCyclo<D_SWITCH, Q_SWITCH1> = {
-            let b_t_g_inv = IntModCyclo::from(&(b_t * &g_inv_c0_scaled)[(0, 0)]);
-            let mut result = IntModCyclo::<D, Q_SWITCH1>::zero();
-            for (result_coeff, (c1_coeff, b_t_g_inv_coeff)) in result
-                .coeff
-                .iter_mut()
-                .zip(c1.coeff.iter().copied().zip(b_t_g_inv.coeff))
-            {
-                let numer = Q_SWITCH1 as u128 * Q_SWITCH2 as u128 * u64::from(c1_coeff) as u128
-                    + Q as u128 * Q_SWITCH1 as u128 * u64::from(b_t_g_inv_coeff) as u128;
-                let denom = Q as u128 * Q_SWITCH2 as u128;
-                let div = (numer + denom / 2) / denom;
-                *result_coeff = IntMod::from(div as u64);
+        let c_r_hat: IntModCyclo<D_SWITCH, Q_SWITCH2> =
+            IntModCyclo::from(&(a_t * &g_inv_cr_scaled)[(0, 0)]).project_dim();
+        let c_m_hat: Matrix<N_VEC, 1, IntModCyclo<D_SWITCH, Q_SWITCH1>> = {
+            let b_g_inv = (b_mat * &g_inv_cr_scaled).map_ring(|r| IntModCyclo::from(r));
+            let mut result = Matrix::<N_VEC, 1, IntModCyclo<D, Q_SWITCH1>>::zero();
+            for i in 0..N_VEC {
+                for (result_coeff, (c1_coeff, b_t_g_inv_coeff)) in result[(i, 0)]
+                    .coeff
+                    .iter_mut()
+                    .zip(c_m[(i, 0)].coeff.iter().copied().zip(b_g_inv[(i, 0)].coeff))
+                {
+                    let numer = Q_SWITCH1 as u128 * Q_SWITCH2 as u128 * u64::from(c1_coeff) as u128
+                        + Q as u128 * Q_SWITCH1 as u128 * u64::from(b_t_g_inv_coeff) as u128;
+                    let denom = Q as u128 * Q_SWITCH2 as u128;
+                    let div = (numer + denom / 2) / denom;
+                    *result_coeff = IntMod::from(div as u64);
+                }
             }
-            result.project_dim()
+            result.map_ring(|x| x.project_dim())
         };
-        (c0_hat, c1_hat)
+        (c_r_hat, c_m_hat)
     }
 
     fn response_extract(
-        (_s_encode, s_small): &<Self as SPIRAL>::QueryKey,
-        (c0_hat, c1_hat): &<Self as SPIRAL>::Response,
+        (_, _, s_small): &<Self as SPIRAL>::QueryKey,
+        (c_r_hat, c_m_hat): &<Self as SPIRAL>::Response,
     ) -> <Self as SPIRAL>::RecordPackedSmall {
-        let neg_s_small_c0 = IntModCyclo::from(-&(s_small * &IntModCycloEval::from(c0_hat)));
-        let mut result = IntModCyclo::zero();
-        for (result_coeff, neg_s_small_c0_coeff) in
-            result.coeff.iter_mut().zip(neg_s_small_c0.coeff)
-        {
-            let numer = Q_SWITCH1 as u128 * u64::from(neg_s_small_c0_coeff) as u128;
-            let denom = Q_SWITCH2 as u128;
-            let div = (numer + denom / 2) / denom;
-            *result_coeff = IntMod::from(div as u64);
+        let neg_s_small_cr =
+            (-&(s_small * &IntModCycloEval::from(c_r_hat))).map_ring(|r| IntModCyclo::from(r));
+        let mut result = Matrix::<N_VEC, 1, IntModCyclo<D_SWITCH, Q_SWITCH1>>::zero();
+        for i in 0..N_VEC {
+            for (result_coeff, neg_s_small_c0_coeff) in result[(i, 0)]
+                .coeff
+                .iter_mut()
+                .zip(neg_s_small_cr[(i, 0)].coeff)
+            {
+                let numer = Q_SWITCH1 as u128 * u64::from(neg_s_small_c0_coeff) as u128;
+                let denom = Q_SWITCH2 as u128;
+                let div = (numer + denom / 2) / denom;
+                *result_coeff = IntMod::from(div as u64);
+            }
+            result[(i, 0)] += &c_m_hat[(i, 0)];
         }
-        result += c1_hat;
-        result.round_down_into()
+        result.map_ring(|r| r.round_down_into())
     }
 
-    fn response_raw_stats(
-        (s_encode, _s_small): &<Self as SPIRAL>::QueryKey,
-        r: &<Self as SPIRAL>::ResponseRaw,
-        actual: &<Self as SPIRAL>::RecordPackedSmall,
-    ) -> f64 {
-        let actual_scaled = actual.scale_up_into();
-        let decoded = Self::decode_regev(s_encode, r).project_dim();
-        let diff = &actual_scaled - &decoded;
-
-        let mut sum = 0_f64;
-        let mut samples = 0_usize;
-
-        for e in diff.coeff.iter() {
-            let e_sq = (e.norm() as f64) * (e.norm() as f64);
-            sum += e_sq;
-            samples += 1;
-        }
-
-        // sigma^2 is the variance of the relative noise (noise divided by Q) of the coefficients. Return sigma.
-        (sum / samples as f64).sqrt() / (Q as f64)
-    }
+    // fn response_raw_stats(
+    //     (s, s_vec, s_small): &<Self as SPIRAL>::QueryKey,
+    //     r: &<Self as SPIRAL>::ResponseRaw,
+    //     actual: &<Self as SPIRAL>::RecordPackedSmall,
+    // ) -> f64 {
+    //     // FIXME
+    //     let actual_scaled = actual.scale_up_into();
+    //     let decoded = Self::decode_regev(s_encode, r).project_dim();
+    //     let diff = &actual_scaled - &decoded;
+    //
+    //     let mut sum = 0_f64;
+    //     let mut samples = 0_usize;
+    //
+    //     for e in diff.coeff.iter() {
+    //         let e_sq = (e.norm() as f64) * (e.norm() as f64);
+    //         sum += e_sq;
+    //         samples += 1;
+    //     }
+    //
+    //     // sigma^2 is the variance of the relative noise (noise divided by Q) of the coefficients. Return sigma.
+    //     (sum / samples as f64).sqrt() / (Q as f64)
+    // }
 }
 
 impl<
@@ -841,7 +889,7 @@ impl<
     >
 {
     pub fn answer_query_expand(
-        ((auto_key_first, auto_keys_regev, auto_keys_gsw), regev_to_gsw_key, _key_switch_key): &<Self as SPIRAL>::PublicParams,
+        ((auto_key_first, auto_keys_regev, auto_keys_gsw), regev_to_gsw_key, _, _): &<Self as SPIRAL>::PublicParams,
         q: &<Self as SPIRAL>::Query,
     ) -> <Self as SPIRAL>::QueryExpanded {
         assert_eq!(auto_keys_regev.len(), Self::REGEV_EXPAND_ITERS);
@@ -1123,7 +1171,7 @@ impl<
     }
 
     pub fn answer_project(
-        ((auto_key_gsw0, _, auto_key_gsws), _, _): &<Self as SPIRAL>::PublicParams,
+        ((auto_key_gsw0, _, auto_key_gsws), _, _, _): &<Self as SPIRAL>::PublicParams,
         mut ct: <Self as SPIRAL>::RegevCiphertext,
         gsws: &[<Self as SPIRAL>::GSWCiphertext],
     ) -> <Self as SPIRAL>::RegevCiphertext {
@@ -1163,6 +1211,19 @@ impl<
         c1 += &<Self as SPIRAL>::RingQFast::from(mu);
         c[(1, 0)] = c1;
         c
+    }
+
+    pub fn encode_vec_regev(
+        s_vec: &<Self as SPIRAL>::VecEncodingKey,
+        mu: &Matrix<N_VEC, 1, <Self as SPIRAL>::RingQ>,
+    ) -> <Self as SPIRAL>::VecRegevCiphertext {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let c_r = <Self as SPIRAL>::RingQFast::rand_uniform(&mut rng);
+        let e = Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+        let mut c_m = s_vec * &c_r;
+        c_m += &e;
+        c_m += &mu.map_ring(|r| <Self as SPIRAL>::RingQFast::from(r));
+        (c_r, c_m)
     }
 
     pub fn decode_regev(
@@ -1357,21 +1418,21 @@ impl<
     }
 
     pub fn key_switch_setup(
-        s_from: &IntModCycloEval<D, Q_SWITCH2>,
-        s_to: &IntModCycloEval<D, Q_SWITCH2>,
+        s_from: &<Self as SPIRAL>::VecEncodingKeyQ2,
+        s_to: &<Self as SPIRAL>::VecEncodingKeyQ2,
     ) -> <Self as SPIRAL>::KeySwitchKey {
         let mut rng = ChaCha20Rng::from_entropy();
         let a_t = Matrix::<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>::rand_uniform(&mut rng);
-        let e_t = Matrix::<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>::rand_discrete_gaussian::<
-            _,
-            NOISE_WIDTH_MILLIONTHS,
-        >(&mut rng);
-        let mut b_t =
-            &build_gadget::<IntModCycloEval<D, Q_SWITCH2>, 1, T_SWITCH, Z_SWITCH, T_SWITCH>()
-                * &(-s_from);
-        b_t += &(&a_t * s_to);
-        b_t += &e_t;
-        (a_t, b_t)
+        let e_mat =
+            Matrix::<N_VEC, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>::rand_discrete_gaussian::<
+                _,
+                NOISE_WIDTH_MILLIONTHS,
+            >(&mut rng);
+        let mut b_mat = &(-s_from)
+            * &build_gadget::<IntModCycloEval<D, Q_SWITCH2>, 1, T_SWITCH, Z_SWITCH, T_SWITCH>();
+        b_mat += &(s_to * &a_t);
+        b_mat += &e_mat;
+        (a_t, b_mat)
     }
 
     pub fn scal_to_vec_setup(
@@ -1403,7 +1464,7 @@ impl<
     }
 
     pub fn scal_to_vec(
-        s_scal_to_vec: <Self as SPIRAL>::ScalToVecKey,
+        s_scal_to_vec: &<Self as SPIRAL>::ScalToVecKey,
         cs: &[<Self as SPIRAL>::RegevCiphertext; N_VEC],
     ) -> <Self as SPIRAL>::VecRegevCiphertext {
         let mut result_rand = <Self as SPIRAL>::RingQFast::zero();

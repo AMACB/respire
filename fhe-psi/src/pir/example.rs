@@ -1,5 +1,6 @@
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_cyclo::IntModCyclo;
+use crate::math::matrix::Matrix;
 use crate::pir::pir::{SPIRALImpl, SPIRALParams, SPIRALParamsRaw, SPIRAL};
 use crate::spiral;
 use bitvec::prelude::*;
@@ -86,7 +87,7 @@ fn decode_record<const D: usize, const N: u64, const BITS_PER: usize, const N_BY
 }
 
 pub fn run_spiral<
-    TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 17>, RecordPackedSmall = IntModCyclo<512, 17>>,
+    TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 17>, RecordPackedSmall = Matrix<4, 1, IntModCyclo<512, 17>>>,
     I: Iterator<Item = usize>,
 >(
     iter: I,
@@ -138,10 +139,10 @@ pub fn run_spiral<
     let setup_end = Instant::now();
     eprintln!("{:?} to setup", setup_end - setup_start);
 
-    let check = |idx: usize| {
-        eprintln!("Testing record index {}", idx);
+    let check = |indices: &[usize]| {
+        eprintln!("Testing record indices {:?}", &indices);
         let query_start = Instant::now();
-        let q = TheSPIRAL::query(&qk, idx);
+        let q = TheSPIRAL::query(&qk, indices);
         let query_end = Instant::now();
         let query_total = query_end - query_start;
 
@@ -160,13 +161,16 @@ pub fn run_spiral<
         let response_extract_end = Instant::now();
         let response_extract_total = response_extract_end - response_extract_start;
 
-        let extracted_record: [u8; 256] = decode_record::<512, 17, 4, 256>(&extracted);
-        if extracted_record != records[idx] {
-            eprintln!("  **** **** **** **** ERROR **** **** **** ****");
-            eprintln!("  protocol failed");
-            dbg!(idx, idx / TheSPIRAL::PACK_RATIO);
-            dbg!(extracted_record);
-            dbg!(extracted);
+        for i in 0..4 {
+            let extracted_record: [u8; 256] = decode_record::<512, 17, 4, 256>(&extracted[(i, 0)]);
+            let idx = indices[i];
+            if extracted_record != records[idx] {
+                eprintln!("  **** **** **** **** ERROR **** **** **** ****");
+                eprintln!("  protocol failed");
+                dbg!(idx, idx / TheSPIRAL::PACK_RATIO);
+                dbg!(&extracted_record);
+                dbg!(&extracted);
+            }
         }
         eprintln!(
             "  {:?} total",
@@ -185,8 +189,9 @@ pub fn run_spiral<
         // );
     };
 
-    for i in iter {
-        check(i);
+    for chunk in iter.chunks(SPIRAL_TEST_PARAMS.N_VEC).into_iter() {
+        let c_vec = chunk.collect_vec();
+        check(c_vec.as_slice());
     }
 }
 
@@ -357,7 +362,7 @@ mod test {
             cs.push(SPIRALTest::encode_regev(&s_scal, &mu.scale_up_into()));
         }
 
-        let c_vec = SPIRALTest::scal_to_vec(s_scal_to_vec, cs.as_slice().try_into().unwrap());
+        let c_vec = SPIRALTest::scal_to_vec(&s_scal_to_vec, cs.as_slice().try_into().unwrap());
         let decoded = &c_vec.1 - &(&s_vec * &c_vec.0);
         let actual = decoded.map_ring(|r| <SPIRALTest as SPIRAL>::RingQ::from(r).round_down_into());
         assert_eq!(expected, actual);
@@ -366,9 +371,13 @@ mod test {
     #[test]
     fn test_post_process_only() {
         let (qk, pp) = SPIRALTest::setup();
-        let (s_encode, _) = &qk;
-        let m = <SPIRALTest as SPIRAL>::RecordPackedSmall::from(177_u64);
-        let c = SPIRALTest::encode_regev(s_encode, &m.include_dim().scale_up_into());
+        let (_, s_vec, _) = &qk;
+        let mut m = <SPIRALTest as SPIRAL>::RecordPackedSmall::zero();
+        for i in 0..SPIRAL_TEST_PARAMS.N_VEC {
+            m[(i, 0)] = IntModCyclo::from(177_u64 + i as u64)
+        }
+        let c =
+            SPIRALTest::encode_vec_regev(s_vec, &m.map_ring(|r| r.include_dim().scale_up_into()));
         let compressed = SPIRALTest::response_compress(&pp, &c);
         let extracted = SPIRALTest::response_extract(&qk, &compressed);
         assert_eq!(m, extracted);
