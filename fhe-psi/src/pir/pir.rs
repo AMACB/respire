@@ -18,7 +18,7 @@ use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
 use crate::math::number_theory::mod_pow;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
-use crate::math::ring_elem::{NormedRingElement, RingElement};
+use crate::math::ring_elem::RingElement;
 use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits};
 
 use crate::math::simd_utils::*;
@@ -736,10 +736,15 @@ impl<
 
             scalar_results.push(result_projected);
         }
-        Self::scal_to_vec(
+
+        let ii0 = Instant::now();
+        let vec = Self::scal_to_vec(
             scal_to_vec_key,
             scalar_results.as_slice().try_into().unwrap(),
-        )
+        );
+        let ii1 = Instant::now();
+        eprintln!("(**) answer scal to vec: {:?}", ii1 - ii0);
+        vec
     }
 
     fn response_compress(
