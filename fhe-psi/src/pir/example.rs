@@ -19,6 +19,7 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     // Z_COEFF_REGEV: 127,
     // Z_COEFF_GSW: 2,
     // Z_CONV: 16088,
+    N_PACK: 1,
     N_VEC: 4,
     T_SCAL_TO_VEC: 8,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,

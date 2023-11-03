@@ -39,6 +39,7 @@ pub struct SPIRALImpl<
     const T_CONV: usize,
     const M_CONV: usize,
     const M_GSW: usize,
+    const N_PACK: usize,
     const N_VEC: usize,
     const Z_SCAL_TO_VEC: u64,
     const T_SCAL_TO_VEC: usize,
@@ -64,6 +65,7 @@ pub struct SPIRALParamsRaw {
     pub T_COEFF_REGEV: usize,
     pub T_COEFF_GSW: usize,
     pub T_CONV: usize,
+    pub N_PACK: usize,
     pub N_VEC: usize,
     pub T_SCAL_TO_VEC: usize,
     pub NOISE_WIDTH_MILLIONTHS: u64,
@@ -100,6 +102,7 @@ impl SPIRALParamsRaw {
             T_COEFF_GSW: self.T_COEFF_GSW,
             Z_CONV: z_conv,
             T_CONV: self.T_CONV,
+            N_PACK: self.N_PACK,
             N_VEC: self.N_VEC,
             T_SCAL_TO_VEC: self.T_SCAL_TO_VEC,
             Z_SCAL_TO_VEC: z_scal_to_vec,
@@ -137,6 +140,7 @@ pub struct SPIRALParams {
     pub T_CONV: usize,
     pub M_CONV: usize,
     pub M_GSW: usize,
+    pub N_PACK: usize,
     pub N_VEC: usize,
     pub Z_SCAL_TO_VEC: u64,
     pub T_SCAL_TO_VEC: usize,
@@ -263,6 +267,7 @@ macro_rules! spiral {
             {$params.T_CONV},
             {$params.M_CONV},
             {$params.M_GSW},
+            {$params.N_PACK},
             {$params.N_VEC},
             {$params.Z_SCAL_TO_VEC},
             {$params.T_SCAL_TO_VEC},
@@ -366,6 +371,7 @@ impl<
         const T_CONV: usize,
         const M_CONV: usize,
         const M_GSW: usize,
+        const N_PACK: usize,
         const N_VEC: usize,
         const Z_SCAL_TO_VEC: u64,
         const T_SCAL_TO_VEC: usize,
@@ -396,6 +402,7 @@ impl<
         T_CONV,
         M_CONV,
         M_GSW,
+        N_PACK,
         N_VEC,
         Z_SCAL_TO_VEC,
         T_SCAL_TO_VEC,
@@ -707,41 +714,43 @@ impl<
         db: &<Self as SPIRAL>::Database,
         qs: &<Self as SPIRAL>::Queries,
     ) -> <Self as SPIRAL>::ResponseRaw {
-        assert_eq!(qs.len(), N_VEC);
-        let mut scalar_results = Vec::with_capacity(qs.len());
+        assert_eq!(qs.len(), N_VEC * N_PACK);
+        let mut scalar_cts = Vec::with_capacity(qs.len());
         let (_, _, _, scal_to_vec_key) = pp;
-        for q in qs {
-            let i0 = Instant::now();
+        for vec_idx in 0..N_VEC {
+            let mut scalar_ct = Matrix::zero();
+            for pack_idx in 0..N_PACK {
+                let q = &qs[vec_idx * N_PACK + pack_idx];
 
-            // Query expansion
-            let (regevs, gsws_fold, gsws_proj) = Self::answer_query_expand(pp, q);
-            let i1 = Instant::now();
+                let i0 = Instant::now();
+                // Query expansion
+                let (regevs, gsws_fold, gsws_proj) = Self::answer_query_expand(pp, q);
+                let i1 = Instant::now();
 
-            // First dimension
-            let first_dim_folded = Self::answer_first_dim(db, &regevs);
-            let i2 = Instant::now();
+                // First dimension
+                let first_dim_folded = Self::answer_first_dim(db, &regevs);
+                let i2 = Instant::now();
 
-            // Folding
-            let result = Self::answer_fold(first_dim_folded, gsws_fold.as_slice());
-            let i3 = Instant::now();
+                // Folding
+                let result = Self::answer_fold(first_dim_folded, gsws_fold.as_slice());
+                let i3 = Instant::now();
 
-            // Projecting
-            let result_projected = Self::answer_project(pp, result, gsws_proj.as_slice());
-            let i4 = Instant::now();
+                // Projecting
+                let result_projected = Self::answer_project(pp, result, gsws_proj.as_slice());
+                let i4 = Instant::now();
 
-            eprintln!("(*) answer query expand: {:?}", i1 - i0);
-            eprintln!("(*) answer first dim: {:?}", i2 - i1);
-            eprintln!("(*) answer fold: {:?}", i3 - i2);
-            eprintln!("(*) answer project: {:?}", i4 - i3);
+                eprintln!("(*) answer query expand: {:?}", i1 - i0);
+                eprintln!("(*) answer first dim: {:?}", i2 - i1);
+                eprintln!("(*) answer fold: {:?}", i3 - i2);
+                eprintln!("(*) answer project: {:?}", i4 - i3);
 
-            scalar_results.push(result_projected);
+                scalar_ct += &Self::regev_mul_x_pow(&result_projected, pack_idx);
+            }
+            scalar_cts.push(scalar_ct);
         }
 
         let ii0 = Instant::now();
-        let vec = Self::scal_to_vec(
-            scal_to_vec_key,
-            scalar_results.as_slice().try_into().unwrap(),
-        );
+        let vec = Self::scal_to_vec(scal_to_vec_key, scalar_cts.as_slice().try_into().unwrap());
         let ii1 = Instant::now();
         eprintln!("(**) answer scal to vec: {:?}", ii1 - ii0);
         vec
@@ -847,6 +856,7 @@ impl<
         const T_CONV: usize,
         const M_CONV: usize,
         const M_GSW: usize,
+        const N_PACK: usize,
         const N_VEC: usize,
         const Z_SCAL_TO_VEC: u64,
         const T_SCAL_TO_VEC: usize,
@@ -877,6 +887,7 @@ impl<
         T_CONV,
         M_CONV,
         M_GSW,
+        N_PACK,
         N_VEC,
         Z_SCAL_TO_VEC,
         T_SCAL_TO_VEC,
