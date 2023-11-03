@@ -20,7 +20,7 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     // Z_COEFF_GSW: 2,
     // Z_CONV: 16088,
     N_PACK: 4,
-    N_VEC: 1,
+    N_VEC: 2,
     T_SCAL_TO_VEC: 8,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
     P: 257,
@@ -90,7 +90,7 @@ fn decode_record<const D: usize, const N: u64, const BITS_PER: usize, const N_BY
 pub fn run_spiral<
     TheSPIRAL: SPIRAL<
         Record = IntModCyclo<256, 257>,
-        RecordPackedSmall = Matrix<1, 1, IntModCyclo<1024, 257>>,
+        RecordPackedSmall = Matrix<2, 1, IntModCyclo<1024, 257>>,
     >,
     I: Iterator<Item = usize>,
 >(
