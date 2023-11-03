@@ -744,7 +744,7 @@ impl<
                 eprintln!("(*) answer fold: {:?}", i3 - i2);
                 eprintln!("(*) answer project: {:?}", i4 - i3);
 
-                scalar_ct += &Self::regev_mul_x_pow(&result_projected, pack_idx);
+                scalar_ct += &Self::regev_mul_x_pow(&result_projected, pack_idx * (D / D_SWITCH));
             }
             scalar_cts.push(scalar_ct);
         }

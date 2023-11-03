@@ -19,19 +19,19 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     // Z_COEFF_REGEV: 127,
     // Z_COEFF_GSW: 2,
     // Z_CONV: 16088,
-    N_PACK: 1,
-    N_VEC: 4,
+    N_PACK: 4,
+    N_VEC: 1,
     T_SCAL_TO_VEC: 8,
     NOISE_WIDTH_MILLIONTHS: 6_400_000,
-    P: 17,
-    D_RECORD: 512,
+    P: 257,
+    D_RECORD: 256,
     ETA1: 9,
-    ETA2: 9,
+    ETA2: 6,
     Z_FOLD: 2,
-    Q_SWITCH1: 4 * 17, // 4P
-    Q_SWITCH2: 114689, // 17 bit prime
-    D_SWITCH: 512,
-    T_SWITCH: 17,
+    Q_SWITCH1: 4 * 257, // 4P
+    Q_SWITCH2: 2056193, // 21 bit prime
+    D_SWITCH: 1024,
+    T_SWITCH: 21,
 }
 .expand();
 
@@ -88,14 +88,18 @@ fn decode_record<const D: usize, const N: u64, const BITS_PER: usize, const N_BY
 }
 
 pub fn run_spiral<
-    TheSPIRAL: SPIRAL<Record = IntModCyclo<512, 17>, RecordPackedSmall = Matrix<4, 1, IntModCyclo<512, 17>>>,
+    TheSPIRAL: SPIRAL<
+        Record = IntModCyclo<256, 257>,
+        RecordPackedSmall = Matrix<1, 1, IntModCyclo<1024, 257>>,
+    >,
     I: Iterator<Item = usize>,
 >(
     iter: I,
 ) {
     eprintln!(
-        "Running SPIRAL test with database size {}",
-        TheSPIRAL::PACKED_DB_SIZE
+        "Running SPIRAL test with database size {} (packed size {})",
+        TheSPIRAL::DB_SIZE,
+        TheSPIRAL::PACKED_DB_SIZE,
     );
     eprintln!(
         "AVX2 is {}",
@@ -131,7 +135,7 @@ pub fn run_spiral<
     eprintln!();
 
     let pre_start = Instant::now();
-    let db = TheSPIRAL::preprocess(records.iter().map(encode_record::<512, 17, 4, 256>));
+    let db = TheSPIRAL::preprocess(records.iter().map(encode_record::<256, 257, 8, 256>));
     let pre_end = Instant::now();
     eprintln!("{:?} to preprocess", pre_end - pre_start);
 
@@ -142,6 +146,10 @@ pub fn run_spiral<
 
     let check = |indices: &[usize]| {
         eprintln!("Testing record indices {:?}", &indices);
+        assert_eq!(
+            indices.len(),
+            SPIRAL_TEST_PARAMS.N_VEC * SPIRAL_TEST_PARAMS.N_PACK
+        );
         let query_start = Instant::now();
         let q = TheSPIRAL::query(&qk, indices);
         let query_end = Instant::now();
@@ -162,15 +170,27 @@ pub fn run_spiral<
         let response_extract_end = Instant::now();
         let response_extract_total = response_extract_end - response_extract_start;
 
-        for i in 0..4 {
-            let extracted_record: [u8; 256] = decode_record::<512, 17, 4, 256>(&extracted[(i, 0)]);
-            let idx = indices[i];
-            if extracted_record != records[idx] {
-                eprintln!("  **** **** **** **** ERROR **** **** **** ****");
-                eprintln!("  protocol failed");
-                dbg!(idx, idx / TheSPIRAL::PACK_RATIO);
-                dbg!(&extracted_record);
-                dbg!(&extracted);
+        for i in 0..SPIRAL_TEST_PARAMS.N_VEC {
+            for j in 0..SPIRAL_TEST_PARAMS.N_PACK {
+                let record_coeffs: [IntMod<257>; 256] = extracted[(i, 0)]
+                    .coeff
+                    .iter()
+                    .copied()
+                    .skip(j)
+                    .step_by(SPIRAL_TEST_PARAMS.N_PACK)
+                    .collect_vec()
+                    .try_into()
+                    .unwrap();
+                let extracted_record: [u8; 256] =
+                    decode_record::<256, 257, 8, 256>(&IntModCyclo::from(record_coeffs));
+                let idx = indices[i * SPIRAL_TEST_PARAMS.N_PACK + j];
+                if extracted_record != records[idx] {
+                    eprintln!("  **** **** **** **** ERROR **** **** **** ****");
+                    eprintln!("  protocol failed");
+                    dbg!(idx, idx / TheSPIRAL::PACK_RATIO);
+                    dbg!(&extracted_record);
+                    dbg!(&extracted);
+                }
             }
         }
         eprintln!(
@@ -190,7 +210,10 @@ pub fn run_spiral<
         // );
     };
 
-    for chunk in iter.chunks(SPIRAL_TEST_PARAMS.N_VEC).into_iter() {
+    for chunk in iter
+        .chunks(SPIRAL_TEST_PARAMS.N_VEC * SPIRAL_TEST_PARAMS.N_PACK)
+        .into_iter()
+    {
         let c_vec = chunk.collect_vec();
         check(c_vec.as_slice());
     }
