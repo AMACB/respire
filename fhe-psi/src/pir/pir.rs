@@ -18,7 +18,7 @@ use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
 use crate::math::number_theory::mod_pow;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
-use crate::math::ring_elem::RingElement;
+use crate::math::ring_elem::{NormedRingElement, RingElement};
 use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits};
 
 use crate::math::simd_utils::*;
@@ -349,11 +349,10 @@ pub trait SPIRAL {
     fn response_compress(pp: &Self::PublicParams, r: &Self::ResponseRaw) -> Self::Response;
     fn response_extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::RecordPackedSmall;
 
-    // fn response_raw_stats(
-    //     qk: &<Self as SPIRAL>::QueryKey,
-    //     r: &<Self as SPIRAL>::ResponseRaw,
-    //     actual: &<Self as SPIRAL>::RecordPackedSmall,
-    // ) -> f64;
+    fn response_raw_stats(
+        qk: &<Self as SPIRAL>::QueryKey,
+        r: &<Self as SPIRAL>::ResponseRaw,
+    ) -> f64;
 }
 
 impl<
@@ -817,28 +816,30 @@ impl<
         result.map_ring(|r| r.round_down_into())
     }
 
-    // fn response_raw_stats(
-    //     (s, s_vec, s_small): &<Self as SPIRAL>::QueryKey,
-    //     r: &<Self as SPIRAL>::ResponseRaw,
-    //     actual: &<Self as SPIRAL>::RecordPackedSmall,
-    // ) -> f64 {
-    //     // FIXME
-    //     let actual_scaled = actual.scale_up_into();
-    //     let decoded = Self::decode_regev(s_encode, r).project_dim();
-    //     let diff = &actual_scaled - &decoded;
-    //
-    //     let mut sum = 0_f64;
-    //     let mut samples = 0_usize;
-    //
-    //     for e in diff.coeff.iter() {
-    //         let e_sq = (e.norm() as f64) * (e.norm() as f64);
-    //         sum += e_sq;
-    //         samples += 1;
-    //     }
-    //
-    //     // sigma^2 is the variance of the relative noise (noise divided by Q) of the coefficients. Return sigma.
-    //     (sum / samples as f64).sqrt() / (Q as f64)
-    // }
+    fn response_raw_stats(
+        (_, s_vec, _): &<Self as SPIRAL>::QueryKey,
+        r: &<Self as SPIRAL>::ResponseRaw,
+    ) -> f64 {
+        let decoded: Matrix<N_VEC, 1, <Self as SPIRAL>::RingQ> = Self::decode_vec_regev(s_vec, r);
+        let message: Matrix<N_VEC, 1, <Self as SPIRAL>::RingP> =
+            decoded.map_ring(|r| r.round_down_into());
+        let noise: Matrix<N_VEC, 1, <Self as SPIRAL>::RingQ> =
+            &decoded - &message.map_ring(|r| r.scale_up_into());
+
+        let mut sum = 0_f64;
+        let mut samples = 0_usize;
+
+        for i in 0..N_VEC {
+            for e in noise[(i, 0)].coeff.iter() {
+                let e_sq = (e.norm() as f64) * (e.norm() as f64);
+                sum += e_sq;
+                samples += 1;
+            }
+        }
+
+        // sigma^2 is the variance of the relative noise (noise divided by Q) of the coefficients. Return sigma.
+        (sum / samples as f64).sqrt() / (Q as f64)
+    }
 }
 
 impl<
@@ -1247,6 +1248,13 @@ impl<
         c: &<Self as SPIRAL>::RegevCiphertext,
     ) -> <Self as SPIRAL>::RingQ {
         <Self as SPIRAL>::RingQ::from(&(&c[(1, 0)] - &(&c[(0, 0)] * s_encode)))
+    }
+
+    pub fn decode_vec_regev(
+        s_vec: &<Self as SPIRAL>::VecEncodingKey,
+        (c_r, c_m): &<Self as SPIRAL>::VecRegevCiphertext,
+    ) -> Matrix<N_VEC, 1, <Self as SPIRAL>::RingQ> {
+        (c_m - &(s_vec * c_r)).map_ring(|r| <Self as SPIRAL>::RingQ::from(r))
     }
 
     pub fn encode_gsw(

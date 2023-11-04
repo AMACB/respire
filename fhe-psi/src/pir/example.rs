@@ -202,12 +202,11 @@ pub fn run_spiral<
         eprintln!("    {:?} to compress response", response_compress_total);
         eprintln!("    {:?} to extract response", response_extract_total);
 
-        // FIXME
-        // let rel_noise = TheSPIRAL::response_raw_stats(&qk, &response_raw, &records[idx]);
-        // eprintln!(
-        //     "  relative coefficient noise (sample): 2^({})",
-        //     rel_noise.log2()
-        // );
+        let rel_noise = TheSPIRAL::response_raw_stats(&qk, &response_raw);
+        eprintln!(
+            "  relative coefficient noise (sample): 2^({})",
+            rel_noise.log2()
+        );
     };
 
     for chunk in iter
@@ -387,8 +386,8 @@ mod test {
         }
 
         let c_vec = SPIRALTest::scal_to_vec(&s_scal_to_vec, cs.as_slice().try_into().unwrap());
-        let decoded = &c_vec.1 - &(&s_vec * &c_vec.0);
-        let actual = decoded.map_ring(|r| <SPIRALTest as SPIRAL>::RingQ::from(r).round_down_into());
+        let decoded = SPIRALTest::decode_vec_regev(&s_vec, &c_vec);
+        let actual = decoded.map_ring(|r| r.round_down_into());
         assert_eq!(expected, actual);
     }
 
