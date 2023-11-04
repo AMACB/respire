@@ -14,7 +14,7 @@ pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
     T_GSW: 8,
     T_CONV: 4,
     T_COEFF_REGEV: 8,
-    T_COEFF_GSW: 56,
+    T_COEFF_GSW: 16,
     // Z_GSW: 75,
     // Z_COEFF_REGEV: 127,
     // Z_COEFF_GSW: 2,
