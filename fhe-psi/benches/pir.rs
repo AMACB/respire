@@ -172,7 +172,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             .map(|_| <SPIRALTest as SPIRAL>::RingP::rand_uniform(&mut rng).project_dim())
             .take(SPIRALTest::PACKED_DB_SIZE)
             .collect();
-        let db = SPIRALTest::preprocess(records.iter());
+        let db = SPIRALTest::encode_db(records.iter());
         let regevs: Vec<_> = (0..)
             .map(|_| Matrix::rand_uniform(&mut rng))
             .take(1 << SPIRALTest::ETA1)

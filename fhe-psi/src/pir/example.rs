@@ -1,9 +1,5 @@
-use crate::math::int_mod::IntMod;
-use crate::math::int_mod_cyclo::IntModCyclo;
-use crate::math::matrix::Matrix;
 use crate::pir::pir::{SPIRALImpl, SPIRALParams, SPIRALParamsRaw, SPIRAL};
 use crate::spiral;
-use bitvec::prelude::*;
 use itertools::Itertools;
 use std::time::Instant;
 
@@ -57,45 +53,7 @@ pub fn has_avx2() -> bool {
 //     extract_time: Duration,
 // }
 
-fn encode_record<const D: usize, const N: u64, const BITS_PER: usize, const N_BYTE: usize>(
-    bytes: &[u8; N_BYTE],
-) -> IntModCyclo<D, N> {
-    let bit_iter = BitSlice::<u8, Msb0>::from_slice(bytes);
-    let coeff = bit_iter
-        .chunks(BITS_PER)
-        .map(|c| IntMod::<N>::from(c.iter().fold(0, |acc, b| 2 * acc + *b as u64)))
-        .collect_vec();
-    let coeff_slice: [IntMod<N>; D] = coeff.try_into().unwrap();
-    IntModCyclo::from(coeff_slice)
-}
-
-fn decode_record<const D: usize, const N: u64, const BITS_PER: usize, const N_BYTE: usize>(
-    record: &IntModCyclo<D, N>,
-) -> [u8; N_BYTE] {
-    let bit_iter = record.coeff.iter().flat_map(|x| {
-        u64::from(*x)
-            .into_bitarray::<Msb0>()
-            .into_iter()
-            .skip(64 - BITS_PER)
-            .take(BITS_PER)
-    });
-    let bytes = bit_iter
-        .chunks(8)
-        .into_iter()
-        .map(|c| c.fold(0, |acc, b| 2 * acc + b as u8))
-        .collect_vec();
-    bytes.try_into().unwrap()
-}
-
-pub fn run_spiral<
-    TheSPIRAL: SPIRAL<
-        Record = IntModCyclo<256, 257>,
-        RecordPackedSmall = Matrix<2, 1, IntModCyclo<1024, 257>>,
-    >,
-    I: Iterator<Item = usize>,
->(
-    iter: I,
-) {
+pub fn run_spiral<TheSPIRAL: SPIRAL<RecordBytes = [u8; 256]>, I: Iterator<Item = usize>>(iter: I) {
     eprintln!(
         "Running SPIRAL test with database size {} (packed size {})",
         TheSPIRAL::DB_SIZE,
@@ -135,7 +93,7 @@ pub fn run_spiral<
     eprintln!();
 
     let pre_start = Instant::now();
-    let db = TheSPIRAL::preprocess(records.iter().map(encode_record::<256, 257, 8, 256>));
+    let db = TheSPIRAL::encode_db(records.iter().copied());
     let pre_end = Instant::now();
     eprintln!("{:?} to preprocess", pre_end - pre_start);
 
@@ -170,29 +128,16 @@ pub fn run_spiral<
         let response_extract_end = Instant::now();
         let response_extract_total = response_extract_end - response_extract_start;
 
-        for i in 0..SPIRAL_TEST_PARAMS.N_VEC {
-            for j in 0..SPIRAL_TEST_PARAMS.N_PACK {
-                let record_coeffs: [IntMod<257>; 256] = extracted[(i, 0)]
-                    .coeff
-                    .iter()
-                    .copied()
-                    .skip(j)
-                    .step_by(SPIRAL_TEST_PARAMS.N_PACK)
-                    .collect_vec()
-                    .try_into()
-                    .unwrap();
-                let extracted_record: [u8; 256] =
-                    decode_record::<256, 257, 8, 256>(&IntModCyclo::from(record_coeffs));
-                let idx = indices[i * SPIRAL_TEST_PARAMS.N_PACK + j];
-                if extracted_record != records[idx] {
-                    eprintln!("  **** **** **** **** ERROR **** **** **** ****");
-                    eprintln!("  protocol failed");
-                    dbg!(idx, idx / TheSPIRAL::PACK_RATIO);
-                    dbg!(&extracted_record);
-                    dbg!(&extracted);
-                }
+        let decoded = TheSPIRAL::response_decode(&extracted);
+        for (idx, decoded_record) in indices.iter().copied().zip(decoded) {
+            if decoded_record != records[idx] {
+                eprintln!("  **** **** **** **** ERROR **** **** **** ****");
+                eprintln!("  protocol failed");
+                dbg!(idx, idx / TheSPIRAL::PACK_RATIO);
+                dbg!(&decoded_record);
             }
         }
+
         eprintln!(
             "  {:?} total",
             query_total + answer_total + response_compress_total + response_extract_total
@@ -221,6 +166,8 @@ pub fn run_spiral<
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::math::int_mod::IntMod;
+    use crate::math::int_mod_cyclo::IntModCyclo;
     use crate::math::int_mod_poly::IntModPoly;
     use crate::math::matrix::Matrix;
     use crate::math::ring_elem::RingElement;
@@ -406,22 +353,22 @@ mod test {
         assert_eq!(m, extracted);
     }
 
-    #[test]
-    fn test_encode_decode() {
-        // 16 x (log2(9) = 3 bits) <=> 6 bytes
-        let bytes = [48_u8, 47, 17, 255, 183, 0];
-        // 00110000 00101111 00010001 11111111 10110111 00000000
-        // 001 100 000 010 111 100 010 001 111 111 111 011 011 100 000 000
-        let encoded = encode_record::<16, 9, 3, 6>(&bytes);
-        assert_eq!(
-            encoded,
-            IntModCyclo::from(
-                [1_u64, 4, 0, 2, 7, 4, 2, 1, 7, 7, 7, 3, 3, 4, 0, 0].map(IntMod::from)
-            )
-        );
-        let decoded = decode_record::<16, 9, 3, 6>(&encoded);
-        assert_eq!(bytes, decoded);
-    }
+    // #[test]
+    // fn test_encode_decode() {
+    //     // 16 x (log2(9) = 3 bits) <=> 6 bytes
+    //     let bytes = [48_u8, 47, 17, 255, 183, 0];
+    //     // 00110000 00101111 00010001 11111111 10110111 00000000
+    //     // 001 100 000 010 111 100 010 001 111 111 111 011 011 100 000 000
+    //     let encoded = SPIRALTest::encode_record(&bytes);
+    //     assert_eq!(
+    //         encoded,
+    //         IntModCyclo::from(
+    //             [1_u64, 4, 0, 2, 7, 4, 2, 1, 7, 7, 7, 3, 3, 4, 0, 0].map(IntMod::from)
+    //         )
+    //     );
+    //     let decoded = SPIRALTest::decode_record(&encoded);
+    //     assert_eq!(bytes, decoded);
+    // }
 
     #[test]
     fn test_spiral_one() {

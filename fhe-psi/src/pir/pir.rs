@@ -1,3 +1,4 @@
+use bitvec::prelude::*;
 use itertools::Itertools;
 use std::cmp::max;
 use std::f64::consts::PI;
@@ -54,6 +55,7 @@ pub struct SPIRALImpl<
     const D_SWITCH: usize,
     const T_SWITCH: usize,
     const Z_SWITCH: u64,
+    const BYTES_PER_RECORD: usize,
 > {}
 
 #[allow(non_snake_case)]
@@ -119,6 +121,7 @@ impl SPIRALParamsRaw {
             D_SWITCH: self.D_SWITCH,
             T_SWITCH: self.T_SWITCH,
             Z_SWITCH: z_switch,
+            BYTES_PER_RECORD: (self.D_RECORD * floor_log(2, self.P)) / 8,
         }
     }
 }
@@ -155,6 +158,7 @@ pub struct SPIRALParams {
     pub D_SWITCH: usize,
     pub T_SWITCH: usize,
     pub Z_SWITCH: u64,
+    pub BYTES_PER_RECORD: usize,
 }
 
 impl SPIRALParams {
@@ -282,6 +286,7 @@ macro_rules! spiral {
             {$params.D_SWITCH},
             {$params.T_SWITCH},
             {$params.Z_SWITCH},
+            {$params.BYTES_PER_RECORD},
         >
     }
 }
@@ -325,6 +330,9 @@ pub trait SPIRAL {
     type RecordPacked;
     type Database;
 
+    // Public types
+    type RecordBytes;
+
     // Constants
     const PACKED_DIM1_SIZE: usize;
     const PACKED_DIM2_SIZE: usize;
@@ -341,13 +349,15 @@ pub trait SPIRAL {
     const GSW_COUNT: usize;
     const GSW_EXPAND_ITERS: usize;
 
-    fn preprocess<I: ExactSizeIterator<Item = Self::Record>>(records_iter: I) -> Self::Database;
+    fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(records_iter: I)
+        -> Self::Database;
     fn setup() -> (Self::QueryKey, Self::PublicParams);
     fn query(qk: &Self::QueryKey, idx: &[usize]) -> Self::Queries;
     fn answer(pp: &Self::PublicParams, db: &Self::Database, q: &Self::Queries)
         -> Self::ResponseRaw;
     fn response_compress(pp: &Self::PublicParams, r: &Self::ResponseRaw) -> Self::Response;
     fn response_extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::RecordPackedSmall;
+    fn response_decode(r: &Self::RecordPackedSmall) -> Vec<Self::RecordBytes>;
 
     fn response_raw_stats(
         qk: &<Self as SPIRAL>::QueryKey,
@@ -385,6 +395,7 @@ impl<
         const D_SWITCH: usize,
         const T_SWITCH: usize,
         const Z_SWITCH: u64,
+        const BYTES_PER_RECORD: usize,
     > SPIRAL
     for SPIRALImpl<
         Q,
@@ -416,6 +427,7 @@ impl<
         D_SWITCH,
         T_SWITCH,
         Z_SWITCH,
+        BYTES_PER_RECORD,
     >
 {
     // Type aliases
@@ -481,6 +493,8 @@ impl<
     /// `S` is the SIMD lane count that we can use, i.e. 4 for AVX2.
     type Database = Vec<SimdVec>;
 
+    // Public Types
+    type RecordBytes = [u8; BYTES_PER_RECORD];
     // Constants
     const PACKED_DIM1_SIZE: usize = 2_usize.pow(ETA1 as u32);
     const PACKED_DIM2_SIZE: usize = Z_FOLD.pow(ETA2 as u32);
@@ -500,12 +514,15 @@ impl<
     const GSW_COUNT: usize = (Self::GSW_FOLD_COUNT + Self::GSW_PROJ_COUNT) * T_GSW;
     const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
 
-    fn preprocess<I: ExactSizeIterator<Item = Self::Record>>(records_iter: I) -> Self::Database {
+    fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
+        records_iter: I,
+    ) -> Self::Database {
         assert_eq!(records_iter.len(), Self::DB_SIZE);
+        let records_encoded_iter = records_iter.map(|r| Self::encode_record(&r));
 
         let proj_inv =
             IntMod::<P>::from(mod_pow(mod_inverse(2, P), Self::GSW_PROJ_COUNT as u64, P));
-        let records_eval: Vec<<Self as SPIRAL>::RingQFast> = records_iter
+        let records_eval: Vec<<Self as SPIRAL>::RingQFast> = records_encoded_iter
             .chunks(Self::PACK_RATIO)
             .into_iter()
             .map(|chunk| {
@@ -816,6 +833,25 @@ impl<
         result.map_ring(|r| r.round_down_into())
     }
 
+    fn response_decode(r: &Self::RecordPackedSmall) -> Vec<Self::RecordBytes> {
+        let mut result = Vec::with_capacity(N_VEC * N_PACK);
+        for i in 0..N_VEC {
+            for j in 0..N_PACK {
+                let record_coeffs: [IntMod<P>; D_RECORD] = r[(i, 0)]
+                    .coeff
+                    .iter()
+                    .copied()
+                    .skip(j)
+                    .step_by(N_PACK)
+                    .collect_vec()
+                    .try_into()
+                    .unwrap();
+                result.push(Self::decode_record(&IntModCyclo::from(record_coeffs)));
+            }
+        }
+        result
+    }
+
     fn response_raw_stats(
         (_, s_vec, _): &<Self as SPIRAL>::QueryKey,
         r: &<Self as SPIRAL>::ResponseRaw,
@@ -872,6 +908,7 @@ impl<
         const D_SWITCH: usize,
         const T_SWITCH: usize,
         const Z_SWITCH: u64,
+        const BYTES_PER_RECORD: usize,
     >
     SPIRALImpl<
         Q,
@@ -903,6 +940,7 @@ impl<
         D_SWITCH,
         T_SWITCH,
         Z_SWITCH,
+        BYTES_PER_RECORD,
     >
 {
     pub fn answer_query_expand(
@@ -1502,5 +1540,33 @@ impl<
             result_embed[(i, 0)] += c1;
         }
         (result_rand, result_embed)
+    }
+
+    pub fn encode_record(bytes: &[u8; BYTES_PER_RECORD]) -> IntModCyclo<D_RECORD, P> {
+        let bit_iter = BitSlice::<u8, Msb0>::from_slice(bytes);
+        let p_bits = floor_log(2, P);
+        let coeff = bit_iter
+            .chunks(p_bits)
+            .map(|c| IntMod::<P>::from(c.iter().fold(0, |acc, b| 2 * acc + *b as u64)))
+            .collect_vec();
+        let coeff_slice: [IntMod<P>; D_RECORD] = coeff.try_into().unwrap();
+        IntModCyclo::from(coeff_slice)
+    }
+
+    pub fn decode_record(record: &IntModCyclo<D_RECORD, P>) -> [u8; BYTES_PER_RECORD] {
+        let p_bits = floor_log(2, P);
+        let bit_iter = record.coeff.iter().flat_map(|x| {
+            u64::from(*x)
+                .into_bitarray::<Msb0>()
+                .into_iter()
+                .skip(64 - p_bits)
+                .take(p_bits)
+        });
+        let bytes = bit_iter
+            .chunks(8)
+            .into_iter()
+            .map(|c| c.fold(0, |acc, b| 2 * acc + b as u8))
+            .collect_vec();
+        bytes.try_into().unwrap()
     }
 }
