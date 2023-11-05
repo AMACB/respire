@@ -3,33 +3,60 @@ use crate::spiral;
 use itertools::Itertools;
 use std::time::Instant;
 
-pub const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
-    Q_A: 268369921,
-    Q_B: 249561089,
-    D: 2048,
-    T_GSW: 8,
-    T_CONV: 4,
-    T_COEFF_REGEV: 8,
-    T_COEFF_GSW: 16,
-    // Z_GSW: 75,
-    // Z_COEFF_REGEV: 127,
-    // Z_COEFF_GSW: 2,
-    // Z_CONV: 16088,
-    N_PACK: 4,
-    N_VEC: 2,
-    T_SCAL_TO_VEC: 8,
-    NOISE_WIDTH_MILLIONTHS: 6_400_000,
-    P: 257,
-    D_RECORD: 256,
-    ETA1: 9,
-    ETA2: 6,
-    Z_FOLD: 2,
-    Q_SWITCH1: 4 * 257, // 4P
-    Q_SWITCH2: 2056193, // 21 bit prime
-    D_SWITCH: 1024,
-    T_SWITCH: 21,
+pub const fn spiral_16_512(n_vec: usize) -> SPIRALParams {
+    SPIRALParamsRaw {
+        Q_A: 268369921,
+        Q_B: 249561089,
+        D: 2048,
+        T_GSW: 8,
+        T_CONV: 4,
+        T_COEFF_REGEV: 8,
+        T_COEFF_GSW: 16,
+        N_PACK: 1,
+        N_VEC: n_vec,
+        T_SCAL_TO_VEC: 8,
+        NOISE_WIDTH_MILLIONTHS: 6_400_000,
+        P: 17,
+        D_RECORD: 512,
+        ETA1: 9,
+        ETA2: 7,
+        Z_FOLD: 2,
+        Q_SWITCH1: 4 * 17, // 4P
+        Q_SWITCH2: 114689, // 17 bit prime
+        D_SWITCH: 512,
+        T_SWITCH: 17,
+    }
+    .expand()
 }
-.expand();
+
+pub const fn spiral_256_256(pack: bool, n_vec: usize) -> SPIRALParams {
+    SPIRALParamsRaw {
+        Q_A: 268369921,
+        Q_B: 249561089,
+        D: 2048,
+        T_GSW: 8,
+        T_CONV: 4,
+        T_COEFF_REGEV: 8,
+        T_COEFF_GSW: 16,
+        N_PACK: if pack { 4 } else { 1 },
+        N_VEC: n_vec,
+        T_SCAL_TO_VEC: 8,
+        NOISE_WIDTH_MILLIONTHS: 6_400_000,
+        P: 257,
+        D_RECORD: 256,
+        ETA1: 9,
+        ETA2: 6,
+        Z_FOLD: 2,
+        Q_SWITCH1: 4 * 257, // 4P
+        Q_SWITCH2: 2056193, // 21 bit prime
+        D_SWITCH: 1024,
+        T_SWITCH: 21,
+    }
+    .expand()
+}
+
+// pub const SPIRAL_TEST_PARAMS: SPIRALParams = spiral_256_256(true, 2);
+pub const SPIRAL_TEST_PARAMS: SPIRALParams = spiral_16_512(1);
 
 pub type SPIRALTest = spiral!(SPIRAL_TEST_PARAMS);
 
