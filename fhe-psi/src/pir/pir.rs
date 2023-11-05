@@ -842,7 +842,7 @@ impl<
                     .iter()
                     .copied()
                     .skip(j)
-                    .step_by(N_PACK)
+                    .step_by(D_SWITCH / D_RECORD)
                     .collect_vec()
                     .try_into()
                     .unwrap();
