@@ -22,9 +22,9 @@ pub const fn spiral_16_512(n_vec: usize) -> SPIRALParams {
         ETA2: 7,
         Z_FOLD: 2,
         Q_SWITCH1: 4 * 17, // 4P
-        Q_SWITCH2: 114689, // 17 bit prime
+        Q_SWITCH2: 163841, // 17.32 bits
         D_SWITCH: 512,
-        T_SWITCH: 17,
+        T_SWITCH: 18,
     }
     .expand()
 }
@@ -48,9 +48,9 @@ pub const fn spiral_256_256(pack: bool, n_vec: usize) -> SPIRALParams {
         ETA2: 6,
         Z_FOLD: 2,
         Q_SWITCH1: 4 * 257, // 4P
-        Q_SWITCH2: 2056193, // 21 bit prime
+        Q_SWITCH2: 4169729, // 21.99 bits
         D_SWITCH: 1024,
-        T_SWITCH: 21,
+        T_SWITCH: 22,
     }
     .expand()
 }
