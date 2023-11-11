@@ -19,7 +19,7 @@ pub const fn spiral_16_512(n_vec: usize) -> SPIRALParams {
         P: 17,
         D_RECORD: 512,
         ETA1: 9,
-        ETA2: 7,
+        ETA2: 9,
         Z_FOLD: 2,
         Q_SWITCH1: 4 * 17, // 4P
         Q_SWITCH2: 163841, // 17.32 bits
@@ -45,7 +45,7 @@ pub const fn spiral_256_256(pack: bool, n_vec: usize) -> SPIRALParams {
         P: 257,
         D_RECORD: 256,
         ETA1: 9,
-        ETA2: 6,
+        ETA2: 8,
         Z_FOLD: 2,
         Q_SWITCH1: 4 * 257, // 4P
         Q_SWITCH2: 4169729, // 21.99 bits
