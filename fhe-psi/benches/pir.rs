@@ -3,13 +3,13 @@ use fhe_psi::math::int_mod::IntMod;
 use fhe_psi::math::int_mod_cyclo::IntModCyclo;
 use fhe_psi::math::matrix::Matrix;
 use fhe_psi::math::rand_sampled::RandUniformSampled;
-use fhe_psi::pir::pir::{SPIRALImpl, SPIRALParams, SPIRALParamsRaw, SPIRAL};
-use fhe_psi::spiral;
+use fhe_psi::pir::pir::{Respire, RespireImpl, RespireParams, RespireParamsRaw};
+use fhe_psi::respire;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    const SPIRAL_TEST_PARAMS: SPIRALParams = SPIRALParamsRaw {
+    const SPIRAL_TEST_PARAMS: RespireParams = RespireParamsRaw {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
@@ -28,7 +28,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         T_SWITCH: 21,
     }
     .expand();
-    type SPIRALTest = spiral!(SPIRAL_TEST_PARAMS);
+    type SPIRALTest = respire!(SPIRAL_TEST_PARAMS);
 
     c.bench_function("pir::automorphism with T_COEFF_REGEV", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
@@ -161,7 +161,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("pir::answer_query_expand", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
         let (qk, pp) = SPIRALTest::setup();
-        let idx = rng.gen_range(0..<SPIRALTest as SPIRAL>::PACKED_DB_SIZE);
+        let idx = rng.gen_range(0..<SPIRALTest as Respire>::PACKED_DB_SIZE);
         let q = SPIRALTest::query(&qk, idx);
         b.iter(|| SPIRALTest::answer_query_expand(black_box(&pp), black_box(&q)))
     });
@@ -169,7 +169,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("pir::answer_first_dim", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
         let records: Vec<_> = (0..)
-            .map(|_| <SPIRALTest as SPIRAL>::RingP::rand_uniform(&mut rng).project_dim())
+            .map(|_| <SPIRALTest as Respire>::RingP::rand_uniform(&mut rng).project_dim())
             .take(SPIRALTest::PACKED_DB_SIZE)
             .collect();
         let db = SPIRALTest::encode_db(records.iter());

@@ -1,10 +1,10 @@
-use crate::pir::pir::{SPIRALImpl, SPIRALParams, SPIRALParamsRaw, SPIRAL};
-use crate::spiral;
+use crate::pir::pir::{Respire, RespireImpl, RespireParams, RespireParamsRaw};
+use crate::respire;
 use itertools::Itertools;
 use std::time::Instant;
 
-pub const fn spiral_16_512(n_vec: usize) -> SPIRALParams {
-    SPIRALParamsRaw {
+pub const fn respire_512(n_vec: usize) -> RespireParams {
+    RespireParamsRaw {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
@@ -29,8 +29,8 @@ pub const fn spiral_16_512(n_vec: usize) -> SPIRALParams {
     .expand()
 }
 
-pub const fn spiral_256_256(pack: bool, n_vec: usize) -> SPIRALParams {
-    SPIRALParamsRaw {
+pub const fn respire_1024(pack: bool, n_vec: usize) -> RespireParams {
+    RespireParamsRaw {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
@@ -55,10 +55,10 @@ pub const fn spiral_256_256(pack: bool, n_vec: usize) -> SPIRALParams {
     .expand()
 }
 
-// pub const SPIRAL_TEST_PARAMS: SPIRALParams = spiral_256_256(true, 2);
-pub const SPIRAL_TEST_PARAMS: SPIRALParams = spiral_16_512(1);
+// pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(true, 2);
+pub const RESPIRE_TEST_PARAMS: RespireParams = respire_512(1);
 
-pub type SPIRALTest = spiral!(SPIRAL_TEST_PARAMS);
+pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
 
 #[cfg(not(target_feature = "avx2"))]
 pub fn has_avx2() -> bool {
@@ -80,11 +80,13 @@ pub fn has_avx2() -> bool {
 //     extract_time: Duration,
 // }
 
-pub fn run_spiral<TheSPIRAL: SPIRAL<RecordBytes = [u8; 256]>, I: Iterator<Item = usize>>(iter: I) {
+pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Item = usize>>(
+    iter: I,
+) {
     eprintln!(
-        "Running SPIRAL test with database size {} (packed size {})",
-        TheSPIRAL::DB_SIZE,
-        TheSPIRAL::PACKED_DB_SIZE,
+        "Running Respire test with database size {} (packed size {})",
+        TheRespire::DB_SIZE,
+        TheRespire::PACKED_DB_SIZE,
     );
     eprintln!(
         "AVX2 is {}",
@@ -94,9 +96,9 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<RecordBytes = [u8; 256]>, I: Iterator<Item =
             "not enabled "
         }
     );
-    eprintln!("Parameters: {:#?}", SPIRAL_TEST_PARAMS);
-    let mut records: Vec<[u8; 256]> = Vec::with_capacity(TheSPIRAL::DB_SIZE);
-    for i in 0..TheSPIRAL::DB_SIZE as u64 {
+    eprintln!("Parameters: {:#?}", RESPIRE_TEST_PARAMS);
+    let mut records: Vec<[u8; 256]> = Vec::with_capacity(TheRespire::DB_SIZE);
+    for i in 0..TheRespire::DB_SIZE as u64 {
         let mut record = [0_u8; 256];
         record[0] = (i % 256) as u8;
         record[1] = ((i / 256) % 256) as u8;
@@ -110,22 +112,22 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<RecordBytes = [u8; 256]>, I: Iterator<Item =
     }
     eprintln!(
         "Estimated relative noise: 2^({})",
-        SPIRAL_TEST_PARAMS.noise_estimate().log2()
+        RESPIRE_TEST_PARAMS.noise_estimate().log2()
     );
     eprintln!(
         "Relative noise threshold: 2^({})",
-        SPIRAL_TEST_PARAMS.relative_noise_threshold().log2()
+        RESPIRE_TEST_PARAMS.relative_noise_threshold().log2()
     );
 
     eprintln!();
 
     let pre_start = Instant::now();
-    let db = TheSPIRAL::encode_db(records.iter().copied());
+    let db = TheRespire::encode_db(records.iter().copied());
     let pre_end = Instant::now();
     eprintln!("{:?} to preprocess", pre_end - pre_start);
 
     let setup_start = Instant::now();
-    let (qk, pp) = TheSPIRAL::setup();
+    let (qk, pp) = TheRespire::setup();
     let setup_end = Instant::now();
     eprintln!("{:?} to setup", setup_end - setup_start);
 
@@ -133,34 +135,34 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<RecordBytes = [u8; 256]>, I: Iterator<Item =
         eprintln!("Testing record indices {:?}", &indices);
         assert_eq!(
             indices.len(),
-            SPIRAL_TEST_PARAMS.N_VEC * SPIRAL_TEST_PARAMS.N_PACK
+            RESPIRE_TEST_PARAMS.N_VEC * RESPIRE_TEST_PARAMS.N_PACK
         );
         let query_start = Instant::now();
-        let q = TheSPIRAL::query(&qk, indices);
+        let q = TheRespire::query(&qk, indices);
         let query_end = Instant::now();
         let query_total = query_end - query_start;
 
         let answer_start = Instant::now();
-        let response_raw = TheSPIRAL::answer(&pp, &db, &q);
+        let response_raw = TheRespire::answer(&pp, &db, &q);
         let answer_end = Instant::now();
         let answer_total = answer_end - answer_start;
 
         let response_compress_start = Instant::now();
-        let response = TheSPIRAL::response_compress(&pp, &response_raw);
+        let response = TheRespire::response_compress(&pp, &response_raw);
         let response_compress_end = Instant::now();
         let response_compress_total = response_compress_end - response_compress_start;
 
         let response_extract_start = Instant::now();
-        let extracted = TheSPIRAL::response_extract(&qk, &response);
+        let extracted = TheRespire::response_extract(&qk, &response);
         let response_extract_end = Instant::now();
         let response_extract_total = response_extract_end - response_extract_start;
 
-        let decoded = TheSPIRAL::response_decode(&extracted);
+        let decoded = TheRespire::response_decode(&extracted);
         for (idx, decoded_record) in indices.iter().copied().zip(decoded) {
             if decoded_record != records[idx] {
                 eprintln!("  **** **** **** **** ERROR **** **** **** ****");
                 eprintln!("  protocol failed");
-                dbg!(idx, idx / TheSPIRAL::PACK_RATIO);
+                dbg!(idx, idx / TheRespire::PACK_RATIO);
                 dbg!(&decoded_record);
             }
         }
@@ -174,7 +176,7 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<RecordBytes = [u8; 256]>, I: Iterator<Item =
         eprintln!("    {:?} to compress response", response_compress_total);
         eprintln!("    {:?} to extract response", response_extract_total);
 
-        let rel_noise = TheSPIRAL::response_raw_stats(&qk, &response_raw);
+        let rel_noise = TheRespire::response_raw_stats(&qk, &response_raw);
         eprintln!(
             "  relative coefficient noise (sample): 2^({})",
             rel_noise.log2()
@@ -182,7 +184,7 @@ pub fn run_spiral<TheSPIRAL: SPIRAL<RecordBytes = [u8; 256]>, I: Iterator<Item =
     };
 
     for chunk in iter
-        .chunks(SPIRAL_TEST_PARAMS.N_VEC * SPIRAL_TEST_PARAMS.N_PACK)
+        .chunks(RESPIRE_TEST_PARAMS.N_VEC * RESPIRE_TEST_PARAMS.N_PACK)
         .into_iter()
     {
         let c_vec = chunk.collect_vec();
@@ -203,180 +205,181 @@ mod test {
 
     #[test]
     fn test_regev() {
-        let s = SPIRALTest::encode_setup();
-        let mu = <SPIRALTest as SPIRAL>::RingP::from(12_u64);
-        let encoded = SPIRALTest::encode_regev(&s, &mu.scale_up_into());
-        let decoded: <SPIRALTest as SPIRAL>::RingP =
-            SPIRALTest::decode_regev(&s, &encoded).round_down_into();
+        let s = RespireTest::encode_setup();
+        let mu = <RespireTest as Respire>::RingP::from(12_u64);
+        let encoded = RespireTest::encode_regev(&s, &mu.scale_up_into());
+        let decoded: <RespireTest as Respire>::RingP =
+            RespireTest::decode_regev(&s, &encoded).round_down_into();
         assert_eq!(mu, decoded);
     }
 
     #[test]
     fn test_gsw() {
-        let s = SPIRALTest::encode_setup();
-        type RingPP = IntModCyclo<{ SPIRAL_TEST_PARAMS.D }, 1024>;
+        let s = RespireTest::encode_setup();
+        type RingPP = IntModCyclo<{ RESPIRE_TEST_PARAMS.D }, 1024>;
         let mu = RingPP::from(111_u64);
-        let encrypt = SPIRALTest::encode_gsw(&s, &mu.include_into());
+        let encrypt = RespireTest::encode_gsw(&s, &mu.include_into());
 
-        let scale = <SPIRALTest as SPIRAL>::RingQFast::from(SPIRAL_TEST_PARAMS.Q / 1024);
-        let decrypt = SPIRALTest::decode_gsw_scaled(&s, &encrypt, &scale);
+        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
+        let decrypt = RespireTest::decode_gsw_scaled(&s, &encrypt, &scale);
         assert_eq!(decrypt.round_down_into(), mu);
     }
 
     #[test]
     fn test_auto_hom() {
-        let s = SPIRALTest::encode_setup();
-        let auto_key = SPIRALTest::auto_setup::<
-            { SPIRAL_TEST_PARAMS.T_COEFF_REGEV },
-            { SPIRAL_TEST_PARAMS.Z_COEFF_REGEV },
+        let s = RespireTest::encode_setup();
+        let auto_key = RespireTest::auto_setup::<
+            { RESPIRE_TEST_PARAMS.T_COEFF_REGEV },
+            { RESPIRE_TEST_PARAMS.Z_COEFF_REGEV },
         >(3, &s);
-        let x = <SPIRALTest as SPIRAL>::RingP::from(IntModPoly::x());
-        let encrypt = SPIRALTest::encode_regev(&s, &x.scale_up_into());
-        let encrypt_auto = SPIRALTest::auto_hom::<
-            { SPIRAL_TEST_PARAMS.T_COEFF_REGEV },
-            { SPIRAL_TEST_PARAMS.Z_COEFF_REGEV },
+        let x = <RespireTest as Respire>::RingP::from(IntModPoly::x());
+        let encrypt = RespireTest::encode_regev(&s, &x.scale_up_into());
+        let encrypt_auto = RespireTest::auto_hom::<
+            { RESPIRE_TEST_PARAMS.T_COEFF_REGEV },
+            { RESPIRE_TEST_PARAMS.Z_COEFF_REGEV },
         >(&auto_key, &encrypt);
-        let decrypt: <SPIRALTest as SPIRAL>::RingP =
-            SPIRALTest::decode_regev(&s, &encrypt_auto).round_down_into();
+        let decrypt: <RespireTest as Respire>::RingP =
+            RespireTest::decode_regev(&s, &encrypt_auto).round_down_into();
         assert_eq!(decrypt, &(&x * &x) * &x);
     }
 
     #[test]
     fn test_regev_to_gsw() {
-        let s = SPIRALTest::encode_setup();
-        let s_regev_to_gsw = SPIRALTest::regev_to_gsw_setup(&s);
-        type RingPP = IntModCyclo<{ SPIRAL_TEST_PARAMS.D }, 1024>;
+        let s = RespireTest::encode_setup();
+        let s_regev_to_gsw = RespireTest::regev_to_gsw_setup(&s);
+        type RingPP = IntModCyclo<{ RESPIRE_TEST_PARAMS.D }, 1024>;
         let mu = RingPP::from(567_u64);
         let mut mu_curr = mu.include_into();
-        let mut encrypt_vec = Vec::with_capacity(SPIRAL_TEST_PARAMS.T_GSW);
-        for _ in 0..SPIRAL_TEST_PARAMS.T_GSW {
-            encrypt_vec.push(SPIRALTest::encode_regev(&s, &mu_curr));
-            mu_curr *= IntMod::from(SPIRAL_TEST_PARAMS.Z_GSW);
+        let mut encrypt_vec = Vec::with_capacity(RESPIRE_TEST_PARAMS.T_GSW);
+        for _ in 0..RESPIRE_TEST_PARAMS.T_GSW {
+            encrypt_vec.push(RespireTest::encode_regev(&s, &mu_curr));
+            mu_curr *= IntMod::from(RESPIRE_TEST_PARAMS.Z_GSW);
         }
-        let encrypt_gsw = SPIRALTest::regev_to_gsw(&s_regev_to_gsw, encrypt_vec.as_slice());
+        let encrypt_gsw = RespireTest::regev_to_gsw(&s_regev_to_gsw, encrypt_vec.as_slice());
 
-        let scale = <SPIRALTest as SPIRAL>::RingQFast::from(SPIRAL_TEST_PARAMS.Q / 1024);
-        let decrypted = SPIRALTest::decode_gsw_scaled(&s, &encrypt_gsw, &scale);
+        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
+        let decrypted = RespireTest::decode_gsw_scaled(&s, &encrypt_gsw, &scale);
         assert_eq!(decrypted.round_down_into(), mu);
     }
 
     #[test]
     fn test_project_hom() {
-        let s = SPIRALTest::encode_setup();
-        let gsw0 = SPIRALTest::encode_gsw(&s, &IntModCyclo::from(0_u64));
-        let gsw1 = SPIRALTest::encode_gsw(&s, &IntModCyclo::from(1_u64));
-        let mut msg_coeff = IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::zero();
+        let s = RespireTest::encode_setup();
+        let gsw0 = RespireTest::encode_gsw(&s, &IntModCyclo::from(0_u64));
+        let gsw1 = RespireTest::encode_gsw(&s, &IntModCyclo::from(1_u64));
+        let mut msg_coeff = IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::zero();
         msg_coeff.coeff[0] = IntMod::from(10_u64);
         msg_coeff.coeff[1] = IntMod::from(20_u64);
         msg_coeff.coeff[2] = IntMod::from(11_u64);
         msg_coeff.coeff[3] = IntMod::from(21_u64);
-        let c = SPIRALTest::encode_regev(&s, &msg_coeff.scale_up_into());
+        let c = RespireTest::encode_regev(&s, &msg_coeff.scale_up_into());
 
-        let auto_key0 = SPIRALTest::auto_setup::<
-            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
-            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
-        >(SPIRAL_TEST_PARAMS.D + 1, &s);
-        let auto_key1 = SPIRALTest::auto_setup::<
-            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
-            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
-        >(SPIRAL_TEST_PARAMS.D / 2 + 1, &s);
+        let auto_key0 = RespireTest::auto_setup::<
+            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
+        >(RESPIRE_TEST_PARAMS.D + 1, &s);
+        let auto_key1 = RespireTest::auto_setup::<
+            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
+        >(RESPIRE_TEST_PARAMS.D / 2 + 1, &s);
 
-        let c_proj0 = SPIRALTest::project_hom::<
-            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
-            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        let c_proj0 = RespireTest::project_hom::<
+            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
         >(0, &c, &gsw0, &auto_key0);
-        let c_proj1 = SPIRALTest::project_hom::<
-            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
-            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        let c_proj1 = RespireTest::project_hom::<
+            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
         >(0, &c, &gsw1, &auto_key0);
 
-        let c_proj00 = SPIRALTest::project_hom::<
-            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
-            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        let c_proj00 = RespireTest::project_hom::<
+            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
         >(1, &c_proj0, &gsw0, &auto_key1);
-        let c_proj01 = SPIRALTest::project_hom::<
-            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
-            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        let c_proj01 = RespireTest::project_hom::<
+            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
         >(1, &c_proj0, &gsw1, &auto_key1);
-        let c_proj10 = SPIRALTest::project_hom::<
-            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
-            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        let c_proj10 = RespireTest::project_hom::<
+            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
         >(1, &c_proj1, &gsw0, &auto_key1);
-        let c_proj11 = SPIRALTest::project_hom::<
-            { SPIRAL_TEST_PARAMS.T_COEFF_GSW },
-            { SPIRAL_TEST_PARAMS.Z_COEFF_GSW },
+        let c_proj11 = RespireTest::project_hom::<
+            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
         >(1, &c_proj1, &gsw1, &auto_key1);
 
-        // let proj0 = SPIRALTest::decode_regev(&s, &c_proj0).round_down_into();
-        let mut proj0_expected = IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::zero();
+        // let proj0 = RespireTest::decode_regev(&s, &c_proj0).round_down_into();
+        let mut proj0_expected = IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::zero();
         proj0_expected.coeff[0] = IntMod::from(10_u64 * 2);
         proj0_expected.coeff[2] = IntMod::from(11_u64 * 2);
 
-        let mut proj1_expected = IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::zero();
+        let mut proj1_expected = IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::zero();
         proj1_expected.coeff[0] = IntMod::from(20_u64 * 2);
         proj1_expected.coeff[2] = IntMod::from(21_u64 * 2);
 
         assert_eq!(
-            SPIRALTest::decode_regev(&s, &c_proj0).round_down_into(),
+            RespireTest::decode_regev(&s, &c_proj0).round_down_into(),
             proj0_expected
         );
         assert_eq!(
-            SPIRALTest::decode_regev(&s, &c_proj1).round_down_into(),
+            RespireTest::decode_regev(&s, &c_proj1).round_down_into(),
             proj1_expected
         );
 
         assert_eq!(
-            SPIRALTest::decode_regev(&s, &c_proj00).round_down_into(),
-            IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::from(10_u64 * 4)
+            RespireTest::decode_regev(&s, &c_proj00).round_down_into(),
+            IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::from(10_u64 * 4)
         );
         assert_eq!(
-            SPIRALTest::decode_regev(&s, &c_proj01).round_down_into(),
-            IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::from(11_u64 * 4)
+            RespireTest::decode_regev(&s, &c_proj01).round_down_into(),
+            IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::from(11_u64 * 4)
         );
         assert_eq!(
-            SPIRALTest::decode_regev(&s, &c_proj10).round_down_into(),
-            IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::from(20_u64 * 4)
+            RespireTest::decode_regev(&s, &c_proj10).round_down_into(),
+            IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::from(20_u64 * 4)
         );
         assert_eq!(
-            SPIRALTest::decode_regev(&s, &c_proj11).round_down_into(),
-            IntModCyclo::<{ SPIRAL_TEST_PARAMS.D }, 256>::from(21_u64 * 4)
+            RespireTest::decode_regev(&s, &c_proj11).round_down_into(),
+            IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::from(21_u64 * 4)
         );
     }
 
     #[test]
     fn test_scal_to_vec() {
-        let s_scal = SPIRALTest::encode_setup();
-        let s_vec = SPIRALTest::encode_vec_setup();
-        let s_scal_to_vec = SPIRALTest::scal_to_vec_setup(&s_scal, &s_vec);
+        let s_scal = RespireTest::encode_setup();
+        let s_vec = RespireTest::encode_vec_setup();
+        let s_scal_to_vec = RespireTest::scal_to_vec_setup(&s_scal, &s_vec);
 
-        let mut cs =
-            Vec::<<SPIRALTest as SPIRAL>::RegevCiphertext>::with_capacity(SPIRAL_TEST_PARAMS.N_VEC);
+        let mut cs = Vec::<<RespireTest as Respire>::RegevCiphertext>::with_capacity(
+            RESPIRE_TEST_PARAMS.N_VEC,
+        );
         let mut expected =
-            Matrix::<{ SPIRAL_TEST_PARAMS.N_VEC }, 1, <SPIRALTest as SPIRAL>::RingP>::zero();
-        for i in 0..SPIRAL_TEST_PARAMS.N_VEC {
-            let mu = <SPIRALTest as SPIRAL>::RingP::from(i as u64 + 1_u64);
+            Matrix::<{ RESPIRE_TEST_PARAMS.N_VEC }, 1, <RespireTest as Respire>::RingP>::zero();
+        for i in 0..RESPIRE_TEST_PARAMS.N_VEC {
+            let mu = <RespireTest as Respire>::RingP::from(i as u64 + 1_u64);
             expected[(i, 0)] = mu.clone();
-            cs.push(SPIRALTest::encode_regev(&s_scal, &mu.scale_up_into()));
+            cs.push(RespireTest::encode_regev(&s_scal, &mu.scale_up_into()));
         }
 
-        let c_vec = SPIRALTest::scal_to_vec(&s_scal_to_vec, cs.as_slice().try_into().unwrap());
-        let decoded = SPIRALTest::decode_vec_regev(&s_vec, &c_vec);
+        let c_vec = RespireTest::scal_to_vec(&s_scal_to_vec, cs.as_slice().try_into().unwrap());
+        let decoded = RespireTest::decode_vec_regev(&s_vec, &c_vec);
         let actual = decoded.map_ring(|r| r.round_down_into());
         assert_eq!(expected, actual);
     }
 
     #[test]
     fn test_post_process_only() {
-        let (qk, pp) = SPIRALTest::setup();
+        let (qk, pp) = RespireTest::setup();
         let (_, s_vec, _) = &qk;
-        let mut m = <SPIRALTest as SPIRAL>::RecordPackedSmall::zero();
-        for i in 0..SPIRAL_TEST_PARAMS.N_VEC {
+        let mut m = <RespireTest as Respire>::RecordPackedSmall::zero();
+        for i in 0..RESPIRE_TEST_PARAMS.N_VEC {
             m[(i, 0)] = IntModCyclo::from(177_u64 + i as u64)
         }
         let c =
-            SPIRALTest::encode_vec_regev(s_vec, &m.map_ring(|r| r.include_dim().scale_up_into()));
-        let compressed = SPIRALTest::response_compress(&pp, &c);
-        let extracted = SPIRALTest::response_extract(&qk, &compressed);
+            RespireTest::encode_vec_regev(s_vec, &m.map_ring(|r| r.include_dim().scale_up_into()));
+        let compressed = RespireTest::response_compress(&pp, &c);
+        let extracted = RespireTest::response_extract(&qk, &compressed);
         assert_eq!(m, extracted);
     }
 
@@ -386,26 +389,26 @@ mod test {
     //     let bytes = [48_u8, 47, 17, 255, 183, 0];
     //     // 00110000 00101111 00010001 11111111 10110111 00000000
     //     // 001 100 000 010 111 100 010 001 111 111 111 011 011 100 000 000
-    //     let encoded = SPIRALTest::encode_record(&bytes);
+    //     let encoded = RespireTest::encode_record(&bytes);
     //     assert_eq!(
     //         encoded,
     //         IntModCyclo::from(
     //             [1_u64, 4, 0, 2, 7, 4, 2, 1, 7, 7, 7, 3, 3, 4, 0, 0].map(IntMod::from)
     //         )
     //     );
-    //     let decoded = SPIRALTest::decode_record(&encoded);
+    //     let decoded = RespireTest::decode_record(&encoded);
     //     assert_eq!(bytes, decoded);
     // }
 
     #[test]
-    fn test_spiral_one() {
-        run_spiral::<SPIRALTest, _>([11111].into_iter());
+    fn test_respire_one() {
+        run_respire::<RespireTest, _>([11111].into_iter());
     }
 
     #[ignore]
     #[test]
-    fn test_spiral_stress() {
+    fn test_respire_stress() {
         let mut rng = ChaCha20Rng::from_entropy();
-        run_spiral::<SPIRALTest, _>((0..).map(|_| rng.gen_range(0_usize..SPIRALTest::DB_SIZE)));
+        run_respire::<RespireTest, _>((0..).map(|_| rng.gen_range(0_usize..RespireTest::DB_SIZE)));
     }
 }
