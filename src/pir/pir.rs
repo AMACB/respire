@@ -856,25 +856,7 @@ impl<
         (_, s_vec, _): &<Self as Respire>::QueryKey,
         r: &<Self as Respire>::ResponseRaw,
     ) -> f64 {
-        let decoded: Matrix<N_VEC, 1, <Self as Respire>::RingQ> = Self::decode_vec_regev(s_vec, r);
-        let message: Matrix<N_VEC, 1, <Self as Respire>::RingP> =
-            decoded.map_ring(|r| r.round_down_into());
-        let noise: Matrix<N_VEC, 1, <Self as Respire>::RingQ> =
-            &decoded - &message.map_ring(|r| r.scale_up_into());
-
-        let mut sum = 0_f64;
-        let mut samples = 0_usize;
-
-        for i in 0..N_VEC {
-            for e in noise[(i, 0)].coeff.iter() {
-                let e_sq = (e.norm() as f64) * (e.norm() as f64);
-                sum += e_sq;
-                samples += 1;
-            }
-        }
-
-        // sigma^2 is the variance of the relative noise (noise divided by Q) of the coefficients. Return sigma.
-        (sum / samples as f64).sqrt() / (Q as f64)
+        Self::noise_bits_vec(s_vec, r)
     }
 }
 
@@ -1570,5 +1552,47 @@ impl<
             .map(|c| c.fold(0, |acc, b| 2 * acc + b as u8))
             .collect_vec();
         bytes.try_into().unwrap()
+    }
+
+    pub fn noise_variance(
+        s_scal: &<Self as Respire>::EncodingKey,
+        c: &<Self as Respire>::RegevCiphertext,
+    ) -> f64 {
+        let decoded: <Self as Respire>::RingQ = Self::decode_regev(&s_scal, c);
+        let message: <Self as Respire>::RingP = decoded.round_down_into();
+        let noise: <Self as Respire>::RingQ = &decoded - &message.scale_up_into();
+
+        let mut sum = 0_f64;
+        let mut samples = 0_usize;
+
+        for e in noise.coeff.iter() {
+            let e_sq = (e.norm() as f64) * (e.norm() as f64);
+            sum += e_sq;
+            samples += 1;
+        }
+
+        sum / samples as f64
+    }
+
+    pub fn noise_bits(
+        s_scal: &<Self as Respire>::EncodingKey,
+        c: &<Self as Respire>::RegevCiphertext,
+    ) -> f64 {
+        Self::noise_variance(s_scal, c).log2() / 2.0
+    }
+
+    pub fn noise_bits_vec(
+        s_vec: &<Self as Respire>::VecEncodingKey,
+        (cr, cm): &<Self as Respire>::VecRegevCiphertext,
+    ) -> f64 {
+        let mut total = 0_f64;
+        for i in 0..N_VEC {
+            let mut fake_ct = Matrix::zero();
+            fake_ct[(0, 0)] = cr.clone();
+            fake_ct[(1, 0)] = cm[(i, 0)].clone();
+            let fake_s = s_vec[(i, 0)].clone();
+            total += Self::noise_variance(&fake_s, &fake_ct);
+        }
+        (total / N_VEC as f64).log2() / 2.0
     }
 }

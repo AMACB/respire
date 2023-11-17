@@ -108,16 +108,23 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
         record[5] = ((i / 100) % 100) as u8;
         record[6] = ((i / 100 / 100) % 100) as u8;
         record[7] = ((i / 100 / 100 / 100) % 100) as u8;
+        // for i in 8..256 {
+        //     record[i] = random();
+        // }
         records.push(record);
     }
-    eprintln!(
-        "Estimated relative noise: 2^({})",
-        RESPIRE_TEST_PARAMS.noise_estimate().log2()
-    );
-    eprintln!(
-        "Relative noise threshold: 2^({})",
-        RESPIRE_TEST_PARAMS.relative_noise_threshold().log2()
-    );
+
+    // FIXME: both of these are out of date. The former is replaced by the jupyter notebook though?
+
+    // eprintln!(
+    //     "Estimated relative noise: 2^({})",
+    //     RESPIRE_TEST_PARAMS.noise_estimate().log2()
+    // );
+
+    // eprintln!(
+    //     "Relative noise threshold: 2^({})",
+    //     RESPIRE_TEST_PARAMS.relative_noise_threshold().log2()
+    // );
 
     eprintln!();
 
@@ -176,11 +183,8 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
         eprintln!("    {:?} to compress response", response_compress_total);
         eprintln!("    {:?} to extract response", response_extract_total);
 
-        let rel_noise = TheRespire::response_raw_stats(&qk, &response_raw);
-        eprintln!(
-            "  relative coefficient noise (sample): 2^({})",
-            rel_noise.log2()
-        );
+        let noise_bits = TheRespire::response_raw_stats(&qk, &response_raw);
+        eprintln!("  coefficient noise (sample std dev): 2^({})", noise_bits);
     };
 
     for chunk in iter
@@ -402,7 +406,7 @@ mod test {
 
     #[test]
     fn test_respire_one() {
-        run_respire::<RespireTest, _>([11111].into_iter());
+        run_respire::<RespireTest, _>([711_711].into_iter());
     }
 
     #[ignore]
