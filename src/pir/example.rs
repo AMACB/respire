@@ -55,7 +55,7 @@ pub const fn respire_1024(pack: bool, n_vec: usize) -> RespireParams {
     .expand()
 }
 
-// pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(true, 2);
+// pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(false, 1);
 pub const RESPIRE_TEST_PARAMS: RespireParams = respire_512(1);
 
 pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
@@ -183,8 +183,11 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
         eprintln!("    {:?} to compress response", response_compress_total);
         eprintln!("    {:?} to extract response", response_extract_total);
 
-        let noise_bits = TheRespire::response_raw_stats(&qk, &response_raw);
-        eprintln!("  coefficient noise (sample std dev): 2^({})", noise_bits);
+        let noise_subgaussian_bits = TheRespire::response_raw_stats(&qk, &response_raw);
+        eprintln!(
+            "  coefficient noise (subgaussian widths): 2^({})",
+            noise_subgaussian_bits
+        );
     };
 
     for chunk in iter

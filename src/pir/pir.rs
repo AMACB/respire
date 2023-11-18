@@ -856,7 +856,7 @@ impl<
         (_, s_vec, _): &<Self as Respire>::QueryKey,
         r: &<Self as Respire>::ResponseRaw,
     ) -> f64 {
-        Self::noise_bits_vec(s_vec, r)
+        Self::noise_subgaussian_bits_vec(s_vec, r)
     }
 }
 
@@ -1574,14 +1574,19 @@ impl<
         sum / samples as f64
     }
 
-    pub fn noise_bits(
+    fn variance_to_subgaussian_bits(x: f64) -> f64 {
+        // Subgaussian widths = sqrt(2*pi) * (standard deviation)
+        (x * (2f64 * PI)).log2() / 2f64
+    }
+
+    pub fn noise_subgaussian_bits(
         s_scal: &<Self as Respire>::EncodingKey,
         c: &<Self as Respire>::RegevCiphertext,
     ) -> f64 {
-        Self::noise_variance(s_scal, c).log2() / 2.0
+        Self::variance_to_subgaussian_bits(Self::noise_variance(s_scal, c))
     }
 
-    pub fn noise_bits_vec(
+    pub fn noise_subgaussian_bits_vec(
         s_vec: &<Self as Respire>::VecEncodingKey,
         (cr, cm): &<Self as Respire>::VecRegevCiphertext,
     ) -> f64 {
@@ -1593,6 +1598,6 @@ impl<
             let fake_s = s_vec[(i, 0)].clone();
             total += Self::noise_variance(&fake_s, &fake_ct);
         }
-        (total / N_VEC as f64).log2() / 2.0
+        Self::variance_to_subgaussian_bits(total / N_VEC as f64)
     }
 }
