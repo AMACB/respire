@@ -6,7 +6,7 @@ use std::time::Instant;
 use std::{iter, slice};
 
 use crate::math::discrete_gaussian::NUM_WIDTHS;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use crate::math::gadget::{
@@ -297,6 +297,8 @@ pub trait Respire {
     type RingQ;
     type RingQFast;
     type RegevCiphertext;
+    type RegevSeeded;
+    type RegevCompressed;
     type GSWCiphertext;
     type EncodingKey;
     type VecEncodingKey;
@@ -344,10 +346,12 @@ pub trait Respire {
     const ETA2: usize;
     const REGEV_COUNT: usize;
     const REGEV_EXPAND_ITERS: usize;
+    const REGEV_STRIDE: usize;
     const GSW_FOLD_COUNT: usize;
     const GSW_PROJ_COUNT: usize;
     const GSW_COUNT: usize;
     const GSW_EXPAND_ITERS: usize;
+    const GSW_STRIDE: usize;
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(records_iter: I)
         -> Self::Database;
@@ -435,6 +439,8 @@ impl<
     type RingQ = IntModCyclo<D, Q>;
     type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B>;
     type RegevCiphertext = Matrix<2, 1, Self::RingQFast>;
+    type RegevSeeded = ([u8; 32], Self::RingQFast);
+    type RegevCompressed = ([u8; 32], Vec<IntMod<Q>>);
     type GSWCiphertext = Matrix<2, M_GSW, Self::RingQFast>;
 
     type EncodingKey = Self::RingQFast;
@@ -475,7 +481,8 @@ impl<
         Self::KeySwitchKey,
         Self::ScalToVecKey,
     );
-    type Query = Self::RegevCiphertext;
+
+    type Query = (Self::RegevCompressed, Self::RegevCompressed);
     type Queries = Vec<Self::Query>;
     type QueryExpanded = (
         Vec<Self::RegevCiphertext>,
@@ -507,12 +514,14 @@ impl<
 
     const REGEV_COUNT: usize = 1 << ETA1;
     const REGEV_EXPAND_ITERS: usize = ETA1;
+    const REGEV_STRIDE: usize = D / (1 << Self::REGEV_EXPAND_ITERS);
     const GSW_FOLD_COUNT: usize = ETA2 * (Z_FOLD - 1);
 
     // TODO add param to reduce this when we don't care about garbage being in the other slots
     const GSW_PROJ_COUNT: usize = floor_log(2, Self::PACK_RATIO as u64);
     const GSW_COUNT: usize = (Self::GSW_FOLD_COUNT + Self::GSW_PROJ_COUNT) * T_GSW;
     const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
+    const GSW_STRIDE: usize = D / (1 << Self::GSW_EXPAND_ITERS);
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
         records_iter: I,
@@ -671,16 +680,16 @@ impl<
             let (idx, proj_idx) = (idx / Self::PACK_RATIO, idx % Self::PACK_RATIO);
             let (idx_i, idx_j) = (idx / Self::PACKED_DIM2_SIZE, idx % Self::PACKED_DIM2_SIZE);
 
-            let mut packed_vec: Vec<IntMod<Q>> = iter::repeat(IntMod::zero()).take(D).collect();
-
-            let inv_even = IntMod::from(mod_inverse(1 << (1 + Self::REGEV_EXPAND_ITERS), Q));
+            let mut regev_vec: Vec<IntMod<Q>> = iter::repeat(IntMod::zero()).take(D).collect();
+            let inv_regev = IntMod::from(mod_inverse(1 << (1 + Self::REGEV_EXPAND_ITERS), Q));
             for i in 0_usize..Self::PACKED_DIM1_SIZE {
-                packed_vec[2 * i] =
-                    (IntMod::<P>::from((i == idx_i) as u64)).scale_up_into() * inv_even;
+                regev_vec[i * Self::REGEV_STRIDE] =
+                    IntMod::<P>::from((i == idx_i) as u64).scale_up_into() * inv_regev;
             }
 
-            // Think of the odd entries of packed as [ETA2] x [Z_FOLD - 1] x [T_GSW] + [GSW_PROJ_COUNT] x [T_GSW]
-            let inv_odd = IntMod::from(mod_inverse(1 << (1 + Self::GSW_EXPAND_ITERS), Q));
+            // Think of these entries as [ETA2] x [Z_FOLD - 1] x [T_GSW] + [GSW_PROJ_COUNT] x [T_GSW]
+            let mut gsw_vec: Vec<IntMod<Q>> = iter::repeat(IntMod::zero()).take(D).collect();
+            let inv_gsw = IntMod::from(mod_inverse(1 << (1 + Self::GSW_EXPAND_ITERS), Q));
 
             // [ETA2] x [Z_FOLD - 1] x [T_GSW] part
             let mut digits = Vec::with_capacity(ETA2);
@@ -695,7 +704,7 @@ impl<
                     let mut msg = IntMod::from((digit == which + 1) as u64);
                     for gsw_pow in 0..T_GSW {
                         let pack_idx = T_GSW * ((Z_FOLD - 1) * digit_idx + which) + gsw_pow;
-                        packed_vec[2 * pack_idx + 1] = msg * inv_odd;
+                        gsw_vec[pack_idx * Self::GSW_STRIDE] = msg * inv_gsw;
                         msg *= IntMod::from(Z_GSW);
                     }
                 }
@@ -714,13 +723,33 @@ impl<
                 let mut msg = IntMod::from(proj_bit as u64);
                 for gsw_pow in 0..T_GSW {
                     let pack_idx = gsw_proj_offset + T_GSW * proj_idx + gsw_pow;
-                    packed_vec[2 * pack_idx + 1] = msg * inv_odd;
+                    gsw_vec[pack_idx * Self::GSW_STRIDE] = msg * inv_gsw;
                     msg *= IntMod::from(Z_GSW);
                 }
             }
 
-            let mu: IntModCyclo<D, Q> = packed_vec.into();
-            result.push(Self::encode_regev(s_encode, &mu))
+            let mu_regev: IntModCyclo<D, Q> = regev_vec.into();
+            let mu_gsw: IntModCyclo<D, Q> = gsw_vec.into();
+            let (seed_regev, ct1_regev) = Self::encode_regev_seeded(s_encode, &mu_regev);
+            let (seed_gsw, ct1_gsw) = Self::encode_regev_seeded(s_encode, &mu_gsw);
+            let compressed_regev = (
+                seed_regev,
+                <Self as Respire>::RingQ::from(&ct1_regev)
+                    .coeff
+                    .into_iter()
+                    .step_by(Self::REGEV_STRIDE)
+                    .collect_vec(),
+            );
+            let compressed_gsw = (
+                seed_gsw,
+                <Self as Respire>::RingQ::from(&ct1_gsw)
+                    .coeff
+                    .into_iter()
+                    .step_by(Self::GSW_STRIDE)
+                    .collect_vec(),
+            );
+
+            result.push((compressed_regev, compressed_gsw));
         }
         result
     }
@@ -1248,6 +1277,38 @@ impl<
         c1 += &<Self as Respire>::RingQFast::from(mu);
         c[(1, 0)] = c1;
         c
+    }
+
+    pub fn encode_regev_seeded(
+        s_encode: &<Self as Respire>::EncodingKey,
+        mu: &<Self as Respire>::RingQ,
+    ) -> <Self as Respire>::RegevSeeded {
+        let mut rng = ChaCha20Rng::from_entropy();
+        let seed = rng.gen();
+        let c0 = {
+            let mut seeded_rng = ChaCha20Rng::from_seed(seed);
+            <Self as Respire>::RingQFast::rand_uniform(&mut seeded_rng)
+        };
+        let e = <Self as Respire>::RingQFast::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(
+            &mut rng,
+        );
+        let mut c1 = &c0 * s_encode;
+        c1 += &e;
+        c1 += &<Self as Respire>::RingQFast::from(mu);
+        (seed, c1)
+    }
+
+    pub fn regev_recover_from_seeded(
+        (seed, c1): <Self as Respire>::RegevSeeded,
+    ) -> <Self as Respire>::RegevCiphertext {
+        let c0 = {
+            let mut seeded_rng = ChaCha20Rng::from_seed(seed);
+            <Self as Respire>::RingQFast::rand_uniform(&mut seeded_rng)
+        };
+        let mut result = Matrix::zero();
+        result[(0, 0)] = c0;
+        result[(1, 0)] = c1;
+        result
     }
 
     pub fn encode_vec_regev(
