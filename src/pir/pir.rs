@@ -3,7 +3,6 @@ use itertools::Itertools;
 use std::cmp::max;
 use std::f64::consts::PI;
 use std::time::Instant;
-use std::{iter, slice};
 
 use crate::math::discrete_gaussian::NUM_WIDTHS;
 use rand::{Rng, SeedableRng};
@@ -20,7 +19,7 @@ use crate::math::matrix::Matrix;
 use crate::math::number_theory::mod_pow;
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::ring_elem::{NormedRingElement, RingElement};
-use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits};
+use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits, reverse_bits_fast};
 
 use crate::math::simd_utils::*;
 use crate::pir::noise::{BoundedNoise, Independent, SubGaussianNoise};
@@ -172,6 +171,7 @@ impl RespireParams {
     }
 
     pub fn noise_estimate(&self) -> f64 {
+        // TODO: this is very out of date
         let chi = SubGaussianNoise::new(
             (self.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64).powi(2),
             self.D as u64,
@@ -346,12 +346,10 @@ pub trait Respire {
     const ETA2: usize;
     const REGEV_COUNT: usize;
     const REGEV_EXPAND_ITERS: usize;
-    const REGEV_STRIDE: usize;
     const GSW_FOLD_COUNT: usize;
     const GSW_PROJ_COUNT: usize;
     const GSW_COUNT: usize;
     const GSW_EXPAND_ITERS: usize;
-    const GSW_STRIDE: usize;
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(records_iter: I)
         -> Self::Database;
@@ -472,11 +470,7 @@ impl<
         Self::VecEncodingKeyQ2Small,
     );
     type PublicParams = (
-        (
-            Self::AutoKeyGSW,
-            Vec<Self::AutoKeyRegev>,
-            Vec<Self::AutoKeyGSW>,
-        ),
+        (Vec<Self::AutoKeyRegev>, Vec<Self::AutoKeyGSW>),
         Self::RegevToGSWKey,
         Self::KeySwitchKey,
         Self::ScalToVecKey,
@@ -514,14 +508,12 @@ impl<
 
     const REGEV_COUNT: usize = 1 << ETA1;
     const REGEV_EXPAND_ITERS: usize = ETA1;
-    const REGEV_STRIDE: usize = D / (1 << Self::REGEV_EXPAND_ITERS);
     const GSW_FOLD_COUNT: usize = ETA2 * (Z_FOLD - 1);
 
     // TODO add param to reduce this when we don't care about garbage being in the other slots
     const GSW_PROJ_COUNT: usize = floor_log(2, Self::PACK_RATIO as u64);
     const GSW_COUNT: usize = (Self::GSW_FOLD_COUNT + Self::GSW_PROJ_COUNT) * T_GSW;
     const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
-    const GSW_STRIDE: usize = D / (1 << Self::GSW_EXPAND_ITERS);
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
         records_iter: I,
@@ -634,11 +626,9 @@ impl<
         let s_switch = Self::key_switch_setup(&s_vec_q2, &s_small_q2);
 
         // Automorphism keys
-        let auto_key_first = Self::auto_setup::<T_COEFF_GSW, Z_COEFF_GSW>(D + 1, &s_encode);
-
         let mut auto_keys_regev: Vec<<Self as Respire>::AutoKeyRegev> =
             Vec::with_capacity(Self::REGEV_EXPAND_ITERS);
-        for i in 1..Self::REGEV_EXPAND_ITERS + 1 {
+        for i in 0..floor_log(2, D as u64) {
             let tau_power = (D >> i) + 1;
             auto_keys_regev.push(Self::auto_setup::<T_COEFF_REGEV, Z_COEFF_REGEV>(
                 tau_power, &s_encode,
@@ -646,7 +636,7 @@ impl<
         }
         let mut auto_keys_gsw: Vec<<Self as Respire>::AutoKeyGSW> =
             Vec::with_capacity(Self::GSW_EXPAND_ITERS);
-        for i in 1..Self::GSW_EXPAND_ITERS + 1 {
+        for i in 0..floor_log(2, D as u64) {
             let tau_power = (D >> i) + 1;
             auto_keys_gsw.push(Self::auto_setup::<T_COEFF_GSW, Z_COEFF_GSW>(
                 tau_power, &s_encode,
@@ -662,7 +652,7 @@ impl<
         (
             (s_encode, s_vec, s_small),
             (
-                (auto_key_first, auto_keys_regev, auto_keys_gsw),
+                (auto_keys_regev, auto_keys_gsw),
                 regev_to_gsw_key,
                 s_switch,
                 scal_to_vec_key,
@@ -680,16 +670,16 @@ impl<
             let (idx, proj_idx) = (idx / Self::PACK_RATIO, idx % Self::PACK_RATIO);
             let (idx_i, idx_j) = (idx / Self::PACKED_DIM2_SIZE, idx % Self::PACKED_DIM2_SIZE);
 
-            let mut regev_vec: Vec<IntMod<Q>> = iter::repeat(IntMod::zero()).take(D).collect();
-            let inv_regev = IntMod::from(mod_inverse(1 << (1 + Self::REGEV_EXPAND_ITERS), Q));
-            for i in 0_usize..Self::PACKED_DIM1_SIZE {
-                regev_vec[i * Self::REGEV_STRIDE] =
-                    IntMod::<P>::from((i == idx_i) as u64).scale_up_into() * inv_regev;
+            let inv = IntMod::from(mod_inverse(D as u64, Q));
+
+            let mut mu_regev = <Self as Respire>::RingQ::zero();
+            for i in 0..Self::REGEV_COUNT {
+                mu_regev.coeff[reverse_bits_fast::<D>(i)] =
+                    IntMod::<P>::from((i == idx_i) as u64).scale_up_into() * inv;
             }
 
             // Think of these entries as [ETA2] x [Z_FOLD - 1] x [T_GSW] + [GSW_PROJ_COUNT] x [T_GSW]
-            let mut gsw_vec: Vec<IntMod<Q>> = iter::repeat(IntMod::zero()).take(D).collect();
-            let inv_gsw = IntMod::from(mod_inverse(1 << (1 + Self::GSW_EXPAND_ITERS), Q));
+            let mut mu_gsw = <Self as Respire>::RingQ::zero();
 
             // [ETA2] x [Z_FOLD - 1] x [T_GSW] part
             let mut digits = Vec::with_capacity(ETA2);
@@ -704,7 +694,7 @@ impl<
                     let mut msg = IntMod::from((digit == which + 1) as u64);
                     for gsw_pow in 0..T_GSW {
                         let pack_idx = T_GSW * ((Z_FOLD - 1) * digit_idx + which) + gsw_pow;
-                        gsw_vec[pack_idx * Self::GSW_STRIDE] = msg * inv_gsw;
+                        mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg * inv;
                         msg *= IntMod::from(Z_GSW);
                     }
                 }
@@ -723,32 +713,27 @@ impl<
                 let mut msg = IntMod::from(proj_bit as u64);
                 for gsw_pow in 0..T_GSW {
                     let pack_idx = gsw_proj_offset + T_GSW * proj_idx + gsw_pow;
-                    gsw_vec[pack_idx * Self::GSW_STRIDE] = msg * inv_gsw;
+                    mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg * inv;
                     msg *= IntMod::from(Z_GSW);
                 }
             }
 
-            let mu_regev: IntModCyclo<D, Q> = regev_vec.into();
-            let mu_gsw: IntModCyclo<D, Q> = gsw_vec.into();
             let (seed_regev, ct1_regev) = Self::encode_regev_seeded(s_encode, &mu_regev);
+            let ct1_regev_coeff = <Self as Respire>::RingQ::from(&ct1_regev).coeff;
             let (seed_gsw, ct1_gsw) = Self::encode_regev_seeded(s_encode, &mu_gsw);
+            let ct1_gsw_coeff = <Self as Respire>::RingQ::from(&ct1_gsw).coeff;
             let compressed_regev = (
                 seed_regev,
-                <Self as Respire>::RingQ::from(&ct1_regev)
-                    .coeff
-                    .into_iter()
-                    .step_by(Self::REGEV_STRIDE)
+                (0..Self::REGEV_COUNT)
+                    .map(|i| ct1_regev_coeff[reverse_bits_fast::<D>(i)])
                     .collect_vec(),
             );
             let compressed_gsw = (
                 seed_gsw,
-                <Self as Respire>::RingQ::from(&ct1_gsw)
-                    .coeff
-                    .into_iter()
-                    .step_by(Self::GSW_STRIDE)
+                (0..Self::GSW_COUNT)
+                    .map(|i| ct1_gsw_coeff[reverse_bits_fast::<D>(i)])
                     .collect_vec(),
             );
-
             result.push((compressed_regev, compressed_gsw));
         }
         result
@@ -955,52 +940,71 @@ impl<
     >
 {
     pub fn answer_query_expand(
-        ((auto_key_first, auto_keys_regev, auto_keys_gsw), regev_to_gsw_key, _, _): &<Self as Respire>::PublicParams,
-        q: &<Self as Respire>::Query,
+        ((auto_keys_regev, auto_keys_gsw), regev_to_gsw_key, _, _): &<Self as Respire>::PublicParams,
+        ((seed_reg, vec_reg), (seed_gsw, vec_gsw)): &<Self as Respire>::Query,
     ) -> <Self as Respire>::QueryExpanded {
-        assert_eq!(auto_keys_regev.len(), Self::REGEV_EXPAND_ITERS);
-        assert_eq!(auto_keys_gsw.len(), Self::GSW_EXPAND_ITERS);
+        let mut c_regevs = {
+            let mut c1_reg = IntModCyclo::zero();
+            for (i, coeff) in vec_reg.iter().copied().enumerate() {
+                c1_reg.coeff[reverse_bits_fast::<D>(i)] = coeff;
+            }
+            let c_reg = Self::regev_recover_from_seeded((
+                *seed_reg,
+                <Self as Respire>::RingQFast::from(&c1_reg),
+            ));
+            vec![c_reg]
+        };
 
-        let first = Self::do_coeff_expand_iter::<T_COEFF_GSW, Z_COEFF_GSW>(
-            0,
-            slice::from_ref(q),
-            auto_key_first,
-        );
-        let [regev_base, gsw_base]: [_; 2] = first.try_into().unwrap();
+        let mut c_gsws = {
+            let mut c1_gsw = IntModCyclo::zero();
+            for (i, coeff) in vec_gsw.iter().copied().enumerate() {
+                c1_gsw.coeff[reverse_bits_fast::<D>(i)] = coeff;
+            }
+            let c_gsw = Self::regev_recover_from_seeded((
+                *seed_gsw,
+                <Self as Respire>::RingQFast::from(&c1_gsw),
+            ));
+            vec![c_gsw]
+        };
 
-        let mut regevs: Vec<<Self as Respire>::RegevCiphertext> = vec![regev_base];
+        assert_eq!(1 << auto_keys_regev.len(), D);
+        assert_eq!(1 << auto_keys_gsw.len(), D);
+
         for (i, auto_key_regev) in auto_keys_regev.iter().enumerate() {
-            regevs = Self::do_coeff_expand_iter::<T_COEFF_REGEV, Z_COEFF_REGEV>(
-                i + 1,
-                regevs.as_slice(),
+            c_regevs = Self::do_coeff_expand_iter::<T_COEFF_REGEV, Z_COEFF_REGEV>(
+                i,
+                c_regevs.as_slice(),
                 auto_key_regev,
             );
+            let denom = D >> (i + 1);
+            c_regevs.truncate((Self::REGEV_COUNT + denom - 1) / denom);
         }
-        assert_eq!(regevs.len(), Self::PACKED_DIM1_SIZE);
+        assert_eq!(c_regevs.len(), Self::REGEV_COUNT);
 
-        let mut gsws = vec![gsw_base];
         for (i, auto_key_gsw) in auto_keys_gsw.iter().enumerate() {
-            gsws = Self::do_coeff_expand_iter::<T_COEFF_GSW, Z_COEFF_GSW>(
-                i + 1,
-                gsws.as_slice(),
+            c_gsws = Self::do_coeff_expand_iter::<T_COEFF_GSW, Z_COEFF_GSW>(
+                i,
+                c_gsws.as_slice(),
                 auto_key_gsw,
             );
+            let denom = D >> (i + 1);
+            c_gsws.truncate((Self::GSW_COUNT + denom - 1) / denom);
         }
-        gsws.truncate(Self::GSW_COUNT);
+        assert_eq!(c_gsws.len(), Self::GSW_COUNT);
 
-        let mut gsws_iter = gsws
+        let mut c_gsws_iter = c_gsws
             .chunks_exact(T_GSW)
             .map(|cs| Self::regev_to_gsw(regev_to_gsw_key, cs));
 
-        let gsws_fold = (0..Self::GSW_FOLD_COUNT)
-            .map(|_| gsws_iter.next().unwrap())
+        let c_gsws_fold = (0..Self::GSW_FOLD_COUNT)
+            .map(|_| c_gsws_iter.next().unwrap())
             .collect();
-        let gsws_proj = (0..Self::GSW_PROJ_COUNT)
-            .map(|_| gsws_iter.next().unwrap())
+        let c_gsws_proj = (0..Self::GSW_PROJ_COUNT)
+            .map(|_| c_gsws_iter.next().unwrap())
             .collect();
-        assert_eq!(gsws_iter.next(), None);
+        assert_eq!(c_gsws_iter.next(), None);
 
-        (regevs, gsws_fold, gsws_proj)
+        (c_regevs, c_gsws_fold, c_gsws_proj)
     }
 
     pub fn answer_first_dim(
@@ -1237,13 +1241,12 @@ impl<
     }
 
     pub fn answer_project(
-        ((auto_key_gsw0, _, auto_key_gsws), _, _, _): &<Self as Respire>::PublicParams,
+        ((_, auto_key_gsws), _, _, _): &<Self as Respire>::PublicParams,
         mut ct: <Self as Respire>::RegevCiphertext,
         gsws: &[<Self as Respire>::GSWCiphertext],
     ) -> <Self as Respire>::RegevCiphertext {
         // TODO use different T/Z/auto keys
-        let auto_keys = [auto_key_gsw0].into_iter().chain(auto_key_gsws);
-        for (iter, (gsw, auto_key)) in gsws.iter().zip(auto_keys).enumerate() {
+        for (iter, (gsw, auto_key)) in gsws.iter().zip(auto_key_gsws).enumerate() {
             ct = Self::project_hom::<T_COEFF_GSW, Z_COEFF_GSW>(iter, &ct, gsw, auto_key);
         }
         ct
@@ -1460,8 +1463,8 @@ impl<
             let ct_auto = Self::auto_hom::<LEN, BASE>(auto_key, ct);
             let ct_auto_shifted = Self::regev_mul_x_pow(&ct_auto, 2 * D - shift_auto_exp);
 
-            cts_new[j] = ct + &ct_auto;
-            cts_new[j + len] = &ct_shifted + &ct_auto_shifted;
+            cts_new[2 * j] = ct + &ct_auto;
+            cts_new[2 * j + 1] = &ct_shifted + &ct_auto_shifted;
         }
         cts_new
     }
