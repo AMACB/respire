@@ -97,6 +97,23 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
         }
     );
     eprintln!("Parameters: {:#?}", RESPIRE_TEST_PARAMS);
+    eprintln!(
+        "Public param size (compressed): {:.3} KiB",
+        RESPIRE_TEST_PARAMS.public_param_size() as f64 / 1024_f64
+    );
+    eprintln!(
+        "Query size (compressed): {:.3} KiB",
+        RESPIRE_TEST_PARAMS.query_size() as f64 / 1024_f64
+    );
+    eprintln!(
+        "Response size (batch): {:.3} KiB",
+        RESPIRE_TEST_PARAMS.response_size() as f64 / 1024_f64
+    );
+    eprintln!(
+        "Record size (batch): {:.3} KiB",
+        RESPIRE_TEST_PARAMS.record_size() as f64 / 1024_f64
+    );
+    eprintln!("Rate: {:.3}", RESPIRE_TEST_PARAMS.rate());
     let mut records: Vec<[u8; 256]> = Vec::with_capacity(TheRespire::DB_SIZE);
     for i in 0..TheRespire::DB_SIZE as u64 {
         let mut record = [0_u8; 256];
@@ -125,8 +142,6 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
     //     "Relative noise threshold: 2^({})",
     //     RESPIRE_TEST_PARAMS.relative_noise_threshold().log2()
     // );
-
-    eprintln!();
 
     let pre_start = Instant::now();
     let db = TheRespire::encode_db(records.iter().copied());

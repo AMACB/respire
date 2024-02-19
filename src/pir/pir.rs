@@ -251,6 +251,37 @@ impl RespireParams {
 
         fold_noise.variance().sqrt() / self.Q as f64
     }
+
+    pub fn public_param_size(&self) -> usize {
+        let automorph_elems = floor_log(2, self.D as u64) * (self.T_COEFF_REGEV + self.T_COEFF_GSW);
+        let reg_to_gsw_elems = 2 * self.T_CONV;
+        let scal_to_vec_elems = self.N_VEC * self.T_SCAL_TO_VEC;
+        let compress_elems = self.N_VEC * self.T_SWITCH;
+        let bytes_per_elem = self.D * ceil_log(2, self.Q) / 8;
+        return (automorph_elems + reg_to_gsw_elems + scal_to_vec_elems + compress_elems)
+            * bytes_per_elem;
+    }
+
+    pub fn query_size(&self) -> usize {
+        let n_regev = 1usize << self.ETA1;
+        let n_gsw = self.T_GSW * (self.ETA2 + (self.D / self.D_RECORD));
+        return (n_regev + n_gsw) * ceil_log(2, self.Q) / 8;
+    }
+
+    pub fn record_size(&self) -> usize {
+        let log_p = floor_log(2, self.P);
+        self.N_VEC * self.N_PACK * self.D_RECORD * log_p / 8
+    }
+    pub fn response_size(&self) -> usize {
+        let log_q1 = (self.Q_SWITCH1 as f64).log2();
+        let log_q2 = (self.Q_SWITCH2 as f64).log2();
+        return ((self.D_SWITCH as f64) * (log_q2 + (self.N_VEC as f64) * log_q1) / 8_f64).ceil()
+            as usize;
+    }
+
+    pub fn rate(&self) -> f64 {
+        (self.record_size() as f64) / (self.response_size() as f64)
+    }
 }
 
 #[macro_export]
