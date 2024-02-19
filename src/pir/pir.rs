@@ -970,6 +970,7 @@ impl<
         assert_eq!(1 << auto_keys_regev.len(), D);
         assert_eq!(1 << auto_keys_gsw.len(), D);
 
+        let i0 = Instant::now();
         for (i, auto_key_regev) in auto_keys_regev.iter().enumerate() {
             c_regevs = Self::do_coeff_expand_iter::<T_COEFF_REGEV, Z_COEFF_REGEV>(
                 i,
@@ -981,6 +982,7 @@ impl<
         }
         assert_eq!(c_regevs.len(), Self::REGEV_COUNT);
 
+        let i1 = Instant::now();
         for (i, auto_key_gsw) in auto_keys_gsw.iter().enumerate() {
             c_gsws = Self::do_coeff_expand_iter::<T_COEFF_GSW, Z_COEFF_GSW>(
                 i,
@@ -992,6 +994,7 @@ impl<
         }
         assert_eq!(c_gsws.len(), Self::GSW_COUNT);
 
+        let i2 = Instant::now();
         let mut c_gsws_iter = c_gsws
             .chunks_exact(T_GSW)
             .map(|cs| Self::regev_to_gsw(regev_to_gsw_key, cs));
@@ -1003,6 +1006,11 @@ impl<
             .map(|_| c_gsws_iter.next().unwrap())
             .collect();
         assert_eq!(c_gsws_iter.next(), None);
+
+        let i3 = Instant::now();
+        eprintln!("(**) answer query expand (reg): {:?}", i1 - i0);
+        eprintln!("(**) answer query expand (gsw): {:?}", i2 - i1);
+        eprintln!("(**) answer query expand (reg_to_gsw): {:?}", i3 - i2);
 
         (c_regevs, c_gsws_fold, c_gsws_proj)
     }
