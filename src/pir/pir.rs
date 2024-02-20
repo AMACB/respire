@@ -256,10 +256,12 @@ impl RespireParams {
         let automorph_elems = floor_log(2, self.D as u64) * (self.T_COEFF_REGEV + self.T_COEFF_GSW);
         let reg_to_gsw_elems = 2 * self.T_CONV;
         let scal_to_vec_elems = self.N_VEC * self.T_SCAL_TO_VEC;
+        let q_elem_size = self.D * ceil_log(2, self.Q) / 8;
+
         let compress_elems = self.N_VEC * self.T_SWITCH;
-        let bytes_per_elem = self.D * ceil_log(2, self.Q) / 8;
-        return (automorph_elems + reg_to_gsw_elems + scal_to_vec_elems + compress_elems)
-            * bytes_per_elem;
+        let q2_elem_size = self.D * ceil_log(2, self.Q_SWITCH2) / 8;
+        return (automorph_elems + reg_to_gsw_elems + scal_to_vec_elems) * q_elem_size
+            + compress_elems * q2_elem_size;
     }
 
     pub fn query_size(&self) -> usize {
