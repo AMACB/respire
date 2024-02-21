@@ -210,8 +210,11 @@ impl<'a, const D: usize, const N1: u64, const N2: u64> SubAssign<&'a Self>
 impl<'a, const D: usize, const N1: u64, const N2: u64> MulAssign<&'a Self>
     for IntModCycloCRTEval<D, N1, N2>
 {
-    fn mul_assign(&mut self, _: &'a Self) {
-        todo!()
+    fn mul_assign(&mut self, rhs: &'a Self) {
+        for i in 0..D {
+            self.proj1.evals[i] *= rhs.proj1.evals[i];
+            self.proj2.evals[i] *= rhs.proj2.evals[i];
+        }
     }
 }
 

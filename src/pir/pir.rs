@@ -703,12 +703,10 @@ impl<
             let (idx, proj_idx) = (idx / Self::PACK_RATIO, idx % Self::PACK_RATIO);
             let (idx_i, idx_j) = (idx / Self::PACKED_DIM2_SIZE, idx % Self::PACKED_DIM2_SIZE);
 
-            let inv = IntMod::from(mod_inverse(D as u64, Q));
-
             let mut mu_regev = <Self as Respire>::RingQ::zero();
             for i in 0..Self::REGEV_COUNT {
                 mu_regev.coeff[reverse_bits_fast::<D>(i)] =
-                    IntMod::<P>::from((i == idx_i) as u64).scale_up_into() * inv;
+                    IntMod::<P>::from((i == idx_i) as u64).scale_up_into();
             }
 
             // Think of these entries as [ETA2] x [Z_FOLD - 1] x [T_GSW] + [GSW_PROJ_COUNT] x [T_GSW]
@@ -727,7 +725,7 @@ impl<
                     let mut msg = IntMod::from((digit == which + 1) as u64);
                     for gsw_pow in 0..T_GSW {
                         let pack_idx = T_GSW * ((Z_FOLD - 1) * digit_idx + which) + gsw_pow;
-                        mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg * inv;
+                        mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg;
                         msg *= IntMod::from(Z_GSW);
                     }
                 }
@@ -746,7 +744,7 @@ impl<
                 let mut msg = IntMod::from(proj_bit as u64);
                 for gsw_pow in 0..T_GSW {
                     let pack_idx = gsw_proj_offset + T_GSW * proj_idx + gsw_pow;
-                    mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg * inv;
+                    mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg;
                     msg *= IntMod::from(Z_GSW);
                 }
             }
@@ -976,15 +974,18 @@ impl<
         ((auto_keys_regev, auto_keys_gsw), regev_to_gsw_key, _, _): &<Self as Respire>::PublicParams,
         ((seed_reg, vec_reg), (seed_gsw, vec_gsw)): &<Self as Respire>::Query,
     ) -> <Self as Respire>::QueryExpanded {
+        let inv = <Self as Respire>::RingQFast::from(mod_inverse(D as u64, Q));
         let mut c_regevs = {
             let mut c1_reg = IntModCyclo::zero();
             for (i, coeff) in vec_reg.iter().copied().enumerate() {
                 c1_reg.coeff[reverse_bits_fast::<D>(i)] = coeff;
             }
-            let c_reg = Self::regev_recover_from_seeded((
+            let mut c_reg = Self::regev_recover_from_seeded((
                 *seed_reg,
                 <Self as Respire>::RingQFast::from(&c1_reg),
             ));
+            c_reg[(0, 0)] *= &inv;
+            c_reg[(1, 0)] *= &inv;
             vec![c_reg]
         };
 
@@ -993,10 +994,12 @@ impl<
             for (i, coeff) in vec_gsw.iter().copied().enumerate() {
                 c1_gsw.coeff[reverse_bits_fast::<D>(i)] = coeff;
             }
-            let c_gsw = Self::regev_recover_from_seeded((
+            let mut c_gsw = Self::regev_recover_from_seeded((
                 *seed_gsw,
                 <Self as Respire>::RingQFast::from(&c1_gsw),
             ));
+            c_gsw[(0, 0)] *= &inv;
+            c_gsw[(1, 0)] *= &inv;
             vec![c_gsw]
         };
 
