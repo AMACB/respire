@@ -576,8 +576,8 @@ impl<
         #[cfg(not(target_feature = "avx2"))]
         {
             let mut db: Vec<SimdVec> = (0..(D * Self::PACKED_DB_SIZE)).map(|_| 0_u64).collect();
-            for eval_vec_idx in 0..D {
-                for db_idx in 0..Self::PACKED_DB_SIZE {
+            for db_idx in 0..Self::PACKED_DB_SIZE {
+                for eval_vec_idx in 0..D {
                     // Transpose the index
                     let (db_i, db_j) = (
                         db_idx / Self::PACKED_DIM2_SIZE,
@@ -602,8 +602,8 @@ impl<
                 .map(|_| Aligned32([0_u64; 4]))
                 .collect();
 
-            for eval_vec_idx in 0..(D / SIMD_LANES) {
-                for db_idx in 0..Self::PACKED_DB_SIZE {
+            for db_idx in 0..Self::PACKED_DB_SIZE {
+                for eval_vec_idx in 0..(D / SIMD_LANES) {
                     // Transpose the index
                     let (db_i, db_j) = (
                         db_idx / Self::PACKED_DIM2_SIZE,
