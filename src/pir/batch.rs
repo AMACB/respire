@@ -17,31 +17,52 @@ pub struct BatchRespireImpl<const NUM_DB: usize, BaseRespire: Respire + RespireA
     phantom: PhantomData<BaseRespire>,
 }
 
+impl<const NUM_BUCKET: usize, BaseRespire: Respire + RespireAliases> BatchRespire
+    for BatchRespireImpl<NUM_BUCKET, BaseRespire>
+{
+    type BaseRespire = BaseRespire;
+    const NUM_BUCKET: usize = NUM_BUCKET;
+    const BUCKET_SIZE: usize = <Self::BaseRespire as RespireAliases>::DB_SIZE;
+}
+
 impl<const NUM_DB: usize, BaseRespire: Respire + RespireAliases> Respire
     for BatchRespireImpl<NUM_DB, BaseRespire>
 {
     type QueryKey = BaseRespire::QueryKey;
     type PublicParams = BaseRespire::PublicParams;
-    type Query = !;
-    type Queries = !;
-    type QueryExpanded = !;
+    type Queries = ();
     type ResponseRaw = BaseRespire::ResponseRaw;
     type Response = BaseRespire::Response;
     type Record = BaseRespire::Record;
     type RecordPackedSmall = BaseRespire::RecordPackedSmall;
     type RecordPacked = BaseRespire::RecordPacked;
-    type Database = !;
+    type Database = Vec<<BaseRespire as Respire>::Database>;
     type RecordBytes = BaseRespire::RecordBytes;
     const NUM_RECORDS: usize = 0;
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
         records_iter: I,
     ) -> Self::Database {
-        todo!()
+        let mut buckets = vec![Vec::new(); Self::NUM_BUCKET];
+        for (i, r) in records_iter.enumerate() {
+            let (b1, b2, b3) = Self::idx_to_buckets(i);
+            buckets[b1].push((i, r.clone()));
+            buckets[b2].push((i, r.clone()));
+            buckets[b3].push((i, r.clone()));
+        }
+        let max_count = buckets.iter().map(|b| b.len()).max().unwrap();
+        assert!(max_count <= BaseRespire::DB_SIZE);
+
+        let mut result = Vec::with_capacity(Self::NUM_BUCKET);
+        for b in buckets.iter() {
+            // TODO cuckoo inside bucket
+            result.push(BaseRespire::encode_db(b.iter().map(|(_, r)| r.clone())));
+        }
+        result
     }
 
     fn setup() -> (Self::QueryKey, Self::PublicParams) {
-        todo!()
+        BaseRespire::setup()
     }
 
     fn query(qk: &Self::QueryKey, idx: &[usize]) -> Self::Queries {
@@ -74,34 +95,6 @@ impl<const NUM_DB: usize, BaseRespire: Respire + RespireAliases> Respire
     ) -> f64 {
         todo!()
     }
-}
-
-impl<const NUM_BUCKET: usize, BaseRespire: Respire + RespireAliases> BatchRespire
-    for BatchRespireImpl<NUM_BUCKET, BaseRespire>
-{
-    type BaseRespire = BaseRespire;
-    const NUM_BUCKET: usize = NUM_BUCKET;
-    const BUCKET_SIZE: usize = <Self::BaseRespire as RespireAliases>::DB_SIZE;
-    // fn encode_batch_db<I: ExactSizeIterator<Item = <Self::BaseRespire as Respire>::RecordBytes>>(
-    //     records_iter: I,
-    // ) -> Vec<<Self::BaseRespire as Respire>::Database> {
-    //     let mut buckets = vec![Vec::new(); Self::NUM_BUCKET];
-    //     for (i, r) in records_iter.enumerate() {
-    //         let (b1, b2, b3) = Self::idx_to_buckets(i);
-    //         buckets[b1].push((i, r.clone()));
-    //         buckets[b2].push((i, r.clone()));
-    //         buckets[b3].push((i, r.clone()));
-    //     }
-    //     let max_count = buckets.iter().map(|b| b.len()).max().unwrap();
-    //     assert!(max_count <= <Self::BaseRespire as Respire>::DB_SIZE);
-    //
-    //     let mut result = Vec::with_capacity(Self::NUM_BUCKET);
-    //     for b in buckets.iter() {
-    //         // TODO cuckoo inside bucket
-    //         result.push(BaseRespire::encode_db(b.iter().map(|(_, r)| r.clone())));
-    //     }
-    //     result
-    // }
 }
 
 impl<const NUM_BUCKET: usize, BaseRespire: Respire + RespireAliases>

@@ -482,6 +482,9 @@ pub trait RespireAliases {
     type VecRegevCiphertext;
     type VecRegevSmall;
 
+    type QueryOne;
+    type QueryOneExpanded;
+
     // Constants
     const PACKED_DIM1_SIZE: usize;
     const PACKED_DIM2_SIZE: usize;
@@ -503,9 +506,7 @@ pub trait Respire {
     // Associated types
     type QueryKey;
     type PublicParams;
-    type Query;
     type Queries;
-    type QueryExpanded;
     type ResponseRaw;
     type Response;
 
@@ -571,6 +572,16 @@ respire_impl!(RespireAliases, {
         Matrix<N_VEC, 1, IntModCyclo<D_SWITCH, Q_SWITCH1>>,
     );
 
+    type QueryOne = (
+        <Self as RespireAliases>::RegevCompressed,
+        <Self as RespireAliases>::RegevCompressed,
+    );
+    type QueryOneExpanded = (
+        Vec<<Self as RespireAliases>::RegevCiphertext>,
+        Vec<<Self as RespireAliases>::GSWCiphertext>,
+        Vec<<Self as RespireAliases>::GSWCiphertext>,
+    );
+
     const PACKED_DIM1_SIZE: usize = 2_usize.pow(ETA1 as u32);
     const PACKED_DIM2_SIZE: usize = Z_FOLD.pow(ETA2 as u32);
     const PACKED_DB_SIZE: usize = Self::PACKED_DIM1_SIZE * Self::PACKED_DIM2_SIZE;
@@ -607,16 +618,8 @@ respire_impl!(Respire, {
         <Self as RespireAliases>::ScalToVecKey,
     );
 
-    type Query = (
-        <Self as RespireAliases>::RegevCompressed,
-        <Self as RespireAliases>::RegevCompressed,
-    );
-    type Queries = Vec<Self::Query>;
-    type QueryExpanded = (
-        Vec<<Self as RespireAliases>::RegevCiphertext>,
-        Vec<<Self as RespireAliases>::GSWCiphertext>,
-        Vec<<Self as RespireAliases>::GSWCiphertext>,
-    );
+    type Queries = Vec<<Self as RespireAliases>::QueryOne>;
+
     type ResponseRaw = <Self as RespireAliases>::VecRegevCiphertext;
     type Response = <Self as RespireAliases>::VecRegevSmall;
     type Record = IntModCyclo<D_RECORD, P>;
@@ -781,77 +784,11 @@ respire_impl!(Respire, {
         (s_encode, _, _): &<Self as Respire>::QueryKey,
         indices: &[usize],
     ) -> <Self as Respire>::Queries {
-        let mut result = Vec::with_capacity(indices.len());
-        for idx in indices.iter().copied() {
-            assert!(idx < Self::DB_SIZE);
-            let (idx, proj_idx) = (idx / Self::PACK_RATIO, idx % Self::PACK_RATIO);
-            let (idx_i, idx_j) = (idx / Self::PACKED_DIM2_SIZE, idx % Self::PACKED_DIM2_SIZE);
-
-            let mut mu_regev = <Self as RespireAliases>::RingQ::zero();
-            for i in 0..Self::REGEV_COUNT {
-                mu_regev.coeff[reverse_bits_fast::<D>(i)] =
-                    IntMod::<P>::from((i == idx_i) as u64).scale_up_into();
-            }
-
-            // Think of these entries as [ETA2] x [Z_FOLD - 1] x [T_GSW] + [GSW_PROJ_COUNT] x [T_GSW]
-            let mut mu_gsw = <Self as RespireAliases>::RingQ::zero();
-
-            // [ETA2] x [Z_FOLD - 1] x [T_GSW] part
-            let mut digits = Vec::with_capacity(ETA2);
-            let mut idx_j_curr = idx_j;
-            for _ in 0..ETA2 {
-                digits.push(idx_j_curr % Z_FOLD);
-                idx_j_curr /= Z_FOLD;
-            }
-
-            for (digit_idx, digit) in digits.into_iter().rev().enumerate() {
-                for which in 0..Z_FOLD - 1 {
-                    let mut msg = IntMod::from((digit == which + 1) as u64);
-                    for gsw_pow in 0..T_GSW {
-                        let pack_idx = T_GSW * ((Z_FOLD - 1) * digit_idx + which) + gsw_pow;
-                        mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg;
-                        msg *= IntMod::from(Z_GSW);
-                    }
-                }
-            }
-
-            // [GSW_PROJ_COUNT] x [T_GSW] part
-            let mut proj_bits = Vec::with_capacity(Self::GSW_PROJ_COUNT);
-            let mut proj_idx_curr = proj_idx;
-            for _ in 0..Self::GSW_PROJ_COUNT {
-                proj_bits.push(proj_idx_curr % 2);
-                proj_idx_curr /= 2;
-            }
-
-            let gsw_proj_offset = ETA2 * (Z_FOLD - 1) * T_GSW;
-            for (proj_idx, proj_bit) in proj_bits.into_iter().rev().enumerate() {
-                let mut msg = IntMod::from(proj_bit as u64);
-                for gsw_pow in 0..T_GSW {
-                    let pack_idx = gsw_proj_offset + T_GSW * proj_idx + gsw_pow;
-                    mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg;
-                    msg *= IntMod::from(Z_GSW);
-                }
-            }
-
-            let (seed_regev, ct1_regev) = Self::encode_regev_seeded(s_encode, &mu_regev);
-            let ct1_regev_coeff = <Self as RespireAliases>::RingQ::from(&ct1_regev).coeff;
-            let (seed_gsw, ct1_gsw) = Self::encode_regev_seeded(s_encode, &mu_gsw);
-            let ct1_gsw_coeff = <Self as RespireAliases>::RingQ::from(&ct1_gsw).coeff;
-            let compressed_regev = (
-                seed_regev,
-                (0..Self::REGEV_COUNT)
-                    .map(|i| ct1_regev_coeff[reverse_bits_fast::<D>(i)])
-                    .collect_vec(),
-            );
-            let compressed_gsw = (
-                seed_gsw,
-                (0..Self::GSW_COUNT)
-                    .map(|i| ct1_gsw_coeff[reverse_bits_fast::<D>(i)])
-                    .collect_vec(),
-            );
-            result.push((compressed_regev, compressed_gsw));
-        }
-        result
+        indices
+            .iter()
+            .copied()
+            .map(|idx| Self::query_one(s_encode, idx))
+            .collect_vec()
     }
 
     fn answer(
@@ -990,10 +927,83 @@ respire_impl!(Respire, {
 });
 
 respire_impl!({
+    pub fn query_one(
+        s_encode: &<Self as RespireAliases>::EncodingKey,
+        idx: usize,
+    ) -> <Self as RespireAliases>::QueryOne {
+        assert!(idx < Self::DB_SIZE);
+        let (idx, proj_idx) = (idx / Self::PACK_RATIO, idx % Self::PACK_RATIO);
+        let (idx_i, idx_j) = (idx / Self::PACKED_DIM2_SIZE, idx % Self::PACKED_DIM2_SIZE);
+
+        let mut mu_regev = <Self as RespireAliases>::RingQ::zero();
+        for i in 0..Self::REGEV_COUNT {
+            mu_regev.coeff[reverse_bits_fast::<D>(i)] =
+                IntMod::<P>::from((i == idx_i) as u64).scale_up_into();
+        }
+
+        // Think of these entries as [ETA2] x [Z_FOLD - 1] x [T_GSW] + [GSW_PROJ_COUNT] x [T_GSW]
+        let mut mu_gsw = <Self as RespireAliases>::RingQ::zero();
+
+        // [ETA2] x [Z_FOLD - 1] x [T_GSW] part
+        let mut digits = Vec::with_capacity(ETA2);
+        let mut idx_j_curr = idx_j;
+        for _ in 0..ETA2 {
+            digits.push(idx_j_curr % Z_FOLD);
+            idx_j_curr /= Z_FOLD;
+        }
+
+        for (digit_idx, digit) in digits.into_iter().rev().enumerate() {
+            for which in 0..Z_FOLD - 1 {
+                let mut msg = IntMod::from((digit == which + 1) as u64);
+                for gsw_pow in 0..T_GSW {
+                    let pack_idx = T_GSW * ((Z_FOLD - 1) * digit_idx + which) + gsw_pow;
+                    mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg;
+                    msg *= IntMod::from(Z_GSW);
+                }
+            }
+        }
+
+        // [GSW_PROJ_COUNT] x [T_GSW] part
+        let mut proj_bits = Vec::with_capacity(Self::GSW_PROJ_COUNT);
+        let mut proj_idx_curr = proj_idx;
+        for _ in 0..Self::GSW_PROJ_COUNT {
+            proj_bits.push(proj_idx_curr % 2);
+            proj_idx_curr /= 2;
+        }
+
+        let gsw_proj_offset = ETA2 * (Z_FOLD - 1) * T_GSW;
+        for (proj_idx, proj_bit) in proj_bits.into_iter().rev().enumerate() {
+            let mut msg = IntMod::from(proj_bit as u64);
+            for gsw_pow in 0..T_GSW {
+                let pack_idx = gsw_proj_offset + T_GSW * proj_idx + gsw_pow;
+                mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg;
+                msg *= IntMod::from(Z_GSW);
+            }
+        }
+
+        let (seed_regev, ct1_regev) = Self::encode_regev_seeded(s_encode, &mu_regev);
+        let ct1_regev_coeff = <Self as RespireAliases>::RingQ::from(&ct1_regev).coeff;
+        let (seed_gsw, ct1_gsw) = Self::encode_regev_seeded(s_encode, &mu_gsw);
+        let ct1_gsw_coeff = <Self as RespireAliases>::RingQ::from(&ct1_gsw).coeff;
+        let compressed_regev = (
+            seed_regev,
+            (0..Self::REGEV_COUNT)
+                .map(|i| ct1_regev_coeff[reverse_bits_fast::<D>(i)])
+                .collect_vec(),
+        );
+        let compressed_gsw = (
+            seed_gsw,
+            (0..Self::GSW_COUNT)
+                .map(|i| ct1_gsw_coeff[reverse_bits_fast::<D>(i)])
+                .collect_vec(),
+        );
+        (compressed_regev, compressed_gsw)
+    }
+
     pub fn answer_query_expand(
         ((auto_keys_regev, auto_keys_gsw), regev_to_gsw_key, _, _): &<Self as Respire>::PublicParams,
-        ((seed_reg, vec_reg), (seed_gsw, vec_gsw)): &<Self as Respire>::Query,
-    ) -> <Self as Respire>::QueryExpanded {
+        ((seed_reg, vec_reg), (seed_gsw, vec_gsw)): &<Self as RespireAliases>::QueryOne,
+    ) -> <Self as RespireAliases>::QueryOneExpanded {
         let inv = <Self as RespireAliases>::RingQFast::from(mod_inverse(D as u64, Q));
         let mut c_regevs = {
             let mut c1_reg = IntModCyclo::zero();
