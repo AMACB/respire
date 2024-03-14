@@ -1,3 +1,4 @@
+use crate::pir::batch::BatchRespireImpl;
 use crate::pir::pir::{Respire, RespireImpl, RespireParams, RespireParamsRaw};
 use crate::respire;
 use itertools::Itertools;
@@ -54,11 +55,21 @@ pub const fn respire_1024(pack: bool, n_vec: usize) -> RespireParams {
     }
     .expand()
 }
-
 // pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(false, 1);
 pub const RESPIRE_TEST_PARAMS: RespireParams = respire_512(1);
 
 pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
+
+pub const fn respire_1024_b32_base() -> RespireParams {
+    let mut params = respire_1024(true, 8);
+    params.ETA1 -= 2;
+    params.ETA2 -= 2;
+    params
+}
+
+pub const RESPIRE_BATCH32_BASE_TEST_PARAMS: RespireParams = respire_1024_b32_base();
+pub type RespireBatch32BaseTest = respire!(RESPIRE_BATCH32_BASE_TEST_PARAMS);
+pub type RespireBatch32Test = BatchRespireImpl<48, RespireBatch32BaseTest>;
 
 #[cfg(not(target_feature = "avx2"))]
 pub fn has_avx2() -> bool {
@@ -84,9 +95,8 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
     iter: I,
 ) {
     eprintln!(
-        "Running Respire test with database size {} (packed size {})",
-        TheRespire::DB_SIZE,
-        TheRespire::PACKED_DB_SIZE,
+        "Running Respire test with {} records",
+        TheRespire::NUM_RECORDS,
     );
     eprintln!(
         "AVX2 is {}",
@@ -114,8 +124,8 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
         RESPIRE_TEST_PARAMS.record_size() as f64 / 1024_f64
     );
     eprintln!("Rate: {:.3}", RESPIRE_TEST_PARAMS.rate());
-    let mut records: Vec<[u8; 256]> = Vec::with_capacity(TheRespire::DB_SIZE);
-    for i in 0..TheRespire::DB_SIZE as u64 {
+    let mut records: Vec<[u8; 256]> = Vec::with_capacity(TheRespire::NUM_RECORDS);
+    for i in 0..TheRespire::NUM_RECORDS as u64 {
         let mut record = [0_u8; 256];
         record[0] = (i % 256) as u8;
         record[1] = ((i / 256) % 256) as u8;
@@ -184,7 +194,7 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
             if decoded_record != records[idx] {
                 eprintln!("  **** **** **** **** ERROR **** **** **** ****");
                 eprintln!("  protocol failed");
-                dbg!(idx, idx / TheRespire::PACK_RATIO);
+                dbg!(idx);
                 dbg!(&decoded_record);
             }
         }
@@ -222,15 +232,16 @@ mod test {
     use crate::math::int_mod_poly::IntModPoly;
     use crate::math::matrix::Matrix;
     use crate::math::ring_elem::RingElement;
+    use crate::pir::pir::RespireAliases;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
 
     #[test]
     fn test_regev() {
         let s = RespireTest::encode_setup();
-        let mu = <RespireTest as Respire>::RingP::from(12_u64);
+        let mu = <RespireTest as RespireAliases>::RingP::from(12_u64);
         let encoded = RespireTest::encode_regev(&s, &mu.scale_up_into());
-        let decoded: <RespireTest as Respire>::RingP =
+        let decoded: <RespireTest as RespireAliases>::RingP =
             RespireTest::decode_regev(&s, &encoded).round_down_into();
         assert_eq!(mu, decoded);
     }
@@ -242,7 +253,7 @@ mod test {
         let mu = RingPP::from(111_u64);
         let encrypt = RespireTest::encode_gsw(&s, &mu.include_into());
 
-        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
+        let scale = <RespireTest as RespireAliases>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
         let decrypt = RespireTest::decode_gsw_scaled(&s, &encrypt, &scale);
         assert_eq!(decrypt.round_down_into(), mu);
     }
@@ -254,13 +265,13 @@ mod test {
             { RESPIRE_TEST_PARAMS.T_COEFF_REGEV },
             { RESPIRE_TEST_PARAMS.Z_COEFF_REGEV },
         >(3, &s);
-        let x = <RespireTest as Respire>::RingP::from(IntModPoly::x());
+        let x = <RespireTest as RespireAliases>::RingP::from(IntModPoly::x());
         let encrypt = RespireTest::encode_regev(&s, &x.scale_up_into());
         let encrypt_auto = RespireTest::auto_hom::<
             { RESPIRE_TEST_PARAMS.T_COEFF_REGEV },
             { RESPIRE_TEST_PARAMS.Z_COEFF_REGEV },
         >(&auto_key, &encrypt);
-        let decrypt: <RespireTest as Respire>::RingP =
+        let decrypt: <RespireTest as RespireAliases>::RingP =
             RespireTest::decode_regev(&s, &encrypt_auto).round_down_into();
         assert_eq!(decrypt, &(&x * &x) * &x);
     }
@@ -279,7 +290,7 @@ mod test {
         }
         let encrypt_gsw = RespireTest::regev_to_gsw(&s_regev_to_gsw, encrypt_vec.as_slice());
 
-        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
+        let scale = <RespireTest as RespireAliases>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
         let decrypted = RespireTest::decode_gsw_scaled(&s, &encrypt_gsw, &scale);
         assert_eq!(decrypted.round_down_into(), mu);
     }
@@ -373,13 +384,16 @@ mod test {
         let s_vec = RespireTest::encode_vec_setup();
         let s_scal_to_vec = RespireTest::scal_to_vec_setup(&s_scal, &s_vec);
 
-        let mut cs = Vec::<<RespireTest as Respire>::RegevCiphertext>::with_capacity(
+        let mut cs = Vec::<<RespireTest as RespireAliases>::RegevCiphertext>::with_capacity(
             RESPIRE_TEST_PARAMS.N_VEC,
         );
-        let mut expected =
-            Matrix::<{ RESPIRE_TEST_PARAMS.N_VEC }, 1, <RespireTest as Respire>::RingP>::zero();
+        let mut expected = Matrix::<
+            { RESPIRE_TEST_PARAMS.N_VEC },
+            1,
+            <RespireTest as RespireAliases>::RingP,
+        >::zero();
         for i in 0..RESPIRE_TEST_PARAMS.N_VEC {
-            let mu = <RespireTest as Respire>::RingP::from(i as u64 + 1_u64);
+            let mu = <RespireTest as RespireAliases>::RingP::from(i as u64 + 1_u64);
             expected[(i, 0)] = mu.clone();
             cs.push(RespireTest::encode_regev(&s_scal, &mu.scale_up_into()));
         }
