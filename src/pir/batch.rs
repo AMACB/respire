@@ -1,4 +1,5 @@
 use crate::pir::pir::{Respire, RespireAliases};
+use itertools::Itertools;
 use rand::{thread_rng, Rng};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -7,26 +8,34 @@ use std::marker::PhantomData;
 pub trait BatchRespire: Respire {
     type BaseRespire: Respire + RespireAliases;
     const NUM_BUCKET: usize;
-    const BUCKET_SIZE: usize;
-    // fn encode_batch_db<I: ExactSizeIterator<Item = <Self::BaseRespire as Respire>::RecordBytes>>(
-    //     records_iter: I,
-    // ) -> Vec<<Self::BaseRespire as Respire>::Database>;
 }
 
-pub struct BatchRespireImpl<const NUM_DB: usize, BaseRespire: Respire + RespireAliases> {
+pub struct BatchRespireImpl<
+    const BATCH_SIZE: usize,
+    const NUM_BUCKET: usize,
+    const NUM_RECORDS: usize,
+    BaseRespire: Respire + RespireAliases,
+> {
     phantom: PhantomData<BaseRespire>,
 }
 
-impl<const NUM_BUCKET: usize, BaseRespire: Respire + RespireAliases> BatchRespire
-    for BatchRespireImpl<NUM_BUCKET, BaseRespire>
+impl<
+        const BATCH_SIZE: usize,
+        const NUM_BUCKET: usize,
+        const NUM_RECORDS: usize,
+        BaseRespire: Respire + RespireAliases,
+    > BatchRespire for BatchRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
 {
     type BaseRespire = BaseRespire;
     const NUM_BUCKET: usize = NUM_BUCKET;
-    const BUCKET_SIZE: usize = <Self::BaseRespire as RespireAliases>::DB_SIZE;
 }
 
-impl<const NUM_DB: usize, BaseRespire: Respire + RespireAliases> Respire
-    for BatchRespireImpl<NUM_DB, BaseRespire>
+impl<
+        const BATCH_SIZE: usize,
+        const NUM_BUCKET: usize,
+        const NUM_RECORDS: usize,
+        BaseRespire: Respire + RespireAliases,
+    > Respire for BatchRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
 {
     type QueryKey = BaseRespire::QueryKey;
     type PublicParams = BaseRespire::PublicParams;
@@ -38,25 +47,44 @@ impl<const NUM_DB: usize, BaseRespire: Respire + RespireAliases> Respire
     type RecordPacked = BaseRespire::RecordPacked;
     type Database = Vec<<BaseRespire as Respire>::Database>;
     type RecordBytes = BaseRespire::RecordBytes;
-    const NUM_RECORDS: usize = 0;
+    const NUM_RECORDS: usize = NUM_RECORDS;
+    const BATCH_SIZE: usize = BATCH_SIZE;
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
         records_iter: I,
     ) -> Self::Database {
-        let mut buckets = vec![Vec::new(); Self::NUM_BUCKET];
-        for (i, r) in records_iter.enumerate() {
+        let record_count = records_iter.len();
+        let mut bucket_layouts = vec![Vec::with_capacity(BaseRespire::DB_SIZE); Self::NUM_BUCKET];
+        let records = records_iter.collect_vec();
+        for (i, r) in records.iter().enumerate() {
             let (b1, b2, b3) = Self::idx_to_buckets(i);
-            buckets[b1].push((i, r.clone()));
-            buckets[b2].push((i, r.clone()));
-            buckets[b3].push((i, r.clone()));
+            bucket_layouts[b1].push(Some(i));
+            bucket_layouts[b2].push(Some(i));
+            bucket_layouts[b3].push(Some(i));
         }
-        let max_count = buckets.iter().map(|b| b.len()).max().unwrap();
+        let max_count = bucket_layouts.iter().map(|b| b.len()).max().unwrap();
+        eprintln!(
+            "Encoding batch DB with {} records ({} buckets, {} base db size, {} max used size)",
+            record_count,
+            Self::NUM_BUCKET,
+            BaseRespire::DB_SIZE,
+            max_count
+        );
         assert!(max_count <= BaseRespire::DB_SIZE);
 
+        for b in bucket_layouts.iter_mut() {
+            while b.len() < BaseRespire::DB_SIZE {
+                b.push(None);
+            }
+        }
+
         let mut result = Vec::with_capacity(Self::NUM_BUCKET);
-        for b in buckets.iter() {
-            // TODO cuckoo inside bucket
-            result.push(BaseRespire::encode_db(b.iter().map(|(_, r)| r.clone())));
+        let zero = Self::RecordBytes::default();
+        for b in bucket_layouts.iter() {
+            let bucket_records = b
+                .iter()
+                .map(|x| x.map_or(zero.clone(), |i| records[i].clone()));
+            result.push(BaseRespire::encode_db(bucket_records));
         }
         result
     }
@@ -65,7 +93,9 @@ impl<const NUM_DB: usize, BaseRespire: Respire + RespireAliases> Respire
         BaseRespire::setup()
     }
 
-    fn query(qk: &Self::QueryKey, idx: &[usize]) -> Self::Queries {
+    fn query(qk: &Self::QueryKey, idxs: &[usize]) -> Self::Queries {
+        let cuckooed = Self::cuckoo(idxs, 2usize.pow(16)).unwrap();
+        assert_eq!(cuckooed.len(), Self::NUM_BUCKET);
         todo!()
     }
 
@@ -97,13 +127,17 @@ impl<const NUM_DB: usize, BaseRespire: Respire + RespireAliases> Respire
     }
 }
 
-impl<const NUM_BUCKET: usize, BaseRespire: Respire + RespireAliases>
-    BatchRespireImpl<NUM_BUCKET, BaseRespire>
+impl<
+        const BATCH_SIZE: usize,
+        const NUM_BUCKET: usize,
+        const NUM_RECORDS: usize,
+        BaseRespire: Respire + RespireAliases,
+    > BatchRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
 {
     fn idx_to_buckets(i: usize) -> (usize, usize, usize) {
         let modulus = Self::NUM_BUCKET as u64;
-        assert!(modulus < 2_u64.pow(21)); // need three hashes from a u64
-                                          // TODO: DefaultHasher is not stable
+        assert!(modulus.checked_pow(3).is_some());
+        // TODO: DefaultHasher is not stable
         let mut hasher = DefaultHasher::new();
         i.hash(&mut hasher);
         let hashed = hasher.finish();
@@ -113,7 +147,7 @@ impl<const NUM_BUCKET: usize, BaseRespire: Respire + RespireAliases>
         (h1 as usize, h2 as usize, h3 as usize)
     }
 
-    fn cuckoo(idxs: &Vec<usize>, max_depth: usize) -> Option<Vec<Option<usize>>> {
+    fn cuckoo(idxs: &[usize], max_depth: usize) -> Option<Vec<Option<usize>>> {
         let mut result = vec![None; Self::NUM_BUCKET];
         let mut remaining = Vec::from_iter(idxs.iter().copied().map(|x| (x, 0usize)));
         let mut rng = thread_rng();

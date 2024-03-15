@@ -1,5 +1,5 @@
 use crate::pir::batch::BatchRespireImpl;
-use crate::pir::pir::{Respire, RespireImpl, RespireParams, RespireParamsRaw};
+use crate::pir::pir::{RecordBytesImpl, Respire, RespireImpl, RespireParams, RespireParamsRaw};
 use crate::respire;
 use itertools::Itertools;
 use std::time::Instant;
@@ -69,7 +69,7 @@ pub const fn respire_1024_b32_base() -> RespireParams {
 
 pub const RESPIRE_BATCH32_BASE_TEST_PARAMS: RespireParams = respire_1024_b32_base();
 pub type RespireBatch32BaseTest = respire!(RESPIRE_BATCH32_BASE_TEST_PARAMS);
-pub type RespireBatch32Test = BatchRespireImpl<48, RespireBatch32BaseTest>;
+pub type RespireBatch32Test = BatchRespireImpl<32, 49, { 2usize.pow(20) }, RespireBatch32BaseTest>;
 
 #[cfg(not(target_feature = "avx2"))]
 pub fn has_avx2() -> bool {
@@ -91,7 +91,10 @@ pub fn has_avx2() -> bool {
 //     extract_time: Duration,
 // }
 
-pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Item = usize>>(
+pub fn run_respire<
+    TheRespire: Respire<RecordBytes = RecordBytesImpl<256>>,
+    I: Iterator<Item = usize>,
+>(
     iter: I,
 ) {
     eprintln!(
@@ -124,7 +127,8 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
         RESPIRE_TEST_PARAMS.record_size() as f64 / 1024_f64
     );
     eprintln!("Rate: {:.3}", RESPIRE_TEST_PARAMS.rate());
-    let mut records: Vec<[u8; 256]> = Vec::with_capacity(TheRespire::NUM_RECORDS);
+
+    let mut records: Vec<RecordBytesImpl<256>> = Vec::with_capacity(TheRespire::NUM_RECORDS);
     for i in 0..TheRespire::NUM_RECORDS as u64 {
         let mut record = [0_u8; 256];
         record[0] = (i % 256) as u8;
@@ -138,7 +142,7 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
         // for i in 8..256 {
         //     record[i] = random();
         // }
-        records.push(record);
+        records.push(RecordBytesImpl { it: record });
     }
 
     // FIXME: both of these are out of date. The former is replaced by the jupyter notebook though?
@@ -154,7 +158,7 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
     // );
 
     let pre_start = Instant::now();
-    let db = TheRespire::encode_db(records.iter().copied());
+    let db = TheRespire::encode_db(records.iter().cloned());
     let pre_end = Instant::now();
     eprintln!("{:?} to preprocess", pre_end - pre_start);
 
@@ -165,10 +169,7 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
 
     let check = |indices: &[usize]| {
         eprintln!("Testing record indices {:?}", &indices);
-        assert_eq!(
-            indices.len(),
-            RESPIRE_TEST_PARAMS.N_VEC * RESPIRE_TEST_PARAMS.N_PACK
-        );
+        assert_eq!(indices.len(), TheRespire::BATCH_SIZE);
         let query_start = Instant::now();
         let q = TheRespire::query(&qk, indices);
         let query_end = Instant::now();
@@ -215,10 +216,7 @@ pub fn run_respire<TheRespire: Respire<RecordBytes = [u8; 256]>, I: Iterator<Ite
         );
     };
 
-    for chunk in iter
-        .chunks(RESPIRE_TEST_PARAMS.N_VEC * RESPIRE_TEST_PARAMS.N_PACK)
-        .into_iter()
-    {
+    for chunk in iter.chunks(TheRespire::BATCH_SIZE).into_iter() {
         let c_vec = chunk.collect_vec();
         check(c_vec.as_slice());
     }
@@ -445,6 +443,17 @@ mod test {
     #[test]
     fn test_respire_stress() {
         let mut rng = ChaCha20Rng::from_entropy();
-        run_respire::<RespireTest, _>((0..).map(|_| rng.gen_range(0_usize..RespireTest::DB_SIZE)));
+        run_respire::<RespireTest, _>(
+            (0..).map(|_| rng.gen_range(0_usize..RespireTest::NUM_RECORDS)),
+        );
+    }
+
+    #[ignore]
+    #[test]
+    fn test_respire_batch_stress() {
+        let mut rng = ChaCha20Rng::from_entropy();
+        run_respire::<RespireBatch32Test, _>(
+            (0..).map(|_| rng.gen_range(0_usize..RespireBatch32Test::NUM_RECORDS)),
+        );
     }
 }

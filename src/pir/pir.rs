@@ -521,9 +521,10 @@ pub trait Respire {
     type Database;
 
     // A single raw record
-    type RecordBytes: Clone;
+    type RecordBytes: Clone + Default;
 
     const NUM_RECORDS: usize;
+    const BATCH_SIZE: usize;
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(records_iter: I)
         -> Self::Database;
@@ -601,6 +602,18 @@ respire_impl!(RespireAliases, {
     const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
 });
 
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordBytesImpl<const LEN: usize> {
+    pub(crate) it: [u8; LEN],
+}
+
+impl<const LEN: usize> Default for RecordBytesImpl<LEN> {
+    fn default() -> Self {
+        Self { it: [0u8; LEN] }
+    }
+}
+
 respire_impl!(Respire, {
     // Associated types
     type QueryKey = (
@@ -632,8 +645,9 @@ respire_impl!(Respire, {
     type Database = Vec<SimdVec>;
 
     // Public types & constants
-    type RecordBytes = [u8; BYTES_PER_RECORD];
+    type RecordBytes = RecordBytesImpl<BYTES_PER_RECORD>;
     const NUM_RECORDS: usize = Self::DB_SIZE;
+    const BATCH_SIZE: usize = N_VEC * N_PACK;
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
         records_iter: I,
@@ -780,14 +794,12 @@ respire_impl!(Respire, {
         )
     }
 
-    fn query(
-        (s_encode, _, _): &<Self as Respire>::QueryKey,
-        indices: &[usize],
-    ) -> <Self as Respire>::Queries {
+    fn query(qk: &<Self as Respire>::QueryKey, indices: &[usize]) -> <Self as Respire>::Queries {
+        assert_eq!(indices.len(), Self::BATCH_SIZE);
         indices
             .iter()
             .copied()
-            .map(|idx| Self::query_one(s_encode, idx))
+            .map(|idx| Self::query_one(qk, idx))
             .collect_vec()
     }
 
@@ -912,7 +924,9 @@ respire_impl!(Respire, {
                     .collect_vec()
                     .try_into()
                     .unwrap();
-                result.push(Self::decode_record(&IntModCyclo::from(record_coeffs)));
+                result.push(RecordBytesImpl {
+                    it: Self::decode_record(&IntModCyclo::from(record_coeffs)),
+                });
             }
         }
         result
@@ -928,7 +942,7 @@ respire_impl!(Respire, {
 
 respire_impl!({
     pub fn query_one(
-        s_encode: &<Self as RespireAliases>::EncodingKey,
+        (s_encode, _, _): &<Self as Respire>::QueryKey,
         idx: usize,
     ) -> <Self as RespireAliases>::QueryOne {
         assert!(idx < Self::DB_SIZE);
@@ -1681,8 +1695,8 @@ respire_impl!({
         (result_rand, result_embed)
     }
 
-    pub fn encode_record(bytes: &[u8; BYTES_PER_RECORD]) -> IntModCyclo<D_RECORD, P> {
-        let bit_iter = BitSlice::<u8, Msb0>::from_slice(bytes);
+    pub fn encode_record(bytes: &RecordBytesImpl<BYTES_PER_RECORD>) -> IntModCyclo<D_RECORD, P> {
+        let bit_iter = BitSlice::<u8, Msb0>::from_slice(&bytes.it);
         let p_bits = floor_log(2, P);
         let coeff = bit_iter
             .chunks(p_bits)
