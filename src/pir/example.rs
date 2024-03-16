@@ -1,4 +1,4 @@
-use crate::pir::batch::BatchRespireImpl;
+use crate::pir::batch::CuckooRespireImpl;
 use crate::pir::pir::{RecordBytesImpl, RespireImpl, RespireParams, RespireParamsExpanded, PIR};
 use crate::respire;
 use itertools::Itertools;
@@ -72,7 +72,7 @@ pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
 
 pub const RESPIRE_BATCH32_BASE_TEST_PARAMS: RespireParamsExpanded = respire_1024_b32_base();
 pub type RespireBatch32BaseTest = respire!(RESPIRE_BATCH32_BASE_TEST_PARAMS);
-pub type RespireBatch32Test = BatchRespireImpl<32, 49, { 2usize.pow(20) }, RespireBatch32BaseTest>;
+pub type RespireBatch32Test = CuckooRespireImpl<32, 49, { 2usize.pow(20) }, RespireBatch32BaseTest>;
 
 #[cfg(not(target_feature = "avx2"))]
 pub fn has_avx2() -> bool {

@@ -5,12 +5,12 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
-pub trait BatchRespire: PIR {
+pub trait CuckooRespire: PIR {
     type BaseRespire: PIR + Respire;
     const NUM_BUCKET: usize;
 }
 
-pub struct BatchRespireImpl<
+pub struct CuckooRespireImpl<
     const BATCH_SIZE: usize,
     const NUM_BUCKET: usize,
     const NUM_RECORDS: usize,
@@ -24,7 +24,7 @@ impl<
         const NUM_BUCKET: usize,
         const NUM_RECORDS: usize,
         BaseRespire: PIR + Respire,
-    > BatchRespire for BatchRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
+    > CuckooRespire for CuckooRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
 {
     type BaseRespire = BaseRespire;
     const NUM_BUCKET: usize = NUM_BUCKET;
@@ -35,7 +35,7 @@ impl<
         const NUM_BUCKET: usize,
         const NUM_RECORDS: usize,
         BaseRespire: PIR + Respire,
-    > PIR for BatchRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
+    > PIR for CuckooRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
 {
     type QueryKey = BaseRespire::QueryKey;
     type PublicParams = BaseRespire::PublicParams;
@@ -49,13 +49,16 @@ impl<
 
     fn print_summary() {
         eprintln!(
-            "Batched respire ({} records, {} buckets, {} bucket size)",
+            "Cuckoo respire ({} records, {} buckets, {} bucket size)",
             Self::NUM_RECORDS,
             Self::NUM_BUCKET,
             BaseRespire::DB_SIZE
         );
         eprintln!("---- Base RESPIRE ----");
         BaseRespire::print_summary();
+        eprintln!("---- Actual computed params ----");
+        // TODO
+        eprintln!("(TODO)")
     }
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
@@ -73,7 +76,7 @@ impl<
         }
         let max_count = bucket_layouts.iter().map(|b| b.len()).max().unwrap();
         eprintln!(
-            "DB encoding: worst bucket size {} out of {}",
+            "Cuckoo DB encoding: worst bucket size {} out of {}",
             max_count,
             BaseRespire::DB_SIZE
         );
@@ -151,7 +154,7 @@ impl<
         const NUM_BUCKET: usize,
         const NUM_RECORDS: usize,
         BaseRespire: PIR + Respire,
-    > BatchRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
+    > CuckooRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
 {
     fn idx_to_buckets(i: usize) -> (usize, usize, usize) {
         let modulus = Self::NUM_BUCKET as u64;
