@@ -29,5 +29,11 @@ harness = false
 name = "pir"
 harness = false
 
+[[bin]]
+name = "respire_stress"
+
+[[bin]]
+name = "respire_batch_stress"
+
 [dev-dependencies]
 criterion = "0.5.1"

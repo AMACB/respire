@@ -212,8 +212,6 @@ mod test {
     use crate::math::matrix::Matrix;
     use crate::math::ring_elem::RingElement;
     use crate::pir::pir::Respire;
-    use rand::{Rng, SeedableRng};
-    use rand_chacha::ChaCha20Rng;
 
     #[test]
     fn test_regev() {
@@ -415,21 +413,5 @@ mod test {
     #[test]
     fn test_respire_one() {
         run_pir::<RespireTest, _>([711_711].into_iter());
-    }
-
-    #[ignore]
-    #[test]
-    fn test_respire_stress() {
-        let mut rng = ChaCha20Rng::from_entropy();
-        run_pir::<RespireTest, _>((0..).map(|_| rng.gen_range(0_usize..RespireTest::NUM_RECORDS)));
-    }
-
-    #[ignore]
-    #[test]
-    fn test_respire_batch_stress() {
-        let mut rng = ChaCha20Rng::from_entropy();
-        run_pir::<RespireBatch32Test, _>(
-            (0..).map(|_| rng.gen_range(0_usize..RespireBatch32Test::NUM_RECORDS)),
-        );
     }
 }
