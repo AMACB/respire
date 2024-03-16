@@ -275,7 +275,9 @@ impl RespireParams {
         self.BATCH_SIZE * self.D_RECORD * log_p / 8
     }
     pub fn response_size(&self) -> usize {
-        let num_elems = self.BATCH_SIZE / (self.N_VEC * (self.D_SWITCH / self.D_RECORD));
+        let num_elems = self
+            .BATCH_SIZE
+            .div_ceil(self.N_VEC * (self.D_SWITCH / self.D_RECORD));
         let log_q1 = (self.Q_SWITCH1 as f64).log2();
         let log_q2 = (self.Q_SWITCH2 as f64).log2();
         let one_elem = ((self.D_SWITCH as f64) * (log_q2 + (self.N_VEC as f64) * log_q1) / 8_f64)
@@ -510,6 +512,26 @@ pub trait Respire: PIR {
     const GSW_PROJ_COUNT: usize;
     const GSW_COUNT: usize;
     const GSW_EXPAND_ITERS: usize;
+
+    fn query_one(qk: &<Self as PIR>::QueryKey, idx: usize) -> <Self as Respire>::QueryOne;
+    fn answer_one(
+        pp: &<Self as PIR>::PublicParams,
+        db: &<Self as PIR>::Database,
+        q: &<Self as Respire>::QueryOne,
+    ) -> <Self as Respire>::ResponseOne;
+    fn answer_compress_chunk(
+        pp: &<Self as PIR>::PublicParams,
+        chunk: &[<Self as Respire>::ResponseOne],
+        qk: Option<&<Self as PIR>::QueryKey>,
+    ) -> <Self as Respire>::ResponseOneCompressed;
+    fn answer_compress_vec(
+        pp: &<Self as PIR>::PublicParams,
+        vec: &<Self as Respire>::VecRegevCiphertext,
+    ) -> <Self as Respire>::ResponseOneCompressed;
+    fn extract_one(
+        qk: &<Self as PIR>::QueryKey,
+        r: &<Self as Respire>::ResponseOneCompressed,
+    ) -> Vec<<Self as PIR>::RecordBytes>;
 }
 
 pub trait PIR {
@@ -538,71 +560,6 @@ pub trait PIR {
     ) -> Self::Response;
     fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Vec<Self::RecordBytes>;
 }
-
-respire_impl!(Respire, {
-    type RingP = IntModCyclo<D, P>;
-    type RingQ = IntModCyclo<D, Q>;
-    type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B>;
-    type RegevCiphertext = Matrix<2, 1, Self::RingQFast>;
-    type RegevSeeded = ([u8; 32], Self::RingQFast);
-    type RegevCompressed = ([u8; 32], Vec<IntMod<Q>>);
-    type GSWCiphertext = Matrix<2, M_GSW, Self::RingQFast>;
-
-    type EncodingKey = Self::RingQFast;
-    type VecEncodingKey = Matrix<N_VEC, 1, Self::RingQFast>;
-    type VecEncodingKeyQ2 = Matrix<N_VEC, 1, IntModCycloEval<D, Q_SWITCH2>>;
-    type VecEncodingKeyQ2Small = Matrix<N_VEC, 1, IntModCycloEval<D_SWITCH, Q_SWITCH2>>;
-    type AutoKey<const T: usize> = (Matrix<2, T, Self::RingQFast>, usize);
-    type AutoKeyRegev = Self::AutoKey<T_COEFF_REGEV>;
-    type AutoKeyGSW = Self::AutoKey<T_COEFF_GSW>;
-    type RegevToGSWKey = Matrix<2, M_CONV, Self::RingQFast>;
-    type KeySwitchKey = (
-        Matrix<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>,
-        Matrix<N_VEC, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>,
-    );
-    type ScalToVecKey = Vec<(
-        Matrix<1, T_SCAL_TO_VEC, Self::RingQFast>,
-        Matrix<N_VEC, T_SCAL_TO_VEC, Self::RingQFast>,
-    )>;
-    type VecRegevCiphertext = (Self::RingQFast, Matrix<N_VEC, 1, Self::RingQFast>);
-    type VecRegevSmall = (
-        IntModCyclo<D_SWITCH, Q_SWITCH2>,
-        Matrix<N_VEC, 1, IntModCyclo<D_SWITCH, Q_SWITCH1>>,
-    );
-
-    type Record = IntModCyclo<D_RECORD, P>;
-    type RecordPackedSmall = Matrix<N_VEC, 1, IntModCyclo<D_SWITCH, P>>;
-    type RecordPacked = IntModCyclo<D, P>;
-    type QueryOne = (
-        <Self as Respire>::RegevCompressed,
-        <Self as Respire>::RegevCompressed,
-    );
-    type QueryOneExpanded = (
-        Vec<<Self as Respire>::RegevCiphertext>,
-        Vec<<Self as Respire>::GSWCiphertext>,
-        Vec<<Self as Respire>::GSWCiphertext>,
-    );
-    type ResponseOne = <Self as Respire>::RegevCiphertext;
-    type ResponseOneCompressed = <Self as Respire>::VecRegevSmall;
-
-    const PACKED_DIM1_SIZE: usize = 2_usize.pow(ETA1 as u32);
-    const PACKED_DIM2_SIZE: usize = Z_FOLD.pow(ETA2 as u32);
-    const PACKED_DB_SIZE: usize = Self::PACKED_DIM1_SIZE * Self::PACKED_DIM2_SIZE;
-    const DB_SIZE: usize = Self::PACKED_DB_SIZE * Self::PACK_RATIO_DB;
-    const PACK_RATIO_DB: usize = D / D_RECORD;
-    const PACK_RATIO_RESPONSE: usize = D_SWITCH / D_RECORD;
-    const ETA1: usize = ETA1;
-    const ETA2: usize = ETA2;
-
-    const REGEV_COUNT: usize = 1 << ETA1;
-    const REGEV_EXPAND_ITERS: usize = ETA1;
-    const GSW_FOLD_COUNT: usize = ETA2 * (Z_FOLD - 1);
-
-    // TODO add param to reduce this when we don't care about garbage being in the other slots
-    const GSW_PROJ_COUNT: usize = floor_log(2, Self::PACK_RATIO_DB as u64);
-    const GSW_COUNT: usize = (Self::GSW_FOLD_COUNT + Self::GSW_PROJ_COUNT) * T_GSW;
-    const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
-});
 
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -820,8 +777,7 @@ respire_impl!(PIR, {
         let mut result = Vec::with_capacity(Self::BATCH_SIZE);
         for r_one in r {
             let extracted = Self::extract_one(qk, r_one);
-            let decoded = Self::extract_decode_one(&extracted);
-            for record in decoded {
+            for record in extracted {
                 if result.len() < Self::BATCH_SIZE {
                     result.push(record);
                 }
@@ -831,8 +787,71 @@ respire_impl!(PIR, {
     }
 });
 
-respire_impl!({
-    pub fn query_one(
+respire_impl!(Respire, {
+    type RingP = IntModCyclo<D, P>;
+    type RingQ = IntModCyclo<D, Q>;
+    type RingQFast = IntModCycloCRTEval<D, Q_A, Q_B>;
+    type RegevCiphertext = Matrix<2, 1, Self::RingQFast>;
+    type RegevSeeded = ([u8; 32], Self::RingQFast);
+    type RegevCompressed = ([u8; 32], Vec<IntMod<Q>>);
+    type GSWCiphertext = Matrix<2, M_GSW, Self::RingQFast>;
+
+    type EncodingKey = Self::RingQFast;
+    type VecEncodingKey = Matrix<N_VEC, 1, Self::RingQFast>;
+    type VecEncodingKeyQ2 = Matrix<N_VEC, 1, IntModCycloEval<D, Q_SWITCH2>>;
+    type VecEncodingKeyQ2Small = Matrix<N_VEC, 1, IntModCycloEval<D_SWITCH, Q_SWITCH2>>;
+    type AutoKey<const T: usize> = (Matrix<2, T, Self::RingQFast>, usize);
+    type AutoKeyRegev = Self::AutoKey<T_COEFF_REGEV>;
+    type AutoKeyGSW = Self::AutoKey<T_COEFF_GSW>;
+    type RegevToGSWKey = Matrix<2, M_CONV, Self::RingQFast>;
+    type KeySwitchKey = (
+        Matrix<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>,
+        Matrix<N_VEC, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>,
+    );
+    type ScalToVecKey = Vec<(
+        Matrix<1, T_SCAL_TO_VEC, Self::RingQFast>,
+        Matrix<N_VEC, T_SCAL_TO_VEC, Self::RingQFast>,
+    )>;
+    type VecRegevCiphertext = (Self::RingQFast, Matrix<N_VEC, 1, Self::RingQFast>);
+    type VecRegevSmall = (
+        IntModCyclo<D_SWITCH, Q_SWITCH2>,
+        Matrix<N_VEC, 1, IntModCyclo<D_SWITCH, Q_SWITCH1>>,
+    );
+
+    type Record = IntModCyclo<D_RECORD, P>;
+    type RecordPackedSmall = Matrix<N_VEC, 1, IntModCyclo<D_SWITCH, P>>;
+    type RecordPacked = IntModCyclo<D, P>;
+    type QueryOne = (
+        <Self as Respire>::RegevCompressed,
+        <Self as Respire>::RegevCompressed,
+    );
+    type QueryOneExpanded = (
+        Vec<<Self as Respire>::RegevCiphertext>,
+        Vec<<Self as Respire>::GSWCiphertext>,
+        Vec<<Self as Respire>::GSWCiphertext>,
+    );
+    type ResponseOne = <Self as Respire>::RegevCiphertext;
+    type ResponseOneCompressed = <Self as Respire>::VecRegevSmall;
+
+    const PACKED_DIM1_SIZE: usize = 2_usize.pow(ETA1 as u32);
+    const PACKED_DIM2_SIZE: usize = Z_FOLD.pow(ETA2 as u32);
+    const PACKED_DB_SIZE: usize = Self::PACKED_DIM1_SIZE * Self::PACKED_DIM2_SIZE;
+    const DB_SIZE: usize = Self::PACKED_DB_SIZE * Self::PACK_RATIO_DB;
+    const PACK_RATIO_DB: usize = D / D_RECORD;
+    const PACK_RATIO_RESPONSE: usize = D_SWITCH / D_RECORD;
+    const ETA1: usize = ETA1;
+    const ETA2: usize = ETA2;
+
+    const REGEV_COUNT: usize = 1 << ETA1;
+    const REGEV_EXPAND_ITERS: usize = ETA1;
+    const GSW_FOLD_COUNT: usize = ETA2 * (Z_FOLD - 1);
+
+    // TODO add param to reduce this when we don't care about garbage being in the other slots
+    const GSW_PROJ_COUNT: usize = floor_log(2, Self::PACK_RATIO_DB as u64);
+    const GSW_COUNT: usize = (Self::GSW_FOLD_COUNT + Self::GSW_PROJ_COUNT) * T_GSW;
+    const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
+
+    fn query_one(
         (s_encode, _, _): &<Self as PIR>::QueryKey,
         idx: usize,
     ) -> <Self as Respire>::QueryOne {
@@ -905,7 +924,7 @@ respire_impl!({
         (compressed_regev, compressed_gsw)
     }
 
-    pub fn answer_one(
+    fn answer_one(
         pp: &<Self as PIR>::PublicParams,
         db: &<Self as PIR>::Database,
         q: &<Self as Respire>::QueryOne,
@@ -935,7 +954,7 @@ respire_impl!({
         result_projected
     }
 
-    pub fn answer_compress_chunk(
+    fn answer_compress_chunk(
         pp: &<Self as PIR>::PublicParams,
         chunk: &[<Self as Respire>::ResponseOne],
         qk: Option<&<Self as PIR>::QueryKey>,
@@ -960,7 +979,7 @@ respire_impl!({
 
         if let Some((_, s_vec, _)) = qk {
             eprintln!(
-                "  coefficient noise (subgaussian widths): 2^({})",
+                "  pre compression noise (subgaussian widths): 2^({})",
                 Self::noise_subgaussian_bits_vec(s_vec, &vec)
             );
         }
@@ -968,7 +987,7 @@ respire_impl!({
         compressed
     }
 
-    pub fn answer_compress_vec(
+    fn answer_compress_vec(
         (_, _, (a_t, b_mat), _): &<Self as PIR>::PublicParams,
         (c_r, c_m): &<Self as Respire>::VecRegevCiphertext,
     ) -> <Self as Respire>::ResponseOneCompressed {
@@ -1006,7 +1025,16 @@ respire_impl!({
         (c_r_hat, c_m_hat)
     }
 
-    pub fn extract_one(
+    fn extract_one(
+        qk: &<Self as PIR>::QueryKey,
+        r: &<Self as Respire>::ResponseOneCompressed,
+    ) -> Vec<<Self as PIR>::RecordBytes> {
+        Self::extract_bytes_one(&Self::extract_ring_one(qk, r))
+    }
+});
+
+respire_impl!({
+    pub fn extract_ring_one(
         (_, _, s_small): &<Self as PIR>::QueryKey,
         (c_r_hat, c_m_hat): &<Self as Respire>::ResponseOneCompressed,
     ) -> <Self as Respire>::RecordPackedSmall {
@@ -1029,7 +1057,7 @@ respire_impl!({
         result.map_ring(|r| r.round_down_into())
     }
 
-    pub fn extract_decode_one(
+    pub fn extract_bytes_one(
         r: &<Self as Respire>::RecordPackedSmall,
     ) -> Vec<<Self as PIR>::RecordBytes> {
         let mut result = Vec::with_capacity(N_VEC * Self::PACK_RATIO_RESPONSE);

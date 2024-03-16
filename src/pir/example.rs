@@ -22,7 +22,7 @@ pub const fn respire_512(n_vec: usize, batch_size: usize) -> RespireParams {
         ETA1: 9,
         ETA2: 9,
         Z_FOLD: 2,
-        Q_SWITCH1: 4 * 17, // 4P
+        Q_SWITCH1: 6 * 17,
         Q_SWITCH2: 163841, // 17.32 bits
         D_SWITCH: 512,
         T_SWITCH: 18,
@@ -48,13 +48,17 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParams {
         ETA1: 9,
         ETA2: 8,
         Z_FOLD: 2,
-        Q_SWITCH1: 4 * 257, // 4P
+        Q_SWITCH1: 6 * 257,
         Q_SWITCH2: 4169729, // 21.99 bits
         D_SWITCH: 1024,
         T_SWITCH: 22,
     }
     .expand()
 }
+// TODO: investigate noise issue here
+// pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(1, 1);
+// pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(1, 4);
+
 pub const RESPIRE_TEST_PARAMS: RespireParams = respire_512(1, 1);
 
 pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
@@ -387,7 +391,7 @@ mod test {
         let c =
             RespireTest::encode_vec_regev(s_vec, &m.map_ring(|r| r.include_dim().scale_up_into()));
         let compressed = RespireTest::answer_compress_vec(&pp, &c);
-        let extracted = RespireTest::extract_one(&qk, &compressed);
+        let extracted = RespireTest::extract_ring_one(&qk, &compressed);
         assert_eq!(m, extracted);
     }
 
