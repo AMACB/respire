@@ -1,10 +1,10 @@
 use crate::pir::batch::BatchRespireImpl;
-use crate::pir::pir::{RecordBytesImpl, Respire, RespireImpl, RespireParams, RespireParamsRaw};
+use crate::pir::pir::{RecordBytesImpl, RespireImpl, RespireParams, RespireParamsRaw, PIR};
 use crate::respire;
 use itertools::Itertools;
 use std::time::Instant;
 
-pub const fn respire_512(n_vec: usize) -> RespireParams {
+pub const fn respire_512(n_vec: usize, batch_size: usize) -> RespireParams {
     RespireParamsRaw {
         Q_A: 268369921,
         Q_B: 249561089,
@@ -13,7 +13,7 @@ pub const fn respire_512(n_vec: usize) -> RespireParams {
         T_CONV: 4,
         T_COEFF_REGEV: 4,
         T_COEFF_GSW: 16,
-        N_PACK: 1,
+        BATCH_SIZE: batch_size,
         N_VEC: n_vec,
         T_SCAL_TO_VEC: 8,
         NOISE_WIDTH_MILLIONTHS: 6_400_000,
@@ -30,7 +30,7 @@ pub const fn respire_512(n_vec: usize) -> RespireParams {
     .expand()
 }
 
-pub const fn respire_1024(pack: bool, n_vec: usize) -> RespireParams {
+pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParams {
     RespireParamsRaw {
         Q_A: 268369921,
         Q_B: 249561089,
@@ -39,7 +39,7 @@ pub const fn respire_1024(pack: bool, n_vec: usize) -> RespireParams {
         T_CONV: 4,
         T_COEFF_REGEV: 4,
         T_COEFF_GSW: 16,
-        N_PACK: if pack { 4 } else { 1 },
+        BATCH_SIZE: batch_size,
         N_VEC: n_vec,
         T_SCAL_TO_VEC: 8,
         NOISE_WIDTH_MILLIONTHS: 6_400_000,
@@ -55,13 +55,12 @@ pub const fn respire_1024(pack: bool, n_vec: usize) -> RespireParams {
     }
     .expand()
 }
-// pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(false, 1);
-pub const RESPIRE_TEST_PARAMS: RespireParams = respire_512(1);
+pub const RESPIRE_TEST_PARAMS: RespireParams = respire_512(1, 1);
 
 pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
 
 pub const fn respire_1024_b32_base() -> RespireParams {
-    let mut params = respire_1024(true, 8);
+    let mut params = respire_1024(32, 32);
     params.ETA1 -= 2;
     params.ETA2 -= 2;
     params
@@ -91,16 +90,10 @@ pub fn has_avx2() -> bool {
 //     extract_time: Duration,
 // }
 
-pub fn run_respire<
-    TheRespire: Respire<RecordBytes = RecordBytesImpl<256>>,
-    I: Iterator<Item = usize>,
->(
+pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item = usize>>(
     iter: I,
 ) {
-    eprintln!(
-        "Running Respire test with {} records",
-        TheRespire::NUM_RECORDS,
-    );
+    eprintln!("Running PIR test with {} records", ThePIR::NUM_RECORDS,);
     eprintln!(
         "AVX2 is {}",
         if has_avx2() {
@@ -128,8 +121,8 @@ pub fn run_respire<
     );
     eprintln!("Rate: {:.3}", RESPIRE_TEST_PARAMS.rate());
 
-    let mut records: Vec<RecordBytesImpl<256>> = Vec::with_capacity(TheRespire::NUM_RECORDS);
-    for i in 0..TheRespire::NUM_RECORDS as u64 {
+    let mut records: Vec<RecordBytesImpl<256>> = Vec::with_capacity(ThePIR::NUM_RECORDS);
+    for i in 0..ThePIR::NUM_RECORDS as u64 {
         let mut record = [0_u8; 256];
         record[0] = (i % 256) as u8;
         record[1] = ((i / 256) % 256) as u8;
@@ -158,40 +151,34 @@ pub fn run_respire<
     // );
 
     let pre_start = Instant::now();
-    let db = TheRespire::encode_db(records.iter().cloned());
+    let db = ThePIR::encode_db(records.iter().cloned());
     let pre_end = Instant::now();
     eprintln!("{:?} to preprocess", pre_end - pre_start);
 
     let setup_start = Instant::now();
-    let (qk, pp) = TheRespire::setup();
+    let (qk, pp) = ThePIR::setup();
     let setup_end = Instant::now();
     eprintln!("{:?} to setup", setup_end - setup_start);
 
     let check = |indices: &[usize]| {
         eprintln!("Testing record indices {:?}", &indices);
-        assert_eq!(indices.len(), TheRespire::BATCH_SIZE);
+        assert_eq!(indices.len(), ThePIR::BATCH_SIZE);
         let query_start = Instant::now();
-        let q = TheRespire::query(&qk, indices);
+        let q = ThePIR::query(&qk, indices);
         let query_end = Instant::now();
         let query_total = query_end - query_start;
 
         let answer_start = Instant::now();
-        let response_raw = TheRespire::answer(&pp, &db, &q);
+        let response = ThePIR::answer(&pp, &db, &q, Some(&qk));
         let answer_end = Instant::now();
         let answer_total = answer_end - answer_start;
 
-        let response_compress_start = Instant::now();
-        let response = TheRespire::response_compress(&pp, &response_raw);
-        let response_compress_end = Instant::now();
-        let response_compress_total = response_compress_end - response_compress_start;
+        let extract_start = Instant::now();
+        let extracted = ThePIR::extract(&qk, &response);
+        let extract_end = Instant::now();
+        let extract_total = extract_end - extract_start;
 
-        let response_extract_start = Instant::now();
-        let extracted = TheRespire::response_extract(&qk, &response);
-        let response_extract_end = Instant::now();
-        let response_extract_total = response_extract_end - response_extract_start;
-
-        let decoded = TheRespire::response_decode(&extracted);
-        for (idx, decoded_record) in indices.iter().copied().zip(decoded) {
+        for (idx, decoded_record) in indices.iter().copied().zip(extracted) {
             if decoded_record != records[idx] {
                 eprintln!("  **** **** **** **** ERROR **** **** **** ****");
                 eprintln!("  protocol failed");
@@ -200,23 +187,13 @@ pub fn run_respire<
             }
         }
 
-        eprintln!(
-            "  {:?} total",
-            query_total + answer_total + response_compress_total + response_extract_total
-        );
+        eprintln!("  {:?} total", query_total + answer_total + extract_total);
         eprintln!("    {:?} to query", query_total);
         eprintln!("    {:?} to answer", answer_total);
-        eprintln!("    {:?} to compress response", response_compress_total);
-        eprintln!("    {:?} to extract response", response_extract_total);
-
-        let noise_subgaussian_bits = TheRespire::response_raw_stats(&qk, &response_raw);
-        eprintln!(
-            "  coefficient noise (subgaussian widths): 2^({})",
-            noise_subgaussian_bits
-        );
+        eprintln!("    {:?} to extract", extract_total);
     };
 
-    for chunk in iter.chunks(TheRespire::BATCH_SIZE).into_iter() {
+    for chunk in iter.chunks(ThePIR::BATCH_SIZE).into_iter() {
         let c_vec = chunk.collect_vec();
         check(c_vec.as_slice());
     }
@@ -230,16 +207,16 @@ mod test {
     use crate::math::int_mod_poly::IntModPoly;
     use crate::math::matrix::Matrix;
     use crate::math::ring_elem::RingElement;
-    use crate::pir::pir::RespireAliases;
+    use crate::pir::pir::Respire;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
 
     #[test]
     fn test_regev() {
         let s = RespireTest::encode_setup();
-        let mu = <RespireTest as RespireAliases>::RingP::from(12_u64);
+        let mu = <RespireTest as Respire>::RingP::from(12_u64);
         let encoded = RespireTest::encode_regev(&s, &mu.scale_up_into());
-        let decoded: <RespireTest as RespireAliases>::RingP =
+        let decoded: <RespireTest as Respire>::RingP =
             RespireTest::decode_regev(&s, &encoded).round_down_into();
         assert_eq!(mu, decoded);
     }
@@ -251,7 +228,7 @@ mod test {
         let mu = RingPP::from(111_u64);
         let encrypt = RespireTest::encode_gsw(&s, &mu.include_into());
 
-        let scale = <RespireTest as RespireAliases>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
+        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
         let decrypt = RespireTest::decode_gsw_scaled(&s, &encrypt, &scale);
         assert_eq!(decrypt.round_down_into(), mu);
     }
@@ -263,13 +240,13 @@ mod test {
             { RESPIRE_TEST_PARAMS.T_COEFF_REGEV },
             { RESPIRE_TEST_PARAMS.Z_COEFF_REGEV },
         >(3, &s);
-        let x = <RespireTest as RespireAliases>::RingP::from(IntModPoly::x());
+        let x = <RespireTest as Respire>::RingP::from(IntModPoly::x());
         let encrypt = RespireTest::encode_regev(&s, &x.scale_up_into());
         let encrypt_auto = RespireTest::auto_hom::<
             { RESPIRE_TEST_PARAMS.T_COEFF_REGEV },
             { RESPIRE_TEST_PARAMS.Z_COEFF_REGEV },
         >(&auto_key, &encrypt);
-        let decrypt: <RespireTest as RespireAliases>::RingP =
+        let decrypt: <RespireTest as Respire>::RingP =
             RespireTest::decode_regev(&s, &encrypt_auto).round_down_into();
         assert_eq!(decrypt, &(&x * &x) * &x);
     }
@@ -288,7 +265,7 @@ mod test {
         }
         let encrypt_gsw = RespireTest::regev_to_gsw(&s_regev_to_gsw, encrypt_vec.as_slice());
 
-        let scale = <RespireTest as RespireAliases>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
+        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
         let decrypted = RespireTest::decode_gsw_scaled(&s, &encrypt_gsw, &scale);
         assert_eq!(decrypted.round_down_into(), mu);
     }
@@ -382,16 +359,13 @@ mod test {
         let s_vec = RespireTest::encode_vec_setup();
         let s_scal_to_vec = RespireTest::scal_to_vec_setup(&s_scal, &s_vec);
 
-        let mut cs = Vec::<<RespireTest as RespireAliases>::RegevCiphertext>::with_capacity(
+        let mut cs = Vec::<<RespireTest as Respire>::RegevCiphertext>::with_capacity(
             RESPIRE_TEST_PARAMS.N_VEC,
         );
-        let mut expected = Matrix::<
-            { RESPIRE_TEST_PARAMS.N_VEC },
-            1,
-            <RespireTest as RespireAliases>::RingP,
-        >::zero();
+        let mut expected =
+            Matrix::<{ RESPIRE_TEST_PARAMS.N_VEC }, 1, <RespireTest as Respire>::RingP>::zero();
         for i in 0..RESPIRE_TEST_PARAMS.N_VEC {
-            let mu = <RespireTest as RespireAliases>::RingP::from(i as u64 + 1_u64);
+            let mu = <RespireTest as Respire>::RingP::from(i as u64 + 1_u64);
             expected[(i, 0)] = mu.clone();
             cs.push(RespireTest::encode_regev(&s_scal, &mu.scale_up_into()));
         }
@@ -412,8 +386,8 @@ mod test {
         }
         let c =
             RespireTest::encode_vec_regev(s_vec, &m.map_ring(|r| r.include_dim().scale_up_into()));
-        let compressed = RespireTest::response_compress(&pp, &c);
-        let extracted = RespireTest::response_extract(&qk, &compressed);
+        let compressed = RespireTest::answer_compress_vec(&pp, &c);
+        let extracted = RespireTest::extract_one(&qk, &compressed);
         assert_eq!(m, extracted);
     }
 
@@ -436,23 +410,21 @@ mod test {
 
     #[test]
     fn test_respire_one() {
-        run_respire::<RespireTest, _>([711_711].into_iter());
+        run_pir::<RespireTest, _>([711_711].into_iter());
     }
 
     #[ignore]
     #[test]
     fn test_respire_stress() {
         let mut rng = ChaCha20Rng::from_entropy();
-        run_respire::<RespireTest, _>(
-            (0..).map(|_| rng.gen_range(0_usize..RespireTest::NUM_RECORDS)),
-        );
+        run_pir::<RespireTest, _>((0..).map(|_| rng.gen_range(0_usize..RespireTest::NUM_RECORDS)));
     }
 
     #[ignore]
     #[test]
     fn test_respire_batch_stress() {
         let mut rng = ChaCha20Rng::from_entropy();
-        run_respire::<RespireBatch32Test, _>(
+        run_pir::<RespireBatch32Test, _>(
             (0..).map(|_| rng.gen_range(0_usize..RespireBatch32Test::NUM_RECORDS)),
         );
     }

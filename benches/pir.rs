@@ -3,7 +3,7 @@ use fhe_psi::math::int_mod::IntMod;
 use fhe_psi::math::int_mod_cyclo::IntModCyclo;
 use fhe_psi::math::matrix::Matrix;
 use fhe_psi::math::rand_sampled::RandUniformSampled;
-use fhe_psi::pir::pir::{Respire, RespireImpl, RespireParams, RespireParamsRaw};
+use fhe_psi::pir::pir::{RespireImpl, RespireParams, RespireParamsRaw, PIR};
 use fhe_psi::respire;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -161,7 +161,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("pir::answer_query_expand", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
         let (qk, pp) = SPIRALTest::setup();
-        let idx = rng.gen_range(0..<SPIRALTest as Respire>::PACKED_DB_SIZE);
+        let idx = rng.gen_range(0..<SPIRALTest as PIR>::PACKED_DB_SIZE);
         let q = SPIRALTest::query(&qk, idx);
         b.iter(|| SPIRALTest::answer_query_expand(black_box(&pp), black_box(&q)))
     });
@@ -169,7 +169,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("pir::answer_first_dim", |b| {
         let mut rng = ChaCha20Rng::from_entropy();
         let records: Vec<_> = (0..)
-            .map(|_| <SPIRALTest as Respire>::RingP::rand_uniform(&mut rng).project_dim())
+            .map(|_| <SPIRALTest as PIR>::RingP::rand_uniform(&mut rng).project_dim())
             .take(SPIRALTest::PACKED_DB_SIZE)
             .collect();
         let db = SPIRALTest::encode_db(records.iter());

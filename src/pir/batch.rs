@@ -1,12 +1,12 @@
-use crate::pir::pir::{Respire, RespireAliases};
+use crate::pir::pir::{Respire, PIR};
 use itertools::Itertools;
 use rand::{thread_rng, Rng};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
-pub trait BatchRespire: Respire {
-    type BaseRespire: Respire + RespireAliases;
+pub trait BatchRespire: PIR {
+    type BaseRespire: PIR + Respire;
     const NUM_BUCKET: usize;
 }
 
@@ -14,7 +14,7 @@ pub struct BatchRespireImpl<
     const BATCH_SIZE: usize,
     const NUM_BUCKET: usize,
     const NUM_RECORDS: usize,
-    BaseRespire: Respire + RespireAliases,
+    BaseRespire: PIR + Respire,
 > {
     phantom: PhantomData<BaseRespire>,
 }
@@ -23,7 +23,7 @@ impl<
         const BATCH_SIZE: usize,
         const NUM_BUCKET: usize,
         const NUM_RECORDS: usize,
-        BaseRespire: Respire + RespireAliases,
+        BaseRespire: PIR + Respire,
     > BatchRespire for BatchRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
 {
     type BaseRespire = BaseRespire;
@@ -34,18 +34,14 @@ impl<
         const BATCH_SIZE: usize,
         const NUM_BUCKET: usize,
         const NUM_RECORDS: usize,
-        BaseRespire: Respire + RespireAliases,
-    > Respire for BatchRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
+        BaseRespire: PIR + Respire,
+    > PIR for BatchRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
 {
     type QueryKey = BaseRespire::QueryKey;
     type PublicParams = BaseRespire::PublicParams;
-    type Queries = ();
-    type ResponseRaw = BaseRespire::ResponseRaw;
+    type Query = ();
     type Response = BaseRespire::Response;
-    type Record = BaseRespire::Record;
-    type RecordPackedSmall = BaseRespire::RecordPackedSmall;
-    type RecordPacked = BaseRespire::RecordPacked;
-    type Database = Vec<<BaseRespire as Respire>::Database>;
+    type Database = Vec<<BaseRespire as PIR>::Database>;
     type RecordBytes = BaseRespire::RecordBytes;
     const NUM_RECORDS: usize = NUM_RECORDS;
     const BATCH_SIZE: usize = BATCH_SIZE;
@@ -93,7 +89,8 @@ impl<
         BaseRespire::setup()
     }
 
-    fn query(qk: &Self::QueryKey, idxs: &[usize]) -> Self::Queries {
+    fn query(qk: &Self::QueryKey, idxs: &[usize]) -> Self::Query {
+        assert_eq!(BaseRespire::BATCH_SIZE, 1);
         let cuckooed = Self::cuckoo(idxs, 2usize.pow(16)).unwrap();
         assert_eq!(cuckooed.len(), Self::NUM_BUCKET);
         todo!()
@@ -102,27 +99,13 @@ impl<
     fn answer(
         pp: &Self::PublicParams,
         db: &Self::Database,
-        q: &Self::Queries,
-    ) -> Self::ResponseRaw {
+        q: &Self::Query,
+        qk: Option<&Self::QueryKey>,
+    ) -> Self::Response {
         todo!()
     }
 
-    fn response_compress(pp: &Self::PublicParams, r: &Self::ResponseRaw) -> Self::Response {
-        todo!()
-    }
-
-    fn response_extract(qk: &Self::QueryKey, r: &Self::Response) -> Self::RecordPackedSmall {
-        todo!()
-    }
-
-    fn response_decode(r: &Self::RecordPackedSmall) -> Vec<Self::RecordBytes> {
-        todo!()
-    }
-
-    fn response_raw_stats(
-        qk: &<Self as Respire>::QueryKey,
-        r: &<Self as Respire>::ResponseRaw,
-    ) -> f64 {
+    fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Vec<Self::RecordBytes> {
         todo!()
     }
 }
@@ -131,7 +114,7 @@ impl<
         const BATCH_SIZE: usize,
         const NUM_BUCKET: usize,
         const NUM_RECORDS: usize,
-        BaseRespire: Respire + RespireAliases,
+        BaseRespire: PIR + Respire,
     > BatchRespireImpl<BATCH_SIZE, NUM_BUCKET, NUM_RECORDS, BaseRespire>
 {
     fn idx_to_buckets(i: usize) -> (usize, usize, usize) {
