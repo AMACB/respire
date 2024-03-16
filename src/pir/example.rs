@@ -132,7 +132,7 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
     // );
 
     let pre_start = Instant::now();
-    let db = ThePIR::encode_db(records.iter().cloned());
+    let (db, db_hint) = ThePIR::encode_db(records.iter().cloned());
     let pre_end = Instant::now();
     eprintln!("{:?} to preprocess", pre_end - pre_start);
 
@@ -145,7 +145,7 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
         eprintln!("Testing record indices {:?}", &indices);
         assert_eq!(indices.len(), ThePIR::BATCH_SIZE);
         let query_start = Instant::now();
-        let q = ThePIR::query(&qk, indices);
+        let q = ThePIR::query(&qk, indices, &db_hint);
         let query_end = Instant::now();
         let query_total = query_end - query_start;
 

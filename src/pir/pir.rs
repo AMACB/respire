@@ -410,6 +410,7 @@ pub trait PIR {
     type Query;
     type Response;
     type Database;
+    type DatabaseHint;
 
     // A single raw record
     type RecordBytes: Clone + Default;
@@ -419,10 +420,11 @@ pub trait PIR {
 
     fn print_summary();
 
-    fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(records_iter: I)
-        -> Self::Database;
+    fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
+        records_iter: I,
+    ) -> (Self::Database, Self::DatabaseHint);
     fn setup() -> (Self::QueryKey, Self::PublicParams);
-    fn query(qk: &Self::QueryKey, idx: &[usize]) -> Self::Query;
+    fn query(qk: &Self::QueryKey, idx: &[usize], db_hint: &Self::DatabaseHint) -> Self::Query;
     fn answer(
         pp: &Self::PublicParams,
         db: &Self::Database,
@@ -468,6 +470,7 @@ respire_impl!(PIR, {
     /// processing. The outermost pair is the first resp. second CRT projections, packed as two u32 into one u64;
     /// `S` is the SIMD lane count that we can use, i.e. 4 for AVX2.
     type Database = Vec<SimdVec>;
+    type DatabaseHint = ();
 
     // Public types & constants
     type RecordBytes = RecordBytesImpl<BYTES_PER_RECORD>;
@@ -506,7 +509,7 @@ respire_impl!(PIR, {
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
         records_iter: I,
-    ) -> Self::Database {
+    ) -> (Self::Database, Self::DatabaseHint) {
         assert_eq!(records_iter.len(), Self::DB_SIZE);
         let records_encoded_iter = records_iter.map(|r| Self::encode_record(&r));
 
@@ -550,7 +553,7 @@ respire_impl!(PIR, {
                 }
             }
 
-            db
+            (db, ())
         }
 
         #[cfg(target_feature = "avx2")]
@@ -581,7 +584,7 @@ respire_impl!(PIR, {
                 }
             }
 
-            db
+            (db, ())
         }
     }
 
@@ -650,7 +653,11 @@ respire_impl!(PIR, {
         )
     }
 
-    fn query(qk: &<Self as PIR>::QueryKey, indices: &[usize]) -> <Self as PIR>::Query {
+    fn query(
+        qk: &<Self as PIR>::QueryKey,
+        indices: &[usize],
+        _: &<Self as PIR>::DatabaseHint,
+    ) -> <Self as PIR>::Query {
         assert_eq!(indices.len(), Self::BATCH_SIZE);
         indices
             .iter()

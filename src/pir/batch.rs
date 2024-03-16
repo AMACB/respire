@@ -39,9 +39,10 @@ impl<
 {
     type QueryKey = BaseRespire::QueryKey;
     type PublicParams = BaseRespire::PublicParams;
-    type Query = ();
+    type Query = Vec<BaseRespire::QueryOne>;
     type Response = BaseRespire::Response;
     type Database = Vec<<BaseRespire as PIR>::Database>;
+    type DatabaseHint = Vec<Vec<Option<usize>>>;
     type RecordBytes = BaseRespire::RecordBytes;
     const NUM_RECORDS: usize = NUM_RECORDS;
     const BATCH_SIZE: usize = BATCH_SIZE;
@@ -59,12 +60,12 @@ impl<
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
         records_iter: I,
-    ) -> Self::Database {
+    ) -> (Self::Database, Self::DatabaseHint) {
         let record_count = records_iter.len();
         assert_eq!(record_count, Self::NUM_RECORDS);
         let mut bucket_layouts = vec![Vec::with_capacity(BaseRespire::DB_SIZE); Self::NUM_BUCKET];
         let records = records_iter.collect_vec();
-        for (i, r) in records.iter().enumerate() {
+        for i in 0..records.len() {
             let (b1, b2, b3) = Self::idx_to_buckets(i);
             bucket_layouts[b1].push(Some(i));
             bucket_layouts[b2].push(Some(i));
@@ -90,20 +91,45 @@ impl<
             let bucket_records = b
                 .iter()
                 .map(|x| x.map_or(zero.clone(), |i| records[i].clone()));
-            result.push(BaseRespire::encode_db(bucket_records));
+            result.push(BaseRespire::encode_db(bucket_records).0);
         }
-        result
+        (result, bucket_layouts)
     }
 
     fn setup() -> (Self::QueryKey, Self::PublicParams) {
         BaseRespire::setup()
     }
 
-    fn query(qk: &Self::QueryKey, idxs: &[usize]) -> Self::Query {
+    fn query(
+        qk: &Self::QueryKey,
+        idxs: &[usize],
+        bucket_layouts: &Self::DatabaseHint,
+    ) -> Self::Query {
         assert_eq!(BaseRespire::BATCH_SIZE, 1);
         let cuckooed = Self::cuckoo(idxs, 2usize.pow(16)).unwrap();
         assert_eq!(cuckooed.len(), Self::NUM_BUCKET);
-        todo!()
+
+        let mut actual_idxs = Vec::with_capacity(Self::NUM_BUCKET);
+        for (bucket_idx, c) in cuckooed.iter().copied().enumerate() {
+            actual_idxs.push(match c {
+                Some(record_idx) => {
+                    bucket_layouts[bucket_idx]
+                        .iter()
+                        .copied()
+                        .find_position(|slot| slot.is_some_and(|i| i == record_idx))
+                        .unwrap()
+                        .0
+                }
+                None => 0,
+            });
+        }
+
+        assert_eq!(actual_idxs.len(), Self::NUM_BUCKET);
+        actual_idxs
+            .iter()
+            .copied()
+            .map(|idx| BaseRespire::query_one(qk, idx))
+            .collect_vec()
     }
 
     fn answer(
