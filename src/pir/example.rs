@@ -1,11 +1,11 @@
 use crate::pir::batch::BatchRespireImpl;
-use crate::pir::pir::{RecordBytesImpl, RespireImpl, RespireParams, RespireParamsRaw, PIR};
+use crate::pir::pir::{RecordBytesImpl, RespireImpl, RespireParams, RespireParamsExpanded, PIR};
 use crate::respire;
 use itertools::Itertools;
 use std::time::Instant;
 
-pub const fn respire_512(n_vec: usize, batch_size: usize) -> RespireParams {
-    RespireParamsRaw {
+pub const fn respire_512(n_vec: usize, batch_size: usize) -> RespireParamsExpanded {
+    RespireParams {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
@@ -30,8 +30,8 @@ pub const fn respire_512(n_vec: usize, batch_size: usize) -> RespireParams {
     .expand()
 }
 
-pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParams {
-    RespireParamsRaw {
+pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpanded {
+    RespireParams {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,
@@ -59,18 +59,18 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParams {
 // pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(1, 1);
 // pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(1, 4);
 
-pub const RESPIRE_TEST_PARAMS: RespireParams = respire_512(1, 1);
+pub const RESPIRE_TEST_PARAMS: RespireParamsExpanded = respire_512(1, 1);
 
 pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
 
-pub const fn respire_1024_b32_base() -> RespireParams {
-    let mut params = respire_1024(32, 32);
+pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
+    let mut params = respire_1024(8, 1);
     params.ETA1 -= 2;
     params.ETA2 -= 2;
     params
 }
 
-pub const RESPIRE_BATCH32_BASE_TEST_PARAMS: RespireParams = respire_1024_b32_base();
+pub const RESPIRE_BATCH32_BASE_TEST_PARAMS: RespireParamsExpanded = respire_1024_b32_base();
 pub type RespireBatch32BaseTest = respire!(RESPIRE_BATCH32_BASE_TEST_PARAMS);
 pub type RespireBatch32Test = BatchRespireImpl<32, 49, { 2usize.pow(20) }, RespireBatch32BaseTest>;
 
@@ -84,6 +84,7 @@ pub fn has_avx2() -> bool {
     true
 }
 
+// TODO encapsulate stats into struct instead of printing directly
 // struct RunResult {
 //     success: bool,
 //     noise: f64,
@@ -97,33 +98,9 @@ pub fn has_avx2() -> bool {
 pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item = usize>>(
     iter: I,
 ) {
-    eprintln!("Running PIR test with {} records", ThePIR::NUM_RECORDS,);
-    eprintln!(
-        "AVX2 is {}",
-        if has_avx2() {
-            "enabled"
-        } else {
-            "not enabled "
-        }
-    );
-    eprintln!("Parameters: {:#?}", RESPIRE_TEST_PARAMS);
-    eprintln!(
-        "Public param size (compressed): {:.3} KiB",
-        RESPIRE_TEST_PARAMS.public_param_size() as f64 / 1024_f64
-    );
-    eprintln!(
-        "Query size (compressed): {:.3} KiB",
-        RESPIRE_TEST_PARAMS.query_size() as f64 / 1024_f64
-    );
-    eprintln!(
-        "Response size (batch): {:.3} KiB",
-        RESPIRE_TEST_PARAMS.response_size() as f64 / 1024_f64
-    );
-    eprintln!(
-        "Record size (batch): {:.3} KiB",
-        RESPIRE_TEST_PARAMS.record_size() as f64 / 1024_f64
-    );
-    eprintln!("Rate: {:.3}", RESPIRE_TEST_PARAMS.rate());
+    eprintln!("========");
+    ThePIR::print_summary();
+    eprintln!("========");
 
     let mut records: Vec<RecordBytesImpl<256>> = Vec::with_capacity(ThePIR::NUM_RECORDS);
     for i in 0..ThePIR::NUM_RECORDS as u64 {

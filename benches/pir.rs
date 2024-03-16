@@ -3,13 +3,13 @@ use fhe_psi::math::int_mod::IntMod;
 use fhe_psi::math::int_mod_cyclo::IntModCyclo;
 use fhe_psi::math::matrix::Matrix;
 use fhe_psi::math::rand_sampled::RandUniformSampled;
-use fhe_psi::pir::pir::{RespireImpl, RespireParams, RespireParamsRaw, PIR};
+use fhe_psi::pir::pir::{RespireImpl, RespireParams, RespireParamsExpanded, PIR};
 use fhe_psi::respire;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    const SPIRAL_TEST_PARAMS: RespireParams = RespireParamsRaw {
+    const SPIRAL_TEST_PARAMS: RespireParamsExpanded = RespireParams {
         Q_A: 268369921,
         Q_B: 249561089,
         D: 2048,

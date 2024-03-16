@@ -4,7 +4,6 @@ use std::cmp::max;
 use std::f64::consts::PI;
 use std::time::Instant;
 
-use crate::math::discrete_gaussian::NUM_WIDTHS;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -22,7 +21,7 @@ use crate::math::ring_elem::{NormedRingElement, RingElement};
 use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits, reverse_bits_fast};
 
 use crate::math::simd_utils::*;
-use crate::pir::noise::{BoundedNoise, Independent, SubGaussianNoise};
+use crate::pir::example::has_avx2;
 
 pub struct RespireImpl<
     const Q: u64,
@@ -58,7 +57,7 @@ pub struct RespireImpl<
 > {}
 
 #[allow(non_snake_case)]
-pub struct RespireParamsRaw {
+pub struct RespireParams {
     pub Q_A: u64,
     pub Q_B: u64,
     pub D: usize,
@@ -81,8 +80,8 @@ pub struct RespireParamsRaw {
     pub T_SWITCH: usize,
 }
 
-impl RespireParamsRaw {
-    pub const fn expand(&self) -> RespireParams {
+impl RespireParams {
+    pub const fn expand(&self) -> RespireParamsExpanded {
         let q = self.Q_A * self.Q_B;
         let z_gsw = base_from_len(self.T_GSW, q);
         let z_coeff_regev = base_from_len(self.T_COEFF_REGEV, q);
@@ -90,7 +89,7 @@ impl RespireParamsRaw {
         let z_conv = base_from_len(self.T_CONV, q);
         let z_scal_to_vec = base_from_len(self.T_SCAL_TO_VEC, q);
         let z_switch = base_from_len(self.T_SWITCH, self.Q_SWITCH2);
-        RespireParams {
+        RespireParamsExpanded {
             Q: q,
             Q_A: self.Q_A,
             Q_B: self.Q_B,
@@ -127,7 +126,7 @@ impl RespireParamsRaw {
 
 #[allow(non_snake_case)]
 #[derive(Debug)]
-pub struct RespireParams {
+pub struct RespireParamsExpanded {
     pub Q: u64,
     pub Q_A: u64,
     pub Q_B: u64,
@@ -158,136 +157,6 @@ pub struct RespireParams {
     pub T_SWITCH: usize,
     pub Z_SWITCH: u64,
     pub BYTES_PER_RECORD: usize,
-}
-
-impl RespireParams {
-    pub fn correctness_param(&self) -> f64 {
-        // 2 d n^2 * exp(-pi * correctness^2) <= 2^(-40)
-        (-1_f64 / PI * (2_f64.powi(-40) / 2_f64 / self.D as f64).ln()).sqrt()
-    }
-
-    pub fn relative_noise_threshold(&self) -> f64 {
-        1_f64 / (2_f64 * self.P as f64) / self.correctness_param()
-    }
-
-    pub fn noise_estimate(&self) -> f64 {
-        // TODO: this is very out of date
-        let chi = SubGaussianNoise::new(
-            (self.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64).powi(2),
-            self.D as u64,
-        );
-
-        let chi_bounded = BoundedNoise::new(
-            (self.NOISE_WIDTH_MILLIONTHS as f64 / 1_000_000_f64 * NUM_WIDTHS as f64).ceil(),
-            self.D as u64,
-        );
-
-        let db_record_noise = BoundedNoise::new((self.P - 1) as f64, self.D as u64);
-
-        let gadget_inverse_noise =
-            |base: u64, len: usize, rows: usize, cols: usize| -> BoundedNoise {
-                // Note: we use base / 4 since G inverse of uniform is uniform in [-z/2, z/2]. So the expected magnitude is z/4.
-                BoundedNoise::new_matrix((base / 2) as f64 / 2_f64, self.D as u64, rows * len, cols)
-            };
-
-        let automorph_noise = |e: SubGaussianNoise, base: u64, len: usize| -> SubGaussianNoise {
-            let e_t_g_inv = chi.with_dimension(1, len) * gadget_inverse_noise(base, len, 1, 1);
-            e + e_t_g_inv
-        };
-
-        let expand_iter_noise = |e: SubGaussianNoise, base: u64, len: usize| -> SubGaussianNoise {
-            e + automorph_noise(e, base, len)
-        };
-
-        let regev_to_gsw_noise = |e_t: SubGaussianNoise| -> SubGaussianNoise {
-            let e_conv = chi.with_dimension(1, 2 * self.T_CONV);
-            let g_inv_z_conv = gadget_inverse_noise(self.Z_CONV, self.T_CONV, 2, self.T_GSW);
-            let s_gsw = chi_bounded.with_dimension(1, 1);
-            let lhs = e_conv * g_inv_z_conv + s_gsw * e_t.with_dimension(1, self.T_GSW);
-
-            let lhs_variance = lhs.variance();
-            let rhs_variance = e_t.variance();
-            // Average the noise of the left T_GSW and right T_GSW entries. Since this will get
-            // multiplied by a BoundedNoise after this estimate is accurate.
-            SubGaussianNoise::new((lhs_variance + rhs_variance) / 2_f64, self.D as u64)
-                .with_dimension(1, 2 * self.T_GSW)
-        };
-
-        let regev_count = 1 << self.ETA1;
-        let regev_expand_iters = self.ETA1;
-        let gsw_count = self.ETA2 * (self.Z_FOLD - 1) * self.T_GSW;
-        let gsw_expand_iters = ceil_log(2, gsw_count as u64);
-
-        // Original query
-        let query_noise = chi;
-
-        // Query expansion
-        let (regev_noise, gsw_noise) = {
-            let mut regev_expand_noise =
-                expand_iter_noise(query_noise, self.Z_COEFF_GSW, self.T_COEFF_GSW);
-            let mut gsw_expand_noise = regev_expand_noise;
-            for _ in 0..regev_expand_iters {
-                regev_expand_noise =
-                    expand_iter_noise(regev_expand_noise, self.Z_COEFF_REGEV, self.T_COEFF_REGEV);
-            }
-            for _ in 0..gsw_expand_iters {
-                gsw_expand_noise =
-                    expand_iter_noise(gsw_expand_noise, self.Z_COEFF_GSW, self.T_COEFF_GSW);
-            }
-            (regev_expand_noise, regev_to_gsw_noise(gsw_expand_noise))
-        };
-
-        // First dimension
-        let first_dim_noise = (regev_noise * db_record_noise) * Independent(regev_count as f64);
-
-        // Folding
-        let mut fold_noise = first_dim_noise;
-        for _ in 0..self.ETA2 {
-            let ci_minus_c0_noise = gsw_noise * gadget_inverse_noise(self.Z_GSW, self.T_GSW, 2, 1);
-            // Second fold_noise term is for E_regev
-            fold_noise =
-                fold_noise + ci_minus_c0_noise * Independent((self.Z_FOLD - 1) as f64) + fold_noise;
-        }
-
-        fold_noise.variance().sqrt() / self.Q as f64
-    }
-
-    pub fn public_param_size(&self) -> usize {
-        let automorph_elems = floor_log(2, self.D as u64) * (self.T_COEFF_REGEV + self.T_COEFF_GSW);
-        let reg_to_gsw_elems = 2 * self.T_CONV;
-        let scal_to_vec_elems = self.N_VEC * self.T_SCAL_TO_VEC;
-        let q_elem_size = self.D * ceil_log(2, self.Q) / 8;
-
-        let compress_elems = self.N_VEC * self.T_SWITCH;
-        let q2_elem_size = self.D * ceil_log(2, self.Q_SWITCH2) / 8;
-        return (automorph_elems + reg_to_gsw_elems + scal_to_vec_elems) * q_elem_size
-            + compress_elems * q2_elem_size;
-    }
-
-    pub fn query_size(&self) -> usize {
-        let n_regev = 1usize << self.ETA1;
-        let n_gsw = self.T_GSW * (self.ETA2 + (self.D / self.D_RECORD));
-        (n_regev + n_gsw) * ceil_log(2, self.Q) / 8
-    }
-
-    pub fn record_size(&self) -> usize {
-        let log_p = floor_log(2, self.P);
-        self.BATCH_SIZE * self.D_RECORD * log_p / 8
-    }
-    pub fn response_size(&self) -> usize {
-        let num_elems = self
-            .BATCH_SIZE
-            .div_ceil(self.N_VEC * (self.D_SWITCH / self.D_RECORD));
-        let log_q1 = (self.Q_SWITCH1 as f64).log2();
-        let log_q2 = (self.Q_SWITCH2 as f64).log2();
-        let one_elem = ((self.D_SWITCH as f64) * (log_q2 + (self.N_VEC as f64) * log_q1) / 8_f64)
-            .ceil() as usize;
-        num_elems * one_elem
-    }
-
-    pub fn rate(&self) -> f64 {
-        (self.record_size() as f64) / (self.response_size() as f64)
-    }
 }
 
 #[macro_export]
@@ -548,6 +417,8 @@ pub trait PIR {
     const NUM_RECORDS: usize;
     const BATCH_SIZE: usize;
 
+    fn print_summary();
+
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(records_iter: I)
         -> Self::Database;
     fn setup() -> (Self::QueryKey, Self::PublicParams);
@@ -602,6 +473,36 @@ respire_impl!(PIR, {
     type RecordBytes = RecordBytesImpl<BYTES_PER_RECORD>;
     const NUM_RECORDS: usize = Self::DB_SIZE;
     const BATCH_SIZE: usize = BATCH_SIZE;
+
+    fn print_summary() {
+        eprintln!("RESPIRE with {} records", Self::NUM_RECORDS);
+        eprintln!(
+            "AVX2 is {}",
+            if has_avx2() {
+                "enabled"
+            } else {
+                "not enabled "
+            }
+        );
+        eprintln!("Parameters: {:#?}", Self::params());
+        eprintln!(
+            "Public param size (compressed): {:.3} KiB",
+            Self::params_public_param_size() as f64 / 1024_f64
+        );
+        eprintln!(
+            "Query size (compressed): {:.3} KiB",
+            Self::params_query_size() as f64 / 1024_f64
+        );
+        eprintln!(
+            "Response size (batch): {:.3} KiB",
+            Self::params_response_size() as f64 / 1024_f64
+        );
+        eprintln!(
+            "Record size (batch): {:.3} KiB",
+            Self::params_record_size() as f64 / 1024_f64
+        );
+        eprintln!("Rate: {:.3}", Self::params_rate());
+    }
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
         records_iter: I,
@@ -1817,5 +1718,89 @@ respire_impl!({
             total += Self::noise_variance(&fake_s, &fake_ct);
         }
         Self::variance_to_subgaussian_bits(total / N_VEC as f64)
+    }
+
+    pub fn params() -> RespireParamsExpanded {
+        RespireParamsExpanded {
+            Q,
+            Q_A,
+            Q_B,
+            D,
+            Z_GSW,
+            T_GSW,
+            Z_COEFF_REGEV,
+            T_COEFF_REGEV,
+            Z_COEFF_GSW,
+            T_COEFF_GSW,
+            Z_CONV,
+            T_CONV,
+            BATCH_SIZE,
+            N_VEC,
+            T_SCAL_TO_VEC,
+            Z_SCAL_TO_VEC,
+            M_CONV,
+            M_GSW,
+            NOISE_WIDTH_MILLIONTHS,
+            P,
+            D_RECORD,
+            ETA1,
+            ETA2,
+            Z_FOLD,
+            Q_SWITCH1,
+            Q_SWITCH2,
+            D_SWITCH,
+            T_SWITCH,
+            Z_SWITCH,
+            BYTES_PER_RECORD,
+        }
+    }
+
+    pub fn params_correctness() -> f64 {
+        // 2 d n^2 * exp(-pi * correctness^2) <= 2^(-40)
+        (-1_f64 / PI * (2_f64.powi(-40) / 2_f64 / D as f64).ln()).sqrt()
+    }
+
+    pub fn params_relative_noise_threshold() -> f64 {
+        1_f64 / (2_f64 * P as f64) / Self::params_correctness()
+    }
+
+    pub fn params_noise_estimate() -> f64 {
+        todo!()
+    }
+
+    pub fn params_public_param_size() -> usize {
+        let automorph_elems = floor_log(2, D as u64) * (T_COEFF_REGEV + T_COEFF_GSW);
+        let reg_to_gsw_elems = 2 * T_CONV;
+        let scal_to_vec_elems = N_VEC * T_SCAL_TO_VEC;
+        let q_elem_size = D * ceil_log(2, Q) / 8;
+
+        let compress_elems = N_VEC * T_SWITCH;
+        let q2_elem_size = D * ceil_log(2, Q_SWITCH2) / 8;
+        return (automorph_elems + reg_to_gsw_elems + scal_to_vec_elems) * q_elem_size
+            + compress_elems * q2_elem_size;
+    }
+
+    pub fn params_query_size() -> usize {
+        let n_regev = 1usize << ETA1;
+        let n_gsw = T_GSW * (ETA2 + (D / D_RECORD));
+        (n_regev + n_gsw) * ceil_log(2, Q) / 8
+    }
+
+    pub fn params_record_size() -> usize {
+        let log_p = floor_log(2, P);
+        BATCH_SIZE * D_RECORD * log_p / 8
+    }
+
+    pub fn params_response_size() -> usize {
+        let num_elems = BATCH_SIZE.div_ceil(N_VEC * (D_SWITCH / D_RECORD));
+        let log_q1 = (Q_SWITCH1 as f64).log2();
+        let log_q2 = (Q_SWITCH2 as f64).log2();
+        let one_elem =
+            ((D_SWITCH as f64) * (log_q2 + (N_VEC as f64) * log_q1) / 8_f64).ceil() as usize;
+        num_elems * one_elem
+    }
+
+    pub fn params_rate() -> f64 {
+        (Self::params_record_size() as f64) / (Self::params_response_size() as f64)
     }
 });

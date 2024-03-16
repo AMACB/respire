@@ -46,10 +46,22 @@ impl<
     const NUM_RECORDS: usize = NUM_RECORDS;
     const BATCH_SIZE: usize = BATCH_SIZE;
 
+    fn print_summary() {
+        eprintln!(
+            "Batched respire ({} records, {} buckets, {} bucket size)",
+            Self::NUM_RECORDS,
+            Self::NUM_BUCKET,
+            BaseRespire::DB_SIZE
+        );
+        eprintln!("---- Base RESPIRE ----");
+        BaseRespire::print_summary();
+    }
+
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
         records_iter: I,
     ) -> Self::Database {
         let record_count = records_iter.len();
+        assert_eq!(record_count, Self::NUM_RECORDS);
         let mut bucket_layouts = vec![Vec::with_capacity(BaseRespire::DB_SIZE); Self::NUM_BUCKET];
         let records = records_iter.collect_vec();
         for (i, r) in records.iter().enumerate() {
@@ -60,11 +72,9 @@ impl<
         }
         let max_count = bucket_layouts.iter().map(|b| b.len()).max().unwrap();
         eprintln!(
-            "Encoding batch DB with {} records ({} buckets, {} base db size, {} max used size)",
-            record_count,
-            Self::NUM_BUCKET,
-            BaseRespire::DB_SIZE,
-            max_count
+            "DB encoding: worst bucket size {} out of {}",
+            max_count,
+            BaseRespire::DB_SIZE
         );
         assert!(max_count <= BaseRespire::DB_SIZE);
 
