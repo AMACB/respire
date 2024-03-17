@@ -72,9 +72,21 @@ pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
     params
 }
 
+pub const fn respire_1024_b256_base() -> RespireParamsExpanded {
+    let mut params = respire_1024(7, 398);
+    params.NU1 -= 2;
+    params.NU2 -= 5;
+    params
+}
+
 pub const RESPIRE_BATCH32_BASE_TEST_PARAMS: RespireParamsExpanded = respire_1024_b32_base();
 pub type RespireBatch32BaseTest = respire!(RESPIRE_BATCH32_BASE_TEST_PARAMS);
 pub type RespireBatch32Test = CuckooRespireImpl<32, 49, { 2usize.pow(20) }, RespireBatch32BaseTest>;
+
+pub const RESPIRE_BATCH256_BASE_TEST_PARAMS: RespireParamsExpanded = respire_1024_b256_base();
+pub type RespireBatch256BaseTest = respire!(RESPIRE_BATCH256_BASE_TEST_PARAMS);
+pub type RespireBatch256Test =
+    CuckooRespireImpl<256, 398, { 2usize.pow(20) }, RespireBatch256BaseTest>;
 
 #[cfg(not(target_feature = "avx2"))]
 pub fn has_avx2() -> bool {

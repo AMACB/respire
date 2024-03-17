@@ -3,8 +3,10 @@ use fhe_psi::pir::pir::PIR;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
+type ThePIR = RespireTest;
+
 fn main() {
     env_logger::init();
     let mut rng = ChaCha20Rng::from_entropy();
-    run_pir::<RespireTest, _>((0..).map(|_| rng.gen_range(0_usize..RespireTest::NUM_RECORDS)));
+    run_pir::<ThePIR, _>((0..).map(|_| rng.gen_range(0_usize..ThePIR::NUM_RECORDS)));
 }
