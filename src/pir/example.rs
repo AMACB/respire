@@ -3,6 +3,7 @@ use crate::pir::pir::PIR;
 use crate::pir::respire::{RecordBytesImpl, RespireImpl, RespireParams, RespireParamsExpanded};
 use crate::respire;
 use itertools::Itertools;
+use log::info;
 use std::time::Instant;
 
 pub const fn respire_512(n_vec: usize, batch_size: usize) -> RespireParamsExpanded {
@@ -66,8 +67,8 @@ pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
 
 pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
     let mut params = respire_1024(8, 49);
-    params.NU1 -= 2;
-    params.NU2 -= 2;
+    params.NU1 -= 1;
+    params.NU2 -= 3;
     params
 }
 
@@ -144,12 +145,12 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
     let pre_start = Instant::now();
     let (db, db_hint) = ThePIR::encode_db(records.iter().cloned());
     let pre_end = Instant::now();
-    eprintln!("{:?} to preprocess", pre_end - pre_start);
+    info!("{:?} to preprocess", pre_end - pre_start);
 
     let setup_start = Instant::now();
     let (qk, pp) = ThePIR::setup();
     let setup_end = Instant::now();
-    eprintln!("{:?} to setup", setup_end - setup_start);
+    info!("{:?} to setup", setup_end - setup_start);
 
     let check = |indices: &[usize]| {
         eprintln!("Testing record indices {:?}", &indices);
@@ -178,10 +179,14 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
             }
         }
 
-        eprintln!("  {:?} total", query_total + answer_total + extract_total);
-        eprintln!("    {:?} to query", query_total);
-        eprintln!("    {:?} to answer", answer_total);
-        eprintln!("    {:?} to extract", extract_total);
+        info!("    {:?} to query", query_total);
+        info!("    {:?} to answer", answer_total);
+        info!("    {:?} to extract", extract_total);
+
+        eprintln!(
+            "Took {:?} total",
+            query_total + answer_total + extract_total
+        );
     };
 
     for chunk in iter.chunks(ThePIR::BATCH_SIZE).into_iter() {

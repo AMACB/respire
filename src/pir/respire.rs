@@ -1,5 +1,6 @@
 use bitvec::prelude::*;
 use itertools::Itertools;
+use log::info;
 use std::cmp::max;
 use std::f64::consts::PI;
 use std::time::Instant;
@@ -827,10 +828,10 @@ respire_impl!(Respire, {
         let result_projected = Self::answer_project(pp, result, gsws_proj.as_slice());
         let i4 = Instant::now();
 
-        eprintln!("(*) answer query expand: {:?}", i1 - i0);
-        eprintln!("(*) answer first dim: {:?}", i2 - i1);
-        eprintln!("(*) answer fold: {:?}", i3 - i2);
-        eprintln!("(*) answer project: {:?}", i4 - i3);
+        info!("(*) answer query expand: {:?}", i1 - i0);
+        info!("(*) answer first dim: {:?}", i2 - i1);
+        info!("(*) answer fold: {:?}", i3 - i2);
+        info!("(*) answer project: {:?}", i4 - i3);
 
         result_projected
     }
@@ -856,10 +857,10 @@ respire_impl!(Respire, {
         let ii0 = Instant::now();
         let vec = Self::scal_to_vec(scal_to_vec_key, scalar_cts.as_slice().try_into().unwrap());
         let ii1 = Instant::now();
-        eprintln!("(**) answer scal to vec: {:?}", ii1 - ii0);
+        info!("(**) answer scal to vec: {:?}", ii1 - ii0);
 
         if let Some((_, s_vec, _)) = qk {
-            eprintln!(
+            info!(
                 "  pre compression noise (subgaussian widths): 2^({})",
                 Self::noise_subgaussian_bits_vec(s_vec, &vec)
             );
@@ -1105,9 +1106,9 @@ respire_impl!({
         assert_eq!(c_gsws_iter.next(), None);
 
         let i3 = Instant::now();
-        eprintln!("(**) answer query expand (reg): {:?}", i1 - i0);
-        eprintln!("(**) answer query expand (gsw): {:?}", i2 - i1);
-        eprintln!("(**) answer query expand (reg_to_gsw): {:?}", i3 - i2);
+        info!("(**) answer query expand (reg): {:?}", i1 - i0);
+        info!("(**) answer query expand (gsw): {:?}", i2 - i1);
+        info!("(**) answer query expand (reg_to_gsw): {:?}", i3 - i2);
 
         (c_regevs, c_gsws_fold, c_gsws_proj)
     }

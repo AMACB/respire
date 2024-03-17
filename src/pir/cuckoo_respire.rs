@@ -1,6 +1,7 @@
 use crate::pir::pir::PIR;
 use crate::pir::respire::Respire;
 use itertools::Itertools;
+use log::info;
 use rand::{thread_rng, Rng};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -95,7 +96,7 @@ impl<
             bucket_layouts[b3].push(Some(i));
         }
         let max_count = bucket_layouts.iter().map(|b| b.len()).max().unwrap();
-        eprintln!(
+        info!(
             "Cuckoo DB encoding: worst bucket size {} out of {}",
             max_count,
             BaseRespire::DB_SIZE
