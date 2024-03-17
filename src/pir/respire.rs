@@ -21,7 +21,6 @@ use crate::math::ring_elem::{NormedRingElement, RingElement};
 use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits, reverse_bits_fast};
 
 use crate::math::simd_utils::*;
-use crate::pir::example::has_avx2;
 use crate::pir::pir::PIR;
 
 pub struct RespireImpl<
@@ -403,6 +402,14 @@ pub trait Respire: PIR {
         qk: &<Self as PIR>::QueryKey,
         r: &<Self as Respire>::ResponseOneCompressed,
     ) -> Vec<<Self as PIR>::RecordBytes>;
+
+    fn params() -> RespireParamsExpanded;
+    fn params_noise_estimate() -> f64;
+    fn params_correctness_estimate() -> f64;
+    fn params_public_param_size() -> usize;
+    fn params_query_one_size() -> usize;
+    fn params_record_one_size() -> usize;
+    fn params_response_one_size() -> usize;
 }
 
 #[repr(transparent)]
@@ -451,14 +458,6 @@ respire_impl!(PIR, {
 
     fn print_summary() {
         eprintln!("RESPIRE with {} records", Self::NUM_RECORDS);
-        eprintln!(
-            "AVX2 is {}",
-            if has_avx2() {
-                "enabled"
-            } else {
-                "not enabled "
-            }
-        );
         eprintln!("Parameters: {:#?}", Self::params());
         eprintln!(
             "Public param size (compressed): {:.3} KiB",
@@ -912,6 +911,76 @@ respire_impl!(Respire, {
         r: &<Self as Respire>::ResponseOneCompressed,
     ) -> Vec<<Self as PIR>::RecordBytes> {
         Self::extract_bytes_one(&Self::extract_ring_one(qk, r))
+    }
+
+    fn params() -> RespireParamsExpanded {
+        RespireParamsExpanded {
+            Q,
+            Q_A,
+            Q_B,
+            D,
+            Z_GSW,
+            T_GSW,
+            Z_COEFF_REGEV,
+            T_COEFF_REGEV,
+            Z_COEFF_GSW,
+            T_COEFF_GSW,
+            Z_CONV,
+            T_CONV,
+            BATCH_SIZE,
+            N_VEC,
+            T_SCAL_TO_VEC,
+            Z_SCAL_TO_VEC,
+            M_CONV,
+            M_GSW,
+            NOISE_WIDTH_MILLIONTHS,
+            P,
+            D_RECORD,
+            NU1,
+            NU2,
+            Z_FOLD,
+            Q_SWITCH1,
+            Q_SWITCH2,
+            D_SWITCH,
+            T_SWITCH,
+            Z_SWITCH,
+            BYTES_PER_RECORD,
+        }
+    }
+
+    fn params_noise_estimate() -> f64 {
+        todo!()
+    }
+
+    fn params_correctness_estimate() -> f64 {
+        todo!()
+    }
+
+    fn params_public_param_size() -> usize {
+        let automorph_elems = floor_log(2, D as u64) * (T_COEFF_REGEV + T_COEFF_GSW);
+        let reg_to_gsw_elems = 2 * T_CONV;
+        let scal_to_vec_elems = N_VEC * T_SCAL_TO_VEC;
+        let q_elem_size = D * ceil_log(2, Q) / 8;
+
+        let compress_elems = N_VEC * T_SWITCH;
+        let q2_elem_size = D * ceil_log(2, Q_SWITCH2) / 8;
+        return (automorph_elems + reg_to_gsw_elems + scal_to_vec_elems) * q_elem_size
+            + compress_elems * q2_elem_size;
+    }
+
+    fn params_query_one_size() -> usize {
+        (Self::REGEV_COUNT + Self::GSW_COUNT) * ceil_log(2, Q) / 8
+    }
+
+    fn params_record_one_size() -> usize {
+        let log_p = floor_log(2, P);
+        D_RECORD * log_p / 8
+    }
+
+    fn params_response_one_size() -> usize {
+        let log_q1 = (Q_SWITCH1 as f64).log2();
+        let log_q2 = (Q_SWITCH2 as f64).log2();
+        ((D_SWITCH as f64) * (log_q2 + (N_VEC as f64) * log_q1) / 8_f64).ceil() as usize
     }
 });
 
@@ -1701,82 +1770,17 @@ respire_impl!({
         Self::variance_to_subgaussian_bits(total / N_VEC as f64)
     }
 
-    pub const fn params() -> RespireParamsExpanded {
-        RespireParamsExpanded {
-            Q,
-            Q_A,
-            Q_B,
-            D,
-            Z_GSW,
-            T_GSW,
-            Z_COEFF_REGEV,
-            T_COEFF_REGEV,
-            Z_COEFF_GSW,
-            T_COEFF_GSW,
-            Z_CONV,
-            T_CONV,
-            BATCH_SIZE,
-            N_VEC,
-            T_SCAL_TO_VEC,
-            Z_SCAL_TO_VEC,
-            M_CONV,
-            M_GSW,
-            NOISE_WIDTH_MILLIONTHS,
-            P,
-            D_RECORD,
-            NU1,
-            NU2,
-            Z_FOLD,
-            Q_SWITCH1,
-            Q_SWITCH2,
-            D_SWITCH,
-            T_SWITCH,
-            Z_SWITCH,
-            BYTES_PER_RECORD,
-        }
-    }
-
-    pub fn params_correctness() -> f64 {
-        // 2 d n^2 * exp(-pi * correctness^2) <= 2^(-40)
-        (-1_f64 / PI * (2_f64.powi(-40) / 2_f64 / D as f64).ln()).sqrt()
-    }
-
-    pub fn params_relative_noise_threshold() -> f64 {
-        1_f64 / (2_f64 * P as f64) / Self::params_correctness()
-    }
-
-    pub fn params_noise_estimate() -> f64 {
-        todo!()
-    }
-
-    pub fn params_public_param_size() -> usize {
-        let automorph_elems = floor_log(2, D as u64) * (T_COEFF_REGEV + T_COEFF_GSW);
-        let reg_to_gsw_elems = 2 * T_CONV;
-        let scal_to_vec_elems = N_VEC * T_SCAL_TO_VEC;
-        let q_elem_size = D * ceil_log(2, Q) / 8;
-
-        let compress_elems = N_VEC * T_SWITCH;
-        let q2_elem_size = D * ceil_log(2, Q_SWITCH2) / 8;
-        return (automorph_elems + reg_to_gsw_elems + scal_to_vec_elems) * q_elem_size
-            + compress_elems * q2_elem_size;
-    }
-
     pub fn params_query_size() -> usize {
-        (Self::REGEV_COUNT + Self::GSW_COUNT) * ceil_log(2, Q) / 8
+        BATCH_SIZE * Self::params_query_one_size()
     }
 
     pub fn params_record_size() -> usize {
-        let log_p = floor_log(2, P);
-        BATCH_SIZE * D_RECORD * log_p / 8
+        BATCH_SIZE * Self::params_record_one_size()
     }
 
     pub fn params_response_size() -> usize {
         let num_elems = BATCH_SIZE.div_ceil(Self::RESPONSE_CHUNK_SIZE);
-        let log_q1 = (Q_SWITCH1 as f64).log2();
-        let log_q2 = (Q_SWITCH2 as f64).log2();
-        let one_elem =
-            ((D_SWITCH as f64) * (log_q2 + (N_VEC as f64) * log_q1) / 8_f64).ceil() as usize;
-        num_elems * one_elem
+        num_elems * Self::params_response_one_size()
     }
 
     pub fn params_rate() -> f64 {

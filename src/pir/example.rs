@@ -65,7 +65,7 @@ pub const RESPIRE_TEST_PARAMS: RespireParamsExpanded = respire_512(1, 1);
 pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
 
 pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
-    let mut params = respire_1024(8, 1);
+    let mut params = respire_1024(8, 49);
     params.NU1 -= 2;
     params.NU2 -= 2;
     params
@@ -99,6 +99,15 @@ pub fn has_avx2() -> bool {
 pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item = usize>>(
     iter: I,
 ) {
+    eprintln!("Running PIR...");
+    eprintln!(
+        "AVX2 is {}",
+        if has_avx2() {
+            "enabled"
+        } else {
+            "not enabled "
+        }
+    );
     eprintln!("========");
     ThePIR::print_summary();
     eprintln!("========");

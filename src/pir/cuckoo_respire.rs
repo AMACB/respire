@@ -51,18 +51,32 @@ impl<
     const BATCH_SIZE: usize = BATCH_SIZE;
 
     fn print_summary() {
+        assert_eq!(BaseRespire::BATCH_SIZE, Self::NUM_BUCKET);
         eprintln!(
-            "Cuckoo respire ({} records, {} batch size, {} buckets, {} bucket size)",
+            "Cuckoo RESPIRE ({} records, {} batch size, {} buckets, {} bucket size)",
             Self::NUM_RECORDS,
             Self::BATCH_SIZE,
             Self::NUM_BUCKET,
             BaseRespire::DB_SIZE
         );
-        eprintln!("---- Base RESPIRE ----");
-        BaseRespire::print_summary();
-        eprintln!("---- Actual computed params ----");
-        // TODO
-        eprintln!("(TODO)")
+        eprintln!("Parameters (base RESPIRE): {:#?}", BaseRespire::params());
+        eprintln!(
+            "Public param size (compressed): {:.3} KiB",
+            BaseRespire::params_public_param_size() as f64 / 1024_f64
+        );
+        eprintln!(
+            "Query size (compressed): {:.3} KiB",
+            Self::params_query_size() as f64 / 1024_f64
+        );
+        eprintln!(
+            "Response size (batch): {:.3} KiB",
+            Self::params_response_size() as f64 / 1024_f64
+        );
+        eprintln!(
+            "Record size (batch): {:.3} KiB",
+            Self::params_record_size() as f64 / 1024_f64
+        );
+        eprintln!("Rate: {:.3}", Self::params_rate());
     }
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
@@ -114,7 +128,6 @@ impl<
         record_idxs: &[usize],
         bucket_layouts: &Self::DatabaseHint,
     ) -> (Self::Query, Self::State) {
-        assert_eq!(BaseRespire::BATCH_SIZE, 1);
         assert_eq!(record_idxs.len(), Self::BATCH_SIZE);
         let cuckoo_mapping = Self::cuckoo(record_idxs, 2usize.pow(16)).unwrap();
         assert_eq!(cuckoo_mapping.len(), Self::BATCH_SIZE);
@@ -228,17 +241,17 @@ impl<
                 (_, _, None) => {
                     mapping.insert(i3, idx);
                 }
-                (Some(curr1), Some(curr2), Some(curr3)) => match rng.gen_range(0..3) {
+                (Some(&curr1), Some(&curr2), Some(&curr3)) => match rng.gen_range(0..3) {
                     0 => {
-                        remaining.push((*curr1, depth + 1));
+                        remaining.push((curr1, depth + 1));
                         mapping.insert(i1, idx);
                     }
                     1 => {
-                        remaining.push((*curr2, depth + 1));
+                        remaining.push((curr2, depth + 1));
                         mapping.insert(i2, idx);
                     }
                     _ => {
-                        remaining.push((*curr3, depth + 1));
+                        remaining.push((curr3, depth + 1));
                         mapping.insert(i3, idx);
                     }
                 },
@@ -247,42 +260,20 @@ impl<
         Some(mapping.into_iter().collect_vec())
     }
 
-    // fn idx_to_bucket_pos(i: usize) -> (usize, usize) {
-    //     let modulus = Self::BUCKET_SIZE as u64;
-    //     assert!(modulus < 2_u64.pow(32)); // need two hashes from a u64
-    //     // TODO: DefaultHasher is not stable
-    //     let mut hasher = DefaultHasher::new();
-    //     i.hash(&mut hasher);
-    //     let hashed = hasher.finish();
-    //     let h1 = hashed % modulus;
-    //     let h2 = (hashed / modulus) % modulus;
-    //     (h1 as usize, h2 as usize)
-    // }
+    pub fn params_query_size() -> usize {
+        Self::NUM_BUCKET * BaseRespire::params_query_one_size()
+    }
 
-    // fn cuckoo(items: &Vec<usize>, bucket_count: usize) -> Option<Vec<Option<usize>>> {
-    //     let mut result = vec![None; bucket_count];
-    //     let mut remaining = Vec::from_iter(items.iter().copied());
-    //     let mut rng = thread_rng();
-    //     while let Some(idx) = remaining.pop() {
-    //         let (i1, i2) = Self::idx_to_bucket_pos(idx);
-    //         match (result[i1], result[i2]) {
-    //             (None, _) => {
-    //                 result[i1] = Some(idx);
-    //             },
-    //             (_, None) => {
-    //                 result[i2] = Some(idx);
-    //             },
-    //             (Some(curr1), Some(curr2)) => {
-    //                 if rng.gen() {
-    //                     remaining.push(curr2);
-    //                     result[i2] = Some(idx);
-    //                 } else {
-    //                     remaining.push(curr1);
-    //                     result[i1] = Some(idx);
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     result
-    // }
+    pub fn params_record_size() -> usize {
+        Self::BATCH_SIZE * BaseRespire::params_record_one_size()
+    }
+
+    pub fn params_response_size() -> usize {
+        let num_elems = Self::NUM_BUCKET.div_ceil(BaseRespire::RESPONSE_CHUNK_SIZE);
+        num_elems * BaseRespire::params_response_one_size()
+    }
+
+    pub fn params_rate() -> f64 {
+        (Self::params_record_size() as f64) / (Self::params_response_size() as f64)
+    }
 }
