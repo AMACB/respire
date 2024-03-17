@@ -461,12 +461,18 @@ respire_impl!(PIR, {
         eprintln!("RESPIRE with {} records", Self::NUM_RECORDS);
         eprintln!("Parameters: {:#?}", Self::params());
         eprintln!(
-            "Public param size (compressed): {:.3} KiB",
+            "Public param size: {:.3} KiB",
             Self::params_public_param_size() as f64 / 1024_f64
         );
         eprintln!(
-            "Query size (compressed): {:.3} KiB",
+            "Query size: {:.3} KiB",
             Self::params_query_size() as f64 / 1024_f64
+        );
+        eprintln!(
+            "Response: {} record(s) / {} chunk size => {} chunk(s)",
+            Self::BATCH_SIZE,
+            Self::RESPONSE_CHUNK_SIZE,
+            Self::BATCH_SIZE.div_ceil(Self::RESPONSE_CHUNK_SIZE)
         );
         eprintln!(
             "Response size (batch): {:.3} KiB",
@@ -861,7 +867,7 @@ respire_impl!(Respire, {
 
         if let Some((_, s_vec, _)) = qk {
             info!(
-                "  pre compression noise (subgaussian widths): 2^({})",
+                "pre compression noise (subgaussian widths): 2^({})",
                 Self::noise_subgaussian_bits_vec(s_vec, &vec)
             );
         }
@@ -1772,15 +1778,15 @@ respire_impl!({
     }
 
     pub fn params_query_size() -> usize {
-        BATCH_SIZE * Self::params_query_one_size()
+        Self::BATCH_SIZE * Self::params_query_one_size()
     }
 
     pub fn params_record_size() -> usize {
-        BATCH_SIZE * Self::params_record_one_size()
+        Self::BATCH_SIZE * Self::params_record_one_size()
     }
 
     pub fn params_response_size() -> usize {
-        let num_elems = BATCH_SIZE.div_ceil(Self::RESPONSE_CHUNK_SIZE);
+        let num_elems = Self::BATCH_SIZE.div_ceil(Self::RESPONSE_CHUNK_SIZE);
         num_elems * Self::params_response_one_size()
     }
 

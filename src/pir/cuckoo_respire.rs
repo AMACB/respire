@@ -62,12 +62,18 @@ impl<
         );
         eprintln!("Parameters (base RESPIRE): {:#?}", BaseRespire::params());
         eprintln!(
-            "Public param size (compressed): {:.3} KiB",
+            "Public param size: {:.3} KiB",
             BaseRespire::params_public_param_size() as f64 / 1024_f64
         );
         eprintln!(
-            "Query size (compressed): {:.3} KiB",
+            "Query size: {:.3} KiB",
             Self::params_query_size() as f64 / 1024_f64
+        );
+        eprintln!(
+            "Response: {} record(s) / {} chunk size => {} chunk(s)",
+            Self::NUM_BUCKET,
+            BaseRespire::RESPONSE_CHUNK_SIZE,
+            Self::NUM_BUCKET.div_ceil(BaseRespire::RESPONSE_CHUNK_SIZE)
         );
         eprintln!(
             "Response size (batch): {:.3} KiB",

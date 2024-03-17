@@ -66,7 +66,7 @@ pub const RESPIRE_TEST_PARAMS: RespireParamsExpanded = respire_512(1, 1);
 pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
 
 pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
-    let mut params = respire_1024(8, 49);
+    let mut params = respire_1024(7, 49);
     params.NU1 -= 1;
     params.NU2 -= 3;
     params
@@ -172,21 +172,19 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
 
         for (idx, decoded_record) in indices.iter().copied().zip(extracted) {
             if decoded_record != records[idx] {
-                eprintln!("  **** **** **** **** ERROR **** **** **** ****");
-                eprintln!("  protocol failed");
+                eprintln!("**** **** **** **** ERROR **** **** **** ****");
+                eprintln!("protocol failed");
                 dbg!(idx);
                 dbg!(&decoded_record);
+                dbg!(&records[idx]);
             }
         }
 
-        info!("    {:?} to query", query_total);
-        info!("    {:?} to answer", answer_total);
-        info!("    {:?} to extract", extract_total);
+        info!("{:?} to query", query_total);
+        info!("{:?} to answer", answer_total);
+        info!("{:?} to extract", extract_total);
 
-        eprintln!(
-            "Took {:?} total",
-            query_total + answer_total + extract_total
-        );
+        eprintln!("{:?} total", query_total + answer_total + extract_total);
     };
 
     for chunk in iter.chunks(ThePIR::BATCH_SIZE).into_iter() {
