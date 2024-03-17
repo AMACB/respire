@@ -1,7 +1,9 @@
-use crate::pir::pir::{Respire, PIR};
+use crate::pir::pir::PIR;
+use crate::pir::respire::Respire;
 use itertools::Itertools;
 use rand::{thread_rng, Rng};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
@@ -40,17 +42,19 @@ impl<
     type QueryKey = BaseRespire::QueryKey;
     type PublicParams = BaseRespire::PublicParams;
     type Query = Vec<BaseRespire::QueryOne>;
-    type Response = BaseRespire::Response;
+    type Response = Vec<BaseRespire::ResponseOneCompressed>;
     type Database = Vec<<BaseRespire as PIR>::Database>;
     type DatabaseHint = Vec<Vec<Option<usize>>>;
+    type State = Vec<(usize, usize)>;
     type RecordBytes = BaseRespire::RecordBytes;
     const NUM_RECORDS: usize = NUM_RECORDS;
     const BATCH_SIZE: usize = BATCH_SIZE;
 
     fn print_summary() {
         eprintln!(
-            "Cuckoo respire ({} records, {} buckets, {} bucket size)",
+            "Cuckoo respire ({} records, {} batch size, {} buckets, {} bucket size)",
             Self::NUM_RECORDS,
+            Self::BATCH_SIZE,
             Self::NUM_BUCKET,
             BaseRespire::DB_SIZE
         );
@@ -66,6 +70,8 @@ impl<
     ) -> (Self::Database, Self::DatabaseHint) {
         let record_count = records_iter.len();
         assert_eq!(record_count, Self::NUM_RECORDS);
+
+        // TODO the bucket layouts can be determined during setup since it is database independent
         let mut bucket_layouts = vec![Vec::with_capacity(BaseRespire::DB_SIZE); Self::NUM_BUCKET];
         let records = records_iter.collect_vec();
         for i in 0..records.len() {
@@ -105,47 +111,77 @@ impl<
 
     fn query(
         qk: &Self::QueryKey,
-        idxs: &[usize],
+        record_idxs: &[usize],
         bucket_layouts: &Self::DatabaseHint,
-    ) -> Self::Query {
+    ) -> (Self::Query, Self::State) {
         assert_eq!(BaseRespire::BATCH_SIZE, 1);
-        let cuckooed = Self::cuckoo(idxs, 2usize.pow(16)).unwrap();
-        assert_eq!(cuckooed.len(), Self::NUM_BUCKET);
+        assert_eq!(record_idxs.len(), Self::BATCH_SIZE);
+        let cuckoo_mapping = Self::cuckoo(record_idxs, 2usize.pow(16)).unwrap();
+        assert_eq!(cuckoo_mapping.len(), Self::BATCH_SIZE);
 
-        let mut actual_idxs = Vec::with_capacity(Self::NUM_BUCKET);
-        for (bucket_idx, c) in cuckooed.iter().copied().enumerate() {
-            actual_idxs.push(match c {
-                Some(record_idx) => {
-                    bucket_layouts[bucket_idx]
-                        .iter()
-                        .copied()
-                        .find_position(|slot| slot.is_some_and(|i| i == record_idx))
-                        .unwrap()
-                        .0
-                }
-                None => 0,
-            });
+        let mut actual_idxs = vec![0usize; Self::NUM_BUCKET];
+        for (bucket_idx, idxs_idx) in cuckoo_mapping.iter().copied() {
+            let record_idx = record_idxs[idxs_idx];
+            // TODO optimize this linear search
+            actual_idxs[bucket_idx] = bucket_layouts[bucket_idx]
+                .iter()
+                .copied()
+                .find_position(|slot| slot.is_some_and(|i| i == record_idx))
+                .unwrap()
+                .0;
         }
 
         assert_eq!(actual_idxs.len(), Self::NUM_BUCKET);
-        actual_idxs
+        let q = actual_idxs
             .iter()
             .copied()
             .map(|idx| BaseRespire::query_one(qk, idx))
-            .collect_vec()
+            .collect_vec();
+
+        (q, cuckoo_mapping)
     }
 
     fn answer(
         pp: &Self::PublicParams,
-        db: &Self::Database,
-        q: &Self::Query,
+        dbs: &Self::Database,
+        qs: &Self::Query,
         qk: Option<&Self::QueryKey>,
     ) -> Self::Response {
-        todo!()
+        assert_eq!(qs.len(), Self::NUM_BUCKET);
+        let answers = qs
+            .iter()
+            .zip(dbs)
+            .map(|(q, db)| BaseRespire::answer_one(pp, db, q))
+            .collect_vec();
+        let answers_compressed = answers
+            .chunks(BaseRespire::RESPONSE_CHUNK_SIZE)
+            .map(|chunk| BaseRespire::answer_compress_chunk(pp, chunk, qk))
+            .collect_vec();
+        answers_compressed
     }
 
-    fn extract(qk: &Self::QueryKey, r: &Self::Response) -> Vec<Self::RecordBytes> {
-        todo!()
+    fn extract(
+        qk: &Self::QueryKey,
+        r: &Self::Response,
+        cuckoo_mapping: &Self::State,
+    ) -> Vec<Self::RecordBytes> {
+        let mut result_by_bucket = Vec::with_capacity(Self::NUM_BUCKET);
+        for r_one in r {
+            let extracted = BaseRespire::extract_one(qk, r_one);
+            for record in extracted {
+                if result_by_bucket.len() < Self::NUM_BUCKET {
+                    result_by_bucket.push(record);
+                }
+            }
+        }
+        assert_eq!(result_by_bucket.len(), Self::NUM_BUCKET);
+
+        let mut result = vec![BaseRespire::RecordBytes::default(); Self::BATCH_SIZE];
+        assert_eq!(cuckoo_mapping.len(), Self::BATCH_SIZE);
+        for (bucket_idx, idxs_idx) in cuckoo_mapping.iter().copied() {
+            result[idxs_idx] = result_by_bucket[bucket_idx].clone();
+        }
+        result
     }
 }
 
@@ -169,42 +205,46 @@ impl<
         (h1 as usize, h2 as usize, h3 as usize)
     }
 
-    fn cuckoo(idxs: &[usize], max_depth: usize) -> Option<Vec<Option<usize>>> {
-        let mut result = vec![None; Self::NUM_BUCKET];
-        let mut remaining = Vec::from_iter(idxs.iter().copied().map(|x| (x, 0usize)));
+    ///
+    /// Returns a vector of (bucket slot index, item index) pairs.
+    ///
+    fn cuckoo(items: &[usize], max_depth: usize) -> Option<Vec<(usize, usize)>> {
+        // Maps bucket slot indices to item indices
+        let mut mapping = HashMap::with_capacity(items.len());
+        let mut remaining = Vec::from_iter((0..items.len()).map(|idx| (idx, 0usize)));
         let mut rng = thread_rng();
         while let Some((idx, depth)) = remaining.pop() {
             if depth >= max_depth {
                 return None;
             }
-            let (i1, i2, i3) = Self::idx_to_buckets(idx);
-            match (result[i1], result[i2], result[i3]) {
+            let (i1, i2, i3) = Self::idx_to_buckets(items[idx]);
+            match (mapping.get(&i1), mapping.get(&i2), mapping.get(&i3)) {
                 (None, _, _) => {
-                    result[i1] = Some(idx);
+                    mapping.insert(i1, idx);
                 }
                 (_, None, _) => {
-                    result[i2] = Some(idx);
+                    mapping.insert(i2, idx);
                 }
                 (_, _, None) => {
-                    result[i3] = Some(idx);
+                    mapping.insert(i3, idx);
                 }
                 (Some(curr1), Some(curr2), Some(curr3)) => match rng.gen_range(0..3) {
                     0 => {
-                        remaining.push((curr1, depth + 1));
-                        result[i1] = Some(idx);
+                        remaining.push((*curr1, depth + 1));
+                        mapping.insert(i1, idx);
                     }
                     1 => {
-                        remaining.push((curr2, depth + 1));
-                        result[i2] = Some(idx);
+                        remaining.push((*curr2, depth + 1));
+                        mapping.insert(i2, idx);
                     }
                     _ => {
-                        remaining.push((curr3, depth + 1));
-                        result[i3] = Some(idx);
+                        remaining.push((*curr3, depth + 1));
+                        mapping.insert(i3, idx);
                     }
                 },
             }
         }
-        Some(result)
+        Some(mapping.into_iter().collect_vec())
     }
 
     // fn idx_to_bucket_pos(i: usize) -> (usize, usize) {

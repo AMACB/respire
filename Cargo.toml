@@ -33,7 +33,7 @@ harness = false
 name = "respire_stress"
 
 [[bin]]
-name = "respire_batch_stress"
+name = "cuckoo_respire_stress"
 
 [dev-dependencies]
 criterion = "0.5.1"

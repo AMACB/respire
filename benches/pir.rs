@@ -3,7 +3,7 @@ use fhe_psi::math::int_mod::IntMod;
 use fhe_psi::math::int_mod_cyclo::IntModCyclo;
 use fhe_psi::math::matrix::Matrix;
 use fhe_psi::math::rand_sampled::RandUniformSampled;
-use fhe_psi::pir::pir::{RespireImpl, RespireParams, RespireParamsExpanded, PIR};
+use fhe_psi::pir::respire::{RespireImpl, RespireParams, RespireParamsExpanded, PIR};
 use fhe_psi::respire;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;

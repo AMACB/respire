@@ -1,5 +1,6 @@
-use crate::pir::batch::CuckooRespireImpl;
-use crate::pir::pir::{RecordBytesImpl, RespireImpl, RespireParams, RespireParamsExpanded, PIR};
+use crate::pir::cuckoo_respire::CuckooRespireImpl;
+use crate::pir::pir::PIR;
+use crate::pir::respire::{RecordBytesImpl, RespireImpl, RespireParams, RespireParamsExpanded};
 use crate::respire;
 use itertools::Itertools;
 use std::time::Instant;
@@ -19,8 +20,8 @@ pub const fn respire_512(n_vec: usize, batch_size: usize) -> RespireParamsExpand
         NOISE_WIDTH_MILLIONTHS: 6_400_000,
         P: 17,
         D_RECORD: 512,
-        ETA1: 9,
-        ETA2: 9,
+        NU1: 9,
+        NU2: 9,
         Z_FOLD: 2,
         Q_SWITCH1: 6 * 17,
         Q_SWITCH2: 163841, // 17.32 bits
@@ -45,8 +46,8 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpan
         NOISE_WIDTH_MILLIONTHS: 6_400_000,
         P: 257,
         D_RECORD: 256,
-        ETA1: 9,
-        ETA2: 8,
+        NU1: 9,
+        NU2: 8,
         Z_FOLD: 2,
         Q_SWITCH1: 6 * 257,
         Q_SWITCH2: 4169729, // 21.99 bits
@@ -65,8 +66,8 @@ pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
 
 pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
     let mut params = respire_1024(8, 1);
-    params.ETA1 -= 2;
-    params.ETA2 -= 2;
+    params.NU1 -= 2;
+    params.NU2 -= 2;
     params
 }
 
@@ -145,7 +146,7 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
         eprintln!("Testing record indices {:?}", &indices);
         assert_eq!(indices.len(), ThePIR::BATCH_SIZE);
         let query_start = Instant::now();
-        let q = ThePIR::query(&qk, indices, &db_hint);
+        let (q, st) = ThePIR::query(&qk, indices, &db_hint);
         let query_end = Instant::now();
         let query_total = query_end - query_start;
 
@@ -155,7 +156,7 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
         let answer_total = answer_end - answer_start;
 
         let extract_start = Instant::now();
-        let extracted = ThePIR::extract(&qk, &response);
+        let extracted = ThePIR::extract(&qk, &response, &st);
         let extract_end = Instant::now();
         let extract_total = extract_end - extract_start;
 
@@ -188,7 +189,7 @@ mod test {
     use crate::math::int_mod_poly::IntModPoly;
     use crate::math::matrix::Matrix;
     use crate::math::ring_elem::RingElement;
-    use crate::pir::pir::Respire;
+    use crate::pir::respire::Respire;
 
     #[test]
     fn test_regev() {
