@@ -407,7 +407,7 @@ mod test {
         }
         let c =
             RespireTest::encode_vec_regev(s_vec, &m.map_ring(|r| r.include_dim().scale_up_into()));
-        let compressed = RespireTest::answer_compress_vec(&pp, &c);
+        let compressed = RespireTest::answer_compress_vec(&pp, &c, RESPIRE_TEST_PARAMS.N_VEC);
         let extracted = RespireTest::extract_ring_one(&qk, &compressed);
         assert_eq!(m, extracted);
     }
