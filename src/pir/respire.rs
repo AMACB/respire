@@ -354,7 +354,7 @@ pub trait Respire: PIR {
     type KeySwitchKey;
     type ScalToVecKey;
     type VecRegevCiphertext;
-    type VecRegevSmall;
+    type VecRegevSmallTruncated;
 
     // A single record
     type Record;
@@ -372,6 +372,7 @@ pub trait Respire: PIR {
     const PACKED_DIM2_SIZE: usize;
     const PACKED_DB_SIZE: usize;
     const DB_SIZE: usize;
+    const N_VEC: usize;
     const PACK_RATIO_DB: usize;
     const PACK_RATIO_RESPONSE: usize;
     const RESPONSE_CHUNK_SIZE: usize;
@@ -398,6 +399,7 @@ pub trait Respire: PIR {
     fn answer_compress_vec(
         pp: &<Self as PIR>::PublicParams,
         vec: &<Self as Respire>::VecRegevCiphertext,
+        truncate_len: usize,
     ) -> <Self as Respire>::ResponseOneCompressed;
     fn extract_one(
         qk: &<Self as PIR>::QueryKey,
@@ -410,7 +412,7 @@ pub trait Respire: PIR {
     fn params_public_param_size() -> usize;
     fn params_query_one_size() -> usize;
     fn params_record_one_size() -> usize;
-    fn params_response_one_size() -> usize;
+    fn params_response_one_size(trunc_len: usize) -> usize;
 }
 
 #[repr(transparent)]
@@ -468,16 +470,20 @@ respire_impl!(PIR, {
             "Query size: {:.3} KiB",
             Self::params_query_size() as f64 / 1024_f64
         );
+
+        let (resp_size, resp_full_vecs, resp_rem) = Self::params_response_info();
         eprintln!(
-            "Response: {} record(s) / {} chunk size => {} chunk(s)",
+            "Response: {} record(s) => {} ring elem(s) => {} full vector(s), {} remainder",
             Self::BATCH_SIZE,
-            Self::RESPONSE_CHUNK_SIZE,
-            Self::BATCH_SIZE.div_ceil(Self::RESPONSE_CHUNK_SIZE)
+            Self::BATCH_SIZE.div_ceil(Self::PACK_RATIO_RESPONSE),
+            resp_full_vecs,
+            resp_rem
         );
         eprintln!(
             "Response size (batch): {:.3} KiB",
-            Self::params_response_size() as f64 / 1024_f64
+            resp_size as f64 / 1024_f64
         );
+
         eprintln!(
             "Record size (batch): {:.3} KiB",
             Self::params_record_size() as f64 / 1024_f64
@@ -700,9 +706,10 @@ respire_impl!(Respire, {
         Matrix<N_VEC, T_SCAL_TO_VEC, Self::RingQFast>,
     )>;
     type VecRegevCiphertext = (Self::RingQFast, Matrix<N_VEC, 1, Self::RingQFast>);
-    type VecRegevSmall = (
+    type VecRegevSmallTruncated = (
         IntModCyclo<D_SWITCH, Q_SWITCH2>,
-        Matrix<N_VEC, 1, IntModCyclo<D_SWITCH, Q_SWITCH1>>,
+        // Length may be truncated to less than N_VEC
+        Vec<IntModCyclo<D_SWITCH, Q_SWITCH1>>,
     );
 
     type Record = IntModCyclo<D_RECORD, P>;
@@ -718,12 +725,13 @@ respire_impl!(Respire, {
         Vec<<Self as Respire>::GSWCiphertext>,
     );
     type ResponseOne = <Self as Respire>::RegevCiphertext;
-    type ResponseOneCompressed = <Self as Respire>::VecRegevSmall;
+    type ResponseOneCompressed = <Self as Respire>::VecRegevSmallTruncated;
 
     const PACKED_DIM1_SIZE: usize = 2_usize.pow(NU1 as u32);
     const PACKED_DIM2_SIZE: usize = Z_FOLD.pow(NU2 as u32);
     const PACKED_DB_SIZE: usize = Self::PACKED_DIM1_SIZE * Self::PACKED_DIM2_SIZE;
     const DB_SIZE: usize = Self::PACKED_DB_SIZE * Self::PACK_RATIO_DB;
+    const N_VEC: usize = N_VEC;
     const PACK_RATIO_DB: usize = D / D_RECORD;
     const PACK_RATIO_RESPONSE: usize = D_SWITCH / D_RECORD;
     const RESPONSE_CHUNK_SIZE: usize = N_VEC * Self::PACK_RATIO_RESPONSE;
@@ -871,13 +879,15 @@ respire_impl!(Respire, {
                 Self::noise_subgaussian_bits_vec(s_vec, &vec)
             );
         }
-        let compressed = Self::answer_compress_vec(pp, &vec);
+        let compressed =
+            Self::answer_compress_vec(pp, &vec, chunk.len().div_ceil(Self::PACK_RATIO_RESPONSE));
         compressed
     }
 
     fn answer_compress_vec(
         (_, _, (a_t, b_mat), _): &<Self as PIR>::PublicParams,
         (c_r, c_m): &<Self as Respire>::VecRegevCiphertext,
+        truncate_len: usize,
     ) -> <Self as Respire>::ResponseOneCompressed {
         let c_r = IntModCyclo::<D, Q>::from(c_r);
         let c_m = c_m.map_ring(|r| IntModCyclo::<D, Q>::from(r));
@@ -892,11 +902,11 @@ respire_impl!(Respire, {
             .map_ring(|x| IntModCycloEval::from(x));
         let c_r_hat: IntModCyclo<D_SWITCH, Q_SWITCH2> =
             IntModCyclo::from(&(a_t * &g_inv_cr_scaled)[(0, 0)]).project_dim();
-        let c_m_hat: Matrix<N_VEC, 1, IntModCyclo<D_SWITCH, Q_SWITCH1>> = {
+        let c_m_hat_trunc = {
             let b_g_inv = (b_mat * &g_inv_cr_scaled).map_ring(|r| IntModCyclo::from(r));
-            let mut result = Matrix::<N_VEC, 1, IntModCyclo<D, Q_SWITCH1>>::zero();
-            for i in 0..N_VEC {
-                for (result_coeff, (c1_coeff, b_t_g_inv_coeff)) in result[(i, 0)]
+            let mut result = vec![IntModCyclo::<D, Q_SWITCH1>::zero(); truncate_len];
+            for i in 0..truncate_len {
+                for (result_coeff, (c1_coeff, b_t_g_inv_coeff)) in result[i]
                     .coeff
                     .iter_mut()
                     .zip(c_m[(i, 0)].coeff.iter().copied().zip(b_g_inv[(i, 0)].coeff))
@@ -908,9 +918,9 @@ respire_impl!(Respire, {
                     *result_coeff = IntMod::from(div as u64);
                 }
             }
-            result.map_ring(|x| x.project_dim())
+            result.into_iter().map(|x| x.project_dim()).collect_vec()
         };
-        (c_r_hat, c_m_hat)
+        (c_r_hat, c_m_hat_trunc)
     }
 
     fn extract_one(
@@ -984,22 +994,22 @@ respire_impl!(Respire, {
         D_RECORD * log_p / 8
     }
 
-    fn params_response_one_size() -> usize {
+    fn params_response_one_size(trunc_len: usize) -> usize {
         let log_q1 = (Q_SWITCH1 as f64).log2();
         let log_q2 = (Q_SWITCH2 as f64).log2();
-        ((D_SWITCH as f64) * (log_q2 + (N_VEC as f64) * log_q1) / 8_f64).ceil() as usize
+        ((D_SWITCH as f64) * (log_q2 + (trunc_len as f64) * log_q1) / 8_f64).ceil() as usize
     }
 });
 
 respire_impl!({
     pub fn extract_ring_one(
         (_, _, s_small): &<Self as PIR>::QueryKey,
-        (c_r_hat, c_m_hat): &<Self as Respire>::ResponseOneCompressed,
+        (c_r_hat, c_m_hat_trunc): &<Self as Respire>::ResponseOneCompressed,
     ) -> <Self as Respire>::RecordPackedSmall {
         let neg_s_small_cr =
             (-&(s_small * &IntModCycloEval::from(c_r_hat))).map_ring(|r| IntModCyclo::from(r));
         let mut result = Matrix::<N_VEC, 1, IntModCyclo<D_SWITCH, Q_SWITCH1>>::zero();
-        for i in 0..N_VEC {
+        for i in 0..c_m_hat_trunc.len() {
             for (result_coeff, neg_s_small_c0_coeff) in result[(i, 0)]
                 .coeff
                 .iter_mut()
@@ -1010,7 +1020,7 @@ respire_impl!({
                 let div = (numer + denom / 2) / denom;
                 *result_coeff = IntMod::from(div as u64);
             }
-            result[(i, 0)] += &c_m_hat[(i, 0)];
+            result[(i, 0)] += &c_m_hat_trunc[i];
         }
         result.map_ring(|r| r.round_down_into())
     }
@@ -1785,12 +1795,28 @@ respire_impl!({
         Self::BATCH_SIZE * Self::params_record_one_size()
     }
 
-    pub fn params_response_size() -> usize {
-        let num_elems = Self::BATCH_SIZE.div_ceil(Self::RESPONSE_CHUNK_SIZE);
-        num_elems * Self::params_response_one_size()
+    ///
+    /// size, number of full vectors, remainder size
+    ///
+    pub fn params_response_info() -> (usize, usize, usize) {
+        let num_ring_elem = Self::BATCH_SIZE.div_ceil(Self::PACK_RATIO_RESPONSE);
+        let num_full_vecs = num_ring_elem / Self::N_VEC;
+        let num_rem = num_ring_elem % Self::N_VEC;
+
+        let full_vec_size = Self::params_response_one_size(Self::N_VEC);
+        let rem_vec_size = if num_rem > 0 {
+            Self::params_response_one_size(num_rem)
+        } else {
+            0
+        };
+        (
+            num_full_vecs * full_vec_size + rem_vec_size,
+            num_full_vecs,
+            num_rem,
+        )
     }
 
     pub fn params_rate() -> f64 {
-        (Self::params_record_size() as f64) / (Self::params_response_size() as f64)
+        (Self::params_record_size() as f64) / (Self::params_response_info().0 as f64)
     }
 });

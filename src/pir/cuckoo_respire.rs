@@ -69,16 +69,20 @@ impl<
             "Query size: {:.3} KiB",
             Self::params_query_size() as f64 / 1024_f64
         );
+
+        let (resp_size, resp_full_vecs, resp_rem) = Self::params_response_info();
         eprintln!(
-            "Response: {} record(s) / {} chunk size => {} chunk(s)",
+            "Response: {} record(s) => {} ring elem(s) => {} full vector(s), {} remainder",
             Self::NUM_BUCKET,
-            BaseRespire::RESPONSE_CHUNK_SIZE,
-            Self::NUM_BUCKET.div_ceil(BaseRespire::RESPONSE_CHUNK_SIZE)
+            Self::NUM_BUCKET.div_ceil(BaseRespire::PACK_RATIO_RESPONSE),
+            resp_full_vecs,
+            resp_rem
         );
         eprintln!(
             "Response size (batch): {:.3} KiB",
-            Self::params_response_size() as f64 / 1024_f64
+            resp_size as f64 / 1024_f64
         );
+
         eprintln!(
             "Record size (batch): {:.3} KiB",
             Self::params_record_size() as f64 / 1024_f64
@@ -275,12 +279,28 @@ impl<
         Self::BATCH_SIZE * BaseRespire::params_record_one_size()
     }
 
-    pub fn params_response_size() -> usize {
-        let num_elems = Self::NUM_BUCKET.div_ceil(BaseRespire::RESPONSE_CHUNK_SIZE);
-        num_elems * BaseRespire::params_response_one_size()
+    ///
+    /// size, number of full vectors, remainder size
+    ///
+    pub fn params_response_info() -> (usize, usize, usize) {
+        let num_ring_elem = Self::NUM_BUCKET.div_ceil(BaseRespire::PACK_RATIO_RESPONSE);
+        let num_full_vecs = num_ring_elem / BaseRespire::N_VEC;
+        let num_rem = num_ring_elem % BaseRespire::N_VEC;
+
+        let full_vec_size = BaseRespire::params_response_one_size(BaseRespire::N_VEC);
+        let rem_vec_size = if num_rem > 0 {
+            BaseRespire::params_response_one_size(num_rem)
+        } else {
+            0
+        };
+        (
+            num_full_vecs * full_vec_size + rem_vec_size,
+            num_full_vecs,
+            num_rem,
+        )
     }
 
     pub fn params_rate() -> f64 {
-        (Self::params_record_size() as f64) / (Self::params_response_size() as f64)
+        (Self::params_record_size() as f64) / (Self::params_response_info().0 as f64)
     }
 }
