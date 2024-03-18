@@ -1,4 +1,4 @@
-use fhe_psi::generate_main;
-use fhe_psi::pir::example::RespireCuckoo256;
+use respire::generate_main;
+use respire::pir::respire_params::RespireCuckoo256;
 
 generate_main!(RespireCuckoo256);

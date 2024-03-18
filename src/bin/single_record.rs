@@ -1,4 +1,4 @@
-use fhe_psi::generate_main;
-use fhe_psi::pir::example::RespireSingleRecord;
+use respire::generate_main;
+use respire::pir::respire_params::RespireSingleRecord;
 
 generate_main!(RespireSingleRecord);

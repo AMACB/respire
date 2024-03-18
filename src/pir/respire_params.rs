@@ -6,6 +6,10 @@ use itertools::Itertools;
 use log::info;
 use std::time::Instant;
 
+//
+// Parameter factory functions
+//
+
 pub const fn respire_512(n_vec: usize, batch_size: usize) -> RespireParamsExpanded {
     RespireParams {
         Q_A: 268369921,
@@ -57,9 +61,6 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpan
     }
     .expand()
 }
-// TODO: investigate noise issue here
-// pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(1, 1);
-// pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(1, 4);
 
 pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
     let mut params = respire_1024(7, 49);
@@ -75,8 +76,16 @@ pub const fn respire_1024_b256_base() -> RespireParamsExpanded {
     params
 }
 
+//
+// Parameter instantiations
+//
+
+// For quick testing
+
 pub const RESPIRE_TEST_PARAMS: RespireParamsExpanded = respire_512(1, 1);
 pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
+
+// Known good parameters
 
 pub const RESPIRE_SINGLE_RECORD_PARAMS: RespireParamsExpanded = respire_512(1, 1);
 pub type RespireSingleRecord = respire!(RESPIRE_SINGLE_RECORD_PARAMS);
@@ -213,8 +222,8 @@ macro_rules! generate_main {
         fn main() {
             use rand::{Rng, SeedableRng};
             use rand_chacha::ChaCha20Rng;
-            use $crate::pir::example::run_pir;
             use $crate::pir::pir::PIR;
+            use $crate::pir::respire_params::run_pir;
             env_logger::init();
             let mut rng = ChaCha20Rng::from_entropy();
             run_pir::<ThePIR, _>((0..).map(|_| rng.gen_range(0_usize..ThePIR::NUM_RECORDS)));
