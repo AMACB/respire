@@ -61,10 +61,6 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpan
 // pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(1, 1);
 // pub const RESPIRE_TEST_PARAMS: RespireParams = respire_1024(1, 4);
 
-pub const RESPIRE_TEST_PARAMS: RespireParamsExpanded = respire_512(1, 1);
-
-pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
-
 pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
     let mut params = respire_1024(7, 49);
     params.NU1 -= 1;
@@ -79,14 +75,19 @@ pub const fn respire_1024_b256_base() -> RespireParamsExpanded {
     params
 }
 
-pub const RESPIRE_BATCH32_BASE_TEST_PARAMS: RespireParamsExpanded = respire_1024_b32_base();
-pub type RespireBatch32BaseTest = respire!(RESPIRE_BATCH32_BASE_TEST_PARAMS);
-pub type RespireBatch32Test = CuckooRespireImpl<32, 49, { 2usize.pow(20) }, RespireBatch32BaseTest>;
+pub const RESPIRE_TEST_PARAMS: RespireParamsExpanded = respire_512(1, 1);
+pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
 
-pub const RESPIRE_BATCH256_BASE_TEST_PARAMS: RespireParamsExpanded = respire_1024_b256_base();
-pub type RespireBatch256BaseTest = respire!(RESPIRE_BATCH256_BASE_TEST_PARAMS);
-pub type RespireBatch256Test =
-    CuckooRespireImpl<256, 398, { 2usize.pow(20) }, RespireBatch256BaseTest>;
+pub const RESPIRE_SINGLE_RECORD_PARAMS: RespireParamsExpanded = respire_512(1, 1);
+pub type RespireSingleRecord = respire!(RESPIRE_SINGLE_RECORD_PARAMS);
+
+pub const RESPIRE_BATCH32_BASE_PARAMS: RespireParamsExpanded = respire_1024_b32_base();
+pub type RespireBatch32Base = respire!(RESPIRE_BATCH32_BASE_PARAMS);
+pub type RespireCuckoo32 = CuckooRespireImpl<32, 49, { 2usize.pow(20) }, RespireBatch32Base>;
+
+pub const RESPIRE_BATCH256_BASE_PARAMS: RespireParamsExpanded = respire_1024_b256_base();
+pub type RespireBatch256Base = respire!(RESPIRE_BATCH256_BASE_PARAMS);
+pub type RespireCuckoo256 = CuckooRespireImpl<256, 398, { 2usize.pow(20) }, RespireBatch256Base>;
 
 #[cfg(not(target_feature = "avx2"))]
 pub fn has_avx2() -> bool {
@@ -203,6 +204,22 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
         let c_vec = chunk.collect_vec();
         check(c_vec.as_slice());
     }
+}
+
+#[macro_export]
+macro_rules! generate_main {
+    ($name: path) => {
+        type ThePIR = $name;
+        fn main() {
+            use rand::{Rng, SeedableRng};
+            use rand_chacha::ChaCha20Rng;
+            use $crate::pir::example::run_pir;
+            use $crate::pir::pir::PIR;
+            env_logger::init();
+            let mut rng = ChaCha20Rng::from_entropy();
+            run_pir::<ThePIR, _>((0..).map(|_| rng.gen_range(0_usize..ThePIR::NUM_RECORDS)));
+        }
+    };
 }
 
 #[cfg(test)]

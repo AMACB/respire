@@ -32,10 +32,13 @@ name = "pir"
 harness = false
 
 [[bin]]
-name = "respire_stress"
+name = "cuckoo32"
 
 [[bin]]
-name = "cuckoo_respire_stress"
+name = "cuckoo256"
+
+[[bin]]
+name = "single_record"
 
 [dev-dependencies]
 criterion = "0.5.1"
