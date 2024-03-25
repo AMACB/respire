@@ -956,14 +956,30 @@ respire_impl!(Respire, {
 
         let e_to_bits = |e: f64| -> f64 { e.log2() / 2_f64 };
 
-        let z_factor = |z: u64| -> f64 { ((z / 2) as f64).powi(2) };
+        let gadget_factor = |t: usize, z: u64| -> f64 {
+            assert!(z >= 2);
+
+            let z_factor = if z == 2 {
+                // With probability <= 2^(-41.088), the zero one term will have <= 1185 ones. 1185 / 2048 <= 0.579
+                // https://www.wolframalpha.com/input?i=Sum%5BBinomial%5B2048%2Ci%5D%2F2%5E2048%2C+%7Bi%2C0%2C1185%7D%5D
+                const ZERO_ONE_FACTOR: f64 = 1185_f64 / 2048_f64;
+                ZERO_ONE_FACTOR
+            } else {
+                // TODO verify this factor is right
+                // const CHERNOFF_FACTOR: f64 = 0.6_f64;
+                (z.div_ceil(2) as f64).powi(2) // * CHERNOFF_FACTOR
+            };
+
+            (t as f64) * z_factor
+        };
 
         let select_noise = |e_reg_sq: f64, e_gsw_sq: f64| -> f64 {
-            e_reg_sq + 2_f64 * (T_GSW as f64) * (D as f64) * z_factor(Z_GSW) * e_gsw_sq
+            // m = 2t; t is absorbed into gadget_factor()
+            e_reg_sq + 2_f64 * (D as f64) * gadget_factor(T_GSW, Z_GSW) * e_gsw_sq
         };
 
         let expand_noise = |e_sq: f64, t_auto: usize, z_auto: u64| -> f64 {
-            2_f64 * e_sq + (t_auto as f64) * (D as f64) * z_factor(z_auto) * sigma_sq
+            2_f64 * e_sq + (D as f64) * gadget_factor(t_auto, z_auto) * sigma_sq
         };
 
         info!("Initial: {}", e_to_bits(sigma_sq));
@@ -1023,7 +1039,8 @@ respire_impl!(Respire, {
             let secret_norm_factor = 8_f64; // 8 widths
             let initial_component = (D as f64) * e_curr * secret_norm_factor * sigma_sq;
             let gadget_component =
-                2_f64 * (T_REGEV_TO_GSW as f64) * (D as f64) * z_factor(Z_REGEV_TO_GSW) * sigma_sq;
+                // m = 2t; t is absorbed into gadget_factor()
+                2_f64 * (D as f64) * gadget_factor(T_REGEV_TO_GSW, Z_REGEV_TO_GSW) * sigma_sq;
             let e_converted = initial_component + gadget_component;
             info!("Query expand GSW (converted): {}", e_to_bits(e_converted));
             e_converted
@@ -1092,8 +1109,8 @@ respire_impl!(Respire, {
         // Vector packing
         let e_pack_vec = {
             // Scalar to vector conversion
-            let e_one = e_pack_ring
-                + (T_SCAL_TO_VEC as f64) * (D as f64) * z_factor(Z_SCAL_TO_VEC) * sigma_sq;
+            let e_one =
+                e_pack_ring + (D as f64) * gadget_factor(T_SCAL_TO_VEC, Z_SCAL_TO_VEC) * sigma_sq;
             info!("Vector packing (one ring elem): {}", e_to_bits(e_one));
 
             let vec_num_elems = min(
@@ -1117,15 +1134,12 @@ respire_impl!(Respire, {
             (Q as f64).log2() - (P as f64).log2() - e_to_bits(e_preswitch) - 3_f64 // 3 bits = 8 widths
         );
         assert_eq!(Z_SWITCH, 2);
-        // With probability <= 2^(-41.088), the zero one term will have <= 1185 ones. 1185 / 2048 <= 0.579
-        // https://www.wolframalpha.com/input?i=Sum%5BBinomial%5B2048%2Ci%5D%2F2%5E2048%2C+%7Bi%2C0%2C1185%7D%5D
-        const ZERO_ONE_FACTOR: f64 = 0.579_f64;
+
         let e_gadget = e_preswitch * (Q_SWITCH1 as f64).powi(2) / (Q as f64).powi(2)
             + (Q_SWITCH1 as f64).powi(2) / (4_f64 * (Q_SWITCH2 as f64).powi(2))
                 * ((D as f64) * sigma_sq
-                + (D_SWITCH as f64) * sigma_sq
-                // TODO integrate this term with z_factor()
-                + (T_SWITCH as f64) * (D as f64) * (Z_SWITCH as f64).powi(2) * sigma_sq * ZERO_ONE_FACTOR);
+                    + (D_SWITCH as f64) * sigma_sq
+                    + 4_f64 * (D as f64) * gadget_factor(T_SWITCH, Z_SWITCH) * sigma_sq);
         let e_round = 1_f64;
 
         info!(
