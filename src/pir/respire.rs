@@ -48,7 +48,6 @@ pub struct RespireImpl<
     const D_RECORD: usize,
     const NU1: usize,
     const NU2: usize,
-    const Z_FOLD: usize,
     const Q_SWITCH1: u64,
     const Q_SWITCH2: u64,
     const D_SWITCH: usize,
@@ -74,7 +73,6 @@ pub struct RespireParams {
     pub D_RECORD: usize,
     pub NU1: usize,
     pub NU2: usize,
-    pub Z_FOLD: usize,
     pub Q_SWITCH1: u64,
     pub Q_SWITCH2: u64,
     pub D_SWITCH: usize,
@@ -114,7 +112,6 @@ impl RespireParams {
             D_RECORD: self.D_RECORD,
             NU1: self.NU1,
             NU2: self.NU2,
-            Z_FOLD: self.Z_FOLD,
             Q_SWITCH1: self.Q_SWITCH1,
             Q_SWITCH2: self.Q_SWITCH2,
             D_SWITCH: self.D_SWITCH,
@@ -151,7 +148,6 @@ pub struct RespireParamsExpanded {
     pub D_RECORD: usize,
     pub NU1: usize,
     pub NU2: usize,
-    pub Z_FOLD: usize,
     pub Q_SWITCH1: u64,
     pub Q_SWITCH2: u64,
     pub D_SWITCH: usize,
@@ -187,7 +183,6 @@ macro_rules! respire {
             {$params.D_RECORD},
             {$params.NU1},
             {$params.NU2},
-            {$params.Z_FOLD},
             {$params.Q_SWITCH1},
             {$params.Q_SWITCH2},
             {$params.D_SWITCH},
@@ -224,7 +219,6 @@ macro_rules! respire_impl {
                 const D_RECORD: usize,
                 const NU1: usize,
                 const NU2: usize,
-                const Z_FOLD: usize,
                 const Q_SWITCH1: u64,
                 const Q_SWITCH2: u64,
                 const D_SWITCH: usize,
@@ -256,7 +250,6 @@ macro_rules! respire_impl {
                 D_RECORD,
                 NU1,
                 NU2,
-                Z_FOLD,
                 Q_SWITCH1,
                 Q_SWITCH2,
                 D_SWITCH,
@@ -291,7 +284,6 @@ macro_rules! respire_impl {
                 const D_RECORD: usize,
                 const NU1: usize,
                 const NU2: usize,
-                const Z_FOLD: usize,
                 const Q_SWITCH1: u64,
                 const Q_SWITCH2: u64,
                 const D_SWITCH: usize,
@@ -322,7 +314,6 @@ macro_rules! respire_impl {
                 D_RECORD,
                 NU1,
                 NU2,
-                Z_FOLD,
                 Q_SWITCH1,
                 Q_SWITCH2,
                 D_SWITCH,
@@ -377,10 +368,13 @@ pub trait Respire: PIR {
     const PACK_RATIO_RESPONSE: usize;
     const RESPONSE_CHUNK_SIZE: usize;
     const NU1: usize;
+    const NU3: usize;
     const NU2: usize;
+    const NU4: usize;
     const REGEV_COUNT: usize;
     const REGEV_EXPAND_ITERS: usize;
     const GSW_FOLD_COUNT: usize;
+    const GSW_ROT_COUNT: usize;
     const GSW_PROJ_COUNT: usize;
     const GSW_COUNT: usize;
     const GSW_EXPAND_ITERS: usize;
@@ -720,15 +714,16 @@ respire_impl!(Respire, {
         <Self as Respire>::RegevCompressed,
     );
     type QueryOneExpanded = (
-        Vec<<Self as Respire>::RegevCiphertext>,
-        Vec<<Self as Respire>::GSWCiphertext>,
-        Vec<<Self as Respire>::GSWCiphertext>,
+        Vec<<Self as Respire>::RegevCiphertext>, // first dim
+        Vec<<Self as Respire>::GSWCiphertext>,   // fold
+        Vec<<Self as Respire>::GSWCiphertext>,   // rotate
+        Vec<<Self as Respire>::GSWCiphertext>,   // project
     );
     type ResponseOne = <Self as Respire>::RegevCiphertext;
     type ResponseOneCompressed = <Self as Respire>::VecRegevSmallTruncated;
 
     const PACKED_DIM1_SIZE: usize = 2_usize.pow(NU1 as u32);
-    const PACKED_DIM2_SIZE: usize = Z_FOLD.pow(NU2 as u32);
+    const PACKED_DIM2_SIZE: usize = 2_usize.pow(NU2 as u32);
     const PACKED_DB_SIZE: usize = Self::PACKED_DIM1_SIZE * Self::PACKED_DIM2_SIZE;
     const DB_SIZE: usize = Self::PACKED_DB_SIZE * Self::PACK_RATIO_DB;
     const N_VEC: usize = N_VEC;
@@ -737,14 +732,18 @@ respire_impl!(Respire, {
     const RESPONSE_CHUNK_SIZE: usize = N_VEC * Self::PACK_RATIO_RESPONSE;
     const NU1: usize = NU1;
     const NU2: usize = NU2;
+    const NU3: usize = ceil_log(2, (D / D_SWITCH) as u64);
+    const NU4: usize = ceil_log(2, Self::PACK_RATIO_RESPONSE as u64);
 
     const REGEV_COUNT: usize = 1 << NU1;
     const REGEV_EXPAND_ITERS: usize = NU1;
-    const GSW_FOLD_COUNT: usize = NU2 * (Z_FOLD - 1);
-
+    const GSW_FOLD_COUNT: usize = NU2;
+    const GSW_ROT_COUNT: usize = Self::NU3;
     // TODO add param to reduce this when we don't care about garbage being in the other slots
-    const GSW_PROJ_COUNT: usize = floor_log(2, Self::PACK_RATIO_DB as u64);
-    const GSW_COUNT: usize = (Self::GSW_FOLD_COUNT + Self::GSW_PROJ_COUNT) * T_GSW;
+    const GSW_PROJ_COUNT: usize = Self::NU4;
+
+    const GSW_COUNT: usize =
+        (Self::GSW_FOLD_COUNT + Self::GSW_ROT_COUNT + Self::GSW_PROJ_COUNT) * T_GSW;
     const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
 
     fn query_one(
@@ -752,8 +751,8 @@ respire_impl!(Respire, {
         idx: usize,
     ) -> <Self as Respire>::QueryOne {
         assert!(idx < Self::DB_SIZE);
-        let (idx, proj_idx) = (idx / Self::PACK_RATIO_DB, idx % Self::PACK_RATIO_DB);
-        let (idx_i, idx_j) = (idx / Self::PACKED_DIM2_SIZE, idx % Self::PACKED_DIM2_SIZE);
+        let last_dims_size = 2usize.pow((Self::NU2 + Self::NU3 + Self::NU4) as u32);
+        let (idx_i, idx_j) = (idx / last_dims_size, idx % last_dims_size);
 
         let mut mu_regev = <Self as Respire>::RingQ::zero();
         for i in 0..Self::REGEV_COUNT {
@@ -761,41 +760,20 @@ respire_impl!(Respire, {
                 IntMod::<P>::from((i == idx_i) as u64).scale_up_into();
         }
 
-        // Think of these entries as [NU2] x [Z_FOLD - 1] x [T_GSW] + [GSW_PROJ_COUNT] x [T_GSW]
+        // [NU2 + NU3 + NU4] x [T_GSW]
         let mut mu_gsw = <Self as Respire>::RingQ::zero();
 
-        // [NU2] x [Z_FOLD - 1] x [T_GSW] part
-        let mut digits = Vec::with_capacity(NU2);
+        let mut bits = Vec::with_capacity(NU2);
         let mut idx_j_curr = idx_j;
-        for _ in 0..NU2 {
-            digits.push(idx_j_curr % Z_FOLD);
-            idx_j_curr /= Z_FOLD;
+        for _ in 0..(Self::NU2 + Self::NU3 + Self::NU4) {
+            bits.push(idx_j_curr % 2);
+            idx_j_curr /= 2;
         }
 
-        for (digit_idx, digit) in digits.into_iter().rev().enumerate() {
-            for which in 0..Z_FOLD - 1 {
-                let mut msg = IntMod::from((digit == which + 1) as u64);
-                for gsw_pow in 0..T_GSW {
-                    let pack_idx = T_GSW * ((Z_FOLD - 1) * digit_idx + which) + gsw_pow;
-                    mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg;
-                    msg *= IntMod::from(Z_GSW);
-                }
-            }
-        }
-
-        // [GSW_PROJ_COUNT] x [T_GSW] part
-        let mut proj_bits = Vec::with_capacity(Self::GSW_PROJ_COUNT);
-        let mut proj_idx_curr = proj_idx;
-        for _ in 0..Self::GSW_PROJ_COUNT {
-            proj_bits.push(proj_idx_curr % 2);
-            proj_idx_curr /= 2;
-        }
-
-        let gsw_proj_offset = NU2 * (Z_FOLD - 1) * T_GSW;
-        for (proj_idx, proj_bit) in proj_bits.into_iter().rev().enumerate() {
-            let mut msg = IntMod::from(proj_bit as u64);
+        for (bit_idx, bit) in bits.into_iter().rev().enumerate() {
+            let mut msg = IntMod::from(bit as u64);
             for gsw_pow in 0..T_GSW {
-                let pack_idx = gsw_proj_offset + T_GSW * proj_idx + gsw_pow;
+                let pack_idx = T_GSW * bit_idx + gsw_pow;
                 mu_gsw.coeff[reverse_bits_fast::<D>(pack_idx)] = msg;
                 msg *= IntMod::from(Z_GSW);
             }
@@ -827,7 +805,7 @@ respire_impl!(Respire, {
     ) -> <Self as Respire>::ResponseOne {
         let i0 = Instant::now();
         // Query expansion
-        let (regevs, gsws_fold, gsws_proj) = Self::answer_query_expand(pp, q);
+        let (regevs, gsws_fold, gsws_rot, gsws_proj) = Self::answer_query_expand(pp, q);
         let i1 = Instant::now();
 
         // First dimension
@@ -838,14 +816,15 @@ respire_impl!(Respire, {
         let result = Self::answer_fold(first_dim_folded, gsws_fold.as_slice());
         let i3 = Instant::now();
 
-        // Projecting
-        let result_projected = Self::answer_project(pp, result, gsws_proj.as_slice());
+        // Rotating and Projecting
+        let result_projected =
+            Self::answer_rotate_project(pp, result, gsws_rot.as_slice(), gsws_proj.as_slice());
         let i4 = Instant::now();
 
         info!("(*) answer query expand: {:?}", i1 - i0);
         info!("(*) answer first dim: {:?}", i2 - i1);
         info!("(*) answer fold: {:?}", i3 - i2);
-        info!("(*) answer project: {:?}", i4 - i3);
+        info!("(*) answer rotate/project: {:?}", i4 - i3);
 
         result_projected
     }
@@ -955,7 +934,6 @@ respire_impl!(Respire, {
             D_RECORD,
             NU1,
             NU2,
-            Z_FOLD,
             Q_SWITCH1,
             Q_SWITCH2,
             D_SWITCH,
@@ -1116,6 +1094,9 @@ respire_impl!({
         let c_gsws_fold = (0..Self::GSW_FOLD_COUNT)
             .map(|_| c_gsws_iter.next().unwrap())
             .collect();
+        let c_gsws_rot = (0..Self::GSW_ROT_COUNT)
+            .map(|_| c_gsws_iter.next().unwrap())
+            .collect();
         let c_gsws_proj = (0..Self::GSW_PROJ_COUNT)
             .map(|_| c_gsws_iter.next().unwrap())
             .collect();
@@ -1126,7 +1107,7 @@ respire_impl!({
         info!("(**) answer query expand (gsw): {:?}", i2 - i1);
         info!("(**) answer query expand (reg_to_gsw): {:?}", i3 - i2);
 
-        (c_regevs, c_gsws_fold, c_gsws_proj)
+        (c_regevs, c_gsws_fold, c_gsws_rot, c_gsws_proj)
     }
 
     pub fn answer_first_dim(
@@ -1340,36 +1321,51 @@ respire_impl!({
         first_dim_folded: Vec<<Self as Respire>::RegevCiphertext>,
         gsws: &[<Self as Respire>::GSWCiphertext],
     ) -> <Self as Respire>::RegevCiphertext {
-        assert_eq!(gsws.len(), Self::NU2 * (Z_FOLD - 1));
-        let fold_size: usize = Z_FOLD.pow(Self::NU2 as u32);
+        assert_eq!(gsws.len(), Self::NU2);
+        let fold_size: usize = 2usize.pow(Self::NU2 as u32);
 
         let mut curr = first_dim_folded;
         let mut curr_size = fold_size;
         for gsw_idx in 0..NU2 {
             curr.truncate(curr_size);
-            for fold_idx in 0..curr_size / Z_FOLD {
-                let c0 = curr[fold_idx].clone();
-                for i in 1..Z_FOLD {
-                    let c_i = &curr[i * curr_size / Z_FOLD + fold_idx];
-                    let c_i_sub_c0 = Self::regev_sub_hom(c_i, &c0);
-                    let b = &gsws[gsw_idx * (Z_FOLD - 1) + i - 1];
-                    let c_i_sub_c0_mul_b = Self::hybrid_mul_hom(&c_i_sub_c0, b);
-                    curr[fold_idx] += &c_i_sub_c0_mul_b;
-                }
+            for fold_idx in 0..curr_size / 2 {
+                curr[fold_idx] = Self::select_hom(
+                    &curr[fold_idx],
+                    &curr[curr_size / 2 + fold_idx],
+                    &gsws[gsw_idx],
+                );
             }
-            curr_size /= Z_FOLD;
+            curr_size /= 2;
         }
         curr.remove(0)
     }
 
-    pub fn answer_project(
+    pub fn answer_rotate_project(
         ((_, auto_key_gsws), _, _, _): &<Self as PIR>::PublicParams,
         mut ct: <Self as Respire>::RegevCiphertext,
-        gsws: &[<Self as Respire>::GSWCiphertext],
+        gsws_rot: &[<Self as Respire>::GSWCiphertext],
+        gsws_proj: &[<Self as Respire>::GSWCiphertext],
     ) -> <Self as Respire>::RegevCiphertext {
         // TODO use different T/Z/auto keys
-        for (iter, (gsw, auto_key)) in gsws.iter().zip(auto_key_gsws).enumerate() {
-            ct = Self::project_hom::<T_COEFF_GSW, Z_COEFF_GSW>(iter, &ct, gsw, auto_key);
+        let gsws_rot_iter = gsws_rot.iter().map(|x| (x, false));
+        let gsws_proj_iter = gsws_proj.iter().map(|x| (x, true));
+        for (iter, ((gsw, is_proj), auto_key)) in gsws_rot_iter
+            .chain(gsws_proj_iter)
+            .zip(auto_key_gsws)
+            .enumerate()
+        {
+            match is_proj {
+                false => {
+                    ct = Self::select_hom(
+                        &ct,
+                        &Self::regev_mul_x_pow(&ct, 2 * D - (1 << iter)),
+                        gsw,
+                    );
+                }
+                true => {
+                    ct = Self::project_hom::<T_COEFF_GSW, Z_COEFF_GSW>(iter, &ct, gsw, auto_key);
+                }
+            }
         }
         ct
     }
@@ -1507,6 +1503,16 @@ respire_impl!({
         gsw: &<Self as Respire>::GSWCiphertext,
     ) -> <Self as Respire>::RegevCiphertext {
         gsw * &gadget_inverse::<<Self as Respire>::RingQFast, 2, M_GSW, 1, Z_GSW, T_GSW>(regev)
+    }
+
+    pub fn select_hom(
+        c0: &<Self as Respire>::RegevCiphertext,
+        c1: &<Self as Respire>::RegevCiphertext,
+        b: &<Self as Respire>::GSWCiphertext,
+    ) -> <Self as Respire>::RegevCiphertext {
+        let c1_sub_c0 = Self::regev_sub_hom(c1, c0);
+        let c1_sub_c0_mul_b = Self::hybrid_mul_hom(&c1_sub_c0, b);
+        c0 + &c1_sub_c0_mul_b
     }
 
     pub fn regev_mul_x_pow(

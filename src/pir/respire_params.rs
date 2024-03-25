@@ -27,7 +27,6 @@ pub const fn respire_512(n_vec: usize, batch_size: usize) -> RespireParamsExpand
         D_RECORD: 512,
         NU1: 9,
         NU2: 9,
-        Z_FOLD: 2,
         Q_SWITCH1: 6 * 17,
         Q_SWITCH2: 163841, // 17.32 bits
         D_SWITCH: 512,
@@ -53,7 +52,6 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpan
         D_RECORD: 256,
         NU1: 9,
         NU2: 8,
-        Z_FOLD: 2,
         Q_SWITCH1: 6 * 257,
         Q_SWITCH2: 4169729, // 21.99 bits
         D_SWITCH: 1024,
