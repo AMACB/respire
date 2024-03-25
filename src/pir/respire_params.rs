@@ -16,9 +16,9 @@ pub const fn respire_512(n_vec: usize, batch_size: usize) -> RespireParamsExpand
         Q_B: 249561089,
         D: 2048,
         T_GSW: 8,
-        T_CONV: 4,
-        T_COEFF_REGEV: 4,
-        T_COEFF_GSW: 16,
+        T_REGEV_TO_GSW: 4,
+        T_AUTO_REGEV: 4,
+        T_AUTO_GSW: 16,
         BATCH_SIZE: batch_size,
         N_VEC: n_vec,
         T_SCAL_TO_VEC: 8,
@@ -41,9 +41,9 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpan
         Q_B: 249561089,
         D: 2048,
         T_GSW: 8,
-        T_CONV: 4,
-        T_COEFF_REGEV: 4,
-        T_COEFF_GSW: 16,
+        T_REGEV_TO_GSW: 4,
+        T_AUTO_REGEV: 4,
+        T_AUTO_GSW: 16,
         BATCH_SIZE: batch_size,
         N_VEC: n_vec,
         T_SCAL_TO_VEC: 8,
@@ -265,14 +265,14 @@ mod test {
     fn test_auto_hom() {
         let s = RespireTest::encode_setup();
         let auto_key = RespireTest::auto_setup::<
-            { RESPIRE_TEST_PARAMS.T_COEFF_REGEV },
-            { RESPIRE_TEST_PARAMS.Z_COEFF_REGEV },
+            { RESPIRE_TEST_PARAMS.T_AUTO_REGEV },
+            { RESPIRE_TEST_PARAMS.Z_AUTO_REGEV },
         >(3, &s);
         let x = <RespireTest as Respire>::RingP::from(IntModPoly::x());
         let encrypt = RespireTest::encode_regev(&s, &x.scale_up_into());
         let encrypt_auto = RespireTest::auto_hom::<
-            { RESPIRE_TEST_PARAMS.T_COEFF_REGEV },
-            { RESPIRE_TEST_PARAMS.Z_COEFF_REGEV },
+            { RESPIRE_TEST_PARAMS.T_AUTO_REGEV },
+            { RESPIRE_TEST_PARAMS.Z_AUTO_REGEV },
         >(&auto_key, &encrypt);
         let decrypt: <RespireTest as Respire>::RingP =
             RespireTest::decode_regev(&s, &encrypt_auto).round_down_into();
@@ -311,38 +311,38 @@ mod test {
         let c = RespireTest::encode_regev(&s, &msg_coeff.scale_up_into());
 
         let auto_key0 = RespireTest::auto_setup::<
-            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
-            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
+            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
         >(RESPIRE_TEST_PARAMS.D + 1, &s);
         let auto_key1 = RespireTest::auto_setup::<
-            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
-            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
+            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
         >(RESPIRE_TEST_PARAMS.D / 2 + 1, &s);
 
         let c_proj0 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
-            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
+            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
         >(0, &c, &gsw0, &auto_key0);
         let c_proj1 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
-            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
+            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
         >(0, &c, &gsw1, &auto_key0);
 
         let c_proj00 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
-            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
+            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
         >(1, &c_proj0, &gsw0, &auto_key1);
         let c_proj01 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
-            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
+            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
         >(1, &c_proj0, &gsw1, &auto_key1);
         let c_proj10 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
-            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
+            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
         >(1, &c_proj1, &gsw0, &auto_key1);
         let c_proj11 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_COEFF_GSW },
-            { RESPIRE_TEST_PARAMS.Z_COEFF_GSW },
+            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
+            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
         >(1, &c_proj1, &gsw1, &auto_key1);
 
         // let proj0 = RespireTest::decode_regev(&s, &c_proj0).round_down_into();

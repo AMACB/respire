@@ -88,6 +88,11 @@ impl<
             Self::params_record_size() as f64 / 1024_f64
         );
         eprintln!("Rate: {:.3}", Self::params_rate());
+
+        eprintln!(
+            "Error rate (estimated): 2^({:.3})",
+            BaseRespire::params_error_rate_estimate().log2()
+        )
     }
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(

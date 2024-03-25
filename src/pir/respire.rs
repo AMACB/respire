@@ -1,12 +1,13 @@
 use bitvec::prelude::*;
 use itertools::Itertools;
 use log::info;
-use std::cmp::max;
+use std::cmp::{max, min};
 use std::f64::consts::PI;
 use std::time::Instant;
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
+use rand_distr::num_traits::clamp;
 
 use crate::math::gadget::{
     base_from_len, build_gadget, gadget_inverse, gadget_inverse_scalar, RingElementDecomposable,
@@ -31,14 +32,14 @@ pub struct RespireImpl<
     const D: usize,
     const Z_GSW: u64,
     const T_GSW: usize,
-    const Z_COEFF_REGEV: u64,
-    const T_COEFF_REGEV: usize,
-    const Z_COEFF_GSW: u64,
-    const T_COEFF_GSW: usize,
-    const Z_CONV: u64,
-    const T_CONV: usize,
-    const M_CONV: usize,
     const M_GSW: usize,
+    const Z_AUTO_REGEV: u64,
+    const T_AUTO_REGEV: usize,
+    const Z_AUTO_GSW: u64,
+    const T_AUTO_GSW: usize,
+    const Z_REGEV_TO_GSW: u64,
+    const T_REGEV_TO_GSW: usize,
+    const M_REGEV_TO_GSW: usize,
     const BATCH_SIZE: usize,
     const N_VEC: usize,
     const Z_SCAL_TO_VEC: u64,
@@ -62,9 +63,9 @@ pub struct RespireParams {
     pub Q_B: u64,
     pub D: usize,
     pub T_GSW: usize,
-    pub T_COEFF_REGEV: usize,
-    pub T_COEFF_GSW: usize,
-    pub T_CONV: usize,
+    pub T_AUTO_REGEV: usize,
+    pub T_AUTO_GSW: usize,
+    pub T_REGEV_TO_GSW: usize,
     pub BATCH_SIZE: usize,
     pub N_VEC: usize,
     pub T_SCAL_TO_VEC: usize,
@@ -83,9 +84,9 @@ impl RespireParams {
     pub const fn expand(&self) -> RespireParamsExpanded {
         let q = self.Q_A * self.Q_B;
         let z_gsw = base_from_len(self.T_GSW, q);
-        let z_coeff_regev = base_from_len(self.T_COEFF_REGEV, q);
-        let z_coeff_gsw = base_from_len(self.T_COEFF_GSW, q);
-        let z_conv = base_from_len(self.T_CONV, q);
+        let z_auto_regev = base_from_len(self.T_AUTO_REGEV, q);
+        let z_auto_gsw = base_from_len(self.T_AUTO_GSW, q);
+        let z_regev_to_gsw = base_from_len(self.T_REGEV_TO_GSW, q);
         let z_scal_to_vec = base_from_len(self.T_SCAL_TO_VEC, q);
         let z_switch = base_from_len(self.T_SWITCH, self.Q_SWITCH2);
         RespireParamsExpanded {
@@ -95,18 +96,18 @@ impl RespireParams {
             D: self.D,
             Z_GSW: z_gsw,
             T_GSW: self.T_GSW,
-            Z_COEFF_REGEV: z_coeff_regev,
-            T_COEFF_REGEV: self.T_COEFF_REGEV,
-            Z_COEFF_GSW: z_coeff_gsw,
-            T_COEFF_GSW: self.T_COEFF_GSW,
-            Z_CONV: z_conv,
-            T_CONV: self.T_CONV,
+            M_GSW: 2 * self.T_GSW,
+            Z_AUTO_REGEV: z_auto_regev,
+            T_AUTO_REGEV: self.T_AUTO_REGEV,
+            Z_AUTO_GSW: z_auto_gsw,
+            T_AUTO_GSW: self.T_AUTO_GSW,
+            Z_REGEV_TO_GSW: z_regev_to_gsw,
+            T_REGEV_TO_GSW: self.T_REGEV_TO_GSW,
             BATCH_SIZE: self.BATCH_SIZE,
             N_VEC: self.N_VEC,
             T_SCAL_TO_VEC: self.T_SCAL_TO_VEC,
             Z_SCAL_TO_VEC: z_scal_to_vec,
-            M_CONV: 2 * self.T_CONV,
-            M_GSW: 2 * self.T_GSW,
+            M_REGEV_TO_GSW: 2 * self.T_REGEV_TO_GSW,
             NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
             P: self.P,
             D_RECORD: self.D_RECORD,
@@ -131,14 +132,14 @@ pub struct RespireParamsExpanded {
     pub D: usize,
     pub Z_GSW: u64,
     pub T_GSW: usize,
-    pub Z_COEFF_REGEV: u64,
-    pub T_COEFF_REGEV: usize,
-    pub Z_COEFF_GSW: u64,
-    pub T_COEFF_GSW: usize,
-    pub Z_CONV: u64,
-    pub T_CONV: usize,
-    pub M_CONV: usize,
     pub M_GSW: usize,
+    pub Z_AUTO_REGEV: u64,
+    pub T_AUTO_REGEV: usize,
+    pub Z_AUTO_GSW: u64,
+    pub T_AUTO_GSW: usize,
+    pub Z_REGEV_TO_GSW: u64,
+    pub T_REGEV_TO_GSW: usize,
+    pub M_REGEV_TO_GSW: usize,
     pub BATCH_SIZE: usize,
     pub N_VEC: usize,
     pub Z_SCAL_TO_VEC: u64,
@@ -166,14 +167,14 @@ macro_rules! respire {
             {$params.D},
             {$params.Z_GSW},
             {$params.T_GSW},
-            {$params.Z_COEFF_REGEV},
-            {$params.T_COEFF_REGEV},
-            {$params.Z_COEFF_GSW},
-            {$params.T_COEFF_GSW},
-            {$params.Z_CONV},
-            {$params.T_CONV},
-            {$params.M_CONV},
             {$params.M_GSW},
+            {$params.Z_AUTO_REGEV},
+            {$params.T_AUTO_REGEV},
+            {$params.Z_AUTO_GSW},
+            {$params.T_AUTO_GSW},
+            {$params.Z_REGEV_TO_GSW},
+            {$params.T_REGEV_TO_GSW},
+            {$params.M_REGEV_TO_GSW},
             {$params.BATCH_SIZE},
             {$params.N_VEC},
             {$params.Z_SCAL_TO_VEC},
@@ -202,14 +203,14 @@ macro_rules! respire_impl {
                 const D: usize,
                 const Z_GSW: u64,
                 const T_GSW: usize,
-                const Z_COEFF_REGEV: u64,
-                const T_COEFF_REGEV: usize,
-                const Z_COEFF_GSW: u64,
-                const T_COEFF_GSW: usize,
-                const Z_CONV: u64,
-                const T_CONV: usize,
-                const M_CONV: usize,
                 const M_GSW: usize,
+                const Z_AUTO_REGEV: u64,
+                const T_AUTO_REGEV: usize,
+                const Z_AUTO_GSW: u64,
+                const T_AUTO_GSW: usize,
+                const Z_REGEV_TO_GSW: u64,
+                const T_REGEV_TO_GSW: usize,
+                const M_REGEV_TO_GSW: usize,
                 const BATCH_SIZE: usize,
                 const N_VEC: usize,
                 const Z_SCAL_TO_VEC: u64,
@@ -233,14 +234,14 @@ macro_rules! respire_impl {
                 D,
                 Z_GSW,
                 T_GSW,
-                Z_COEFF_REGEV,
-                T_COEFF_REGEV,
-                Z_COEFF_GSW,
-                T_COEFF_GSW,
-                Z_CONV,
-                T_CONV,
-                M_CONV,
                 M_GSW,
+                Z_AUTO_REGEV,
+                T_AUTO_REGEV,
+                Z_AUTO_GSW,
+                T_AUTO_GSW,
+                Z_REGEV_TO_GSW,
+                T_REGEV_TO_GSW,
+                M_REGEV_TO_GSW,
                 BATCH_SIZE,
                 N_VEC,
                 Z_SCAL_TO_VEC,
@@ -267,14 +268,14 @@ macro_rules! respire_impl {
                 const D: usize,
                 const Z_GSW: u64,
                 const T_GSW: usize,
-                const Z_COEFF_REGEV: u64,
-                const T_COEFF_REGEV: usize,
-                const Z_COEFF_GSW: u64,
-                const T_COEFF_GSW: usize,
-                const Z_CONV: u64,
-                const T_CONV: usize,
-                const M_CONV: usize,
                 const M_GSW: usize,
+                const Z_AUTO_REGEV: u64,
+                const T_AUTO_REGEV: usize,
+                const Z_AUTO_GSW: u64,
+                const T_AUTO_GSW: usize,
+                const Z_REGEV_TO_GSW: u64,
+                const T_REGEV_TO_GSW: usize,
+                const M_REGEV_TO_GSW: usize,
                 const BATCH_SIZE: usize,
                 const N_VEC: usize,
                 const Z_SCAL_TO_VEC: u64,
@@ -297,14 +298,14 @@ macro_rules! respire_impl {
                 D,
                 Z_GSW,
                 T_GSW,
-                Z_COEFF_REGEV,
-                T_COEFF_REGEV,
-                Z_COEFF_GSW,
-                T_COEFF_GSW,
-                Z_CONV,
-                T_CONV,
-                M_CONV,
                 M_GSW,
+                Z_AUTO_REGEV,
+                T_AUTO_REGEV,
+                Z_AUTO_GSW,
+                T_AUTO_GSW,
+                Z_REGEV_TO_GSW,
+                T_REGEV_TO_GSW,
+                M_REGEV_TO_GSW,
                 BATCH_SIZE,
                 N_VEC,
                 Z_SCAL_TO_VEC,
@@ -401,8 +402,7 @@ pub trait Respire: PIR {
     ) -> Vec<<Self as PIR>::RecordBytes>;
 
     fn params() -> RespireParamsExpanded;
-    fn params_noise_estimate() -> f64;
-    fn params_correctness_estimate() -> f64;
+    fn params_error_rate_estimate() -> f64;
     fn params_public_param_size() -> usize;
     fn params_query_one_size() -> usize;
     fn params_record_one_size() -> usize;
@@ -483,6 +483,11 @@ respire_impl!(PIR, {
             Self::params_record_size() as f64 / 1024_f64
         );
         eprintln!("Rate: {:.3}", Self::params_rate());
+
+        eprintln!(
+            "Error rate (estimated): 2^({:.3})",
+            Self::params_error_rate_estimate().log2()
+        )
     }
 
     fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
@@ -601,7 +606,7 @@ respire_impl!(PIR, {
             Vec::with_capacity(Self::REGEV_EXPAND_ITERS);
         for i in 0..floor_log(2, D as u64) {
             let tau_power = (D >> i) + 1;
-            auto_keys_regev.push(Self::auto_setup::<T_COEFF_REGEV, Z_COEFF_REGEV>(
+            auto_keys_regev.push(Self::auto_setup::<T_AUTO_REGEV, Z_AUTO_REGEV>(
                 tau_power, &s_encode,
             ));
         }
@@ -609,7 +614,7 @@ respire_impl!(PIR, {
             Vec::with_capacity(Self::GSW_EXPAND_ITERS);
         for i in 0..floor_log(2, D as u64) {
             let tau_power = (D >> i) + 1;
-            auto_keys_gsw.push(Self::auto_setup::<T_COEFF_GSW, Z_COEFF_GSW>(
+            auto_keys_gsw.push(Self::auto_setup::<T_AUTO_GSW, Z_AUTO_GSW>(
                 tau_power, &s_encode,
             ));
         }
@@ -688,9 +693,9 @@ respire_impl!(Respire, {
     type VecEncodingKeyQ2 = Matrix<N_VEC, 1, IntModCycloEval<D, Q_SWITCH2>>;
     type VecEncodingKeyQ2Small = Matrix<N_VEC, 1, IntModCycloEval<D_SWITCH, Q_SWITCH2>>;
     type AutoKey<const T: usize> = (Matrix<2, T, Self::RingQFast>, usize);
-    type AutoKeyRegev = Self::AutoKey<T_COEFF_REGEV>;
-    type AutoKeyGSW = Self::AutoKey<T_COEFF_GSW>;
-    type RegevToGSWKey = Matrix<2, M_CONV, Self::RingQFast>;
+    type AutoKeyRegev = Self::AutoKey<T_AUTO_REGEV>;
+    type AutoKeyGSW = Self::AutoKey<T_AUTO_GSW>;
+    type RegevToGSWKey = Matrix<2, M_REGEV_TO_GSW, Self::RingQFast>;
     type KeySwitchKey = (
         Matrix<1, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>,
         Matrix<N_VEC, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>,
@@ -917,18 +922,18 @@ respire_impl!(Respire, {
             D,
             Z_GSW,
             T_GSW,
-            Z_COEFF_REGEV,
-            T_COEFF_REGEV,
-            Z_COEFF_GSW,
-            T_COEFF_GSW,
-            Z_CONV,
-            T_CONV,
+            M_GSW,
+            Z_AUTO_REGEV,
+            T_AUTO_REGEV,
+            Z_AUTO_GSW,
+            T_AUTO_GSW,
+            Z_REGEV_TO_GSW,
+            T_REGEV_TO_GSW,
             BATCH_SIZE,
             N_VEC,
             T_SCAL_TO_VEC,
             Z_SCAL_TO_VEC,
-            M_CONV,
-            M_GSW,
+            M_REGEV_TO_GSW,
             NOISE_WIDTH_MILLIONTHS,
             P,
             D_RECORD,
@@ -943,17 +948,211 @@ respire_impl!(Respire, {
         }
     }
 
-    fn params_noise_estimate() -> f64 {
-        todo!()
-    }
+    fn params_error_rate_estimate() -> f64 {
+        info!("*** Error estimates (bits) ***");
+        // We use square subgaussian widths as units
+        let sigma_sq: f64 = ((NOISE_WIDTH_MILLIONTHS as f64) / 1_000_000_f64).powi(2);
+        let log_d: usize = ceil_log(2, D as u64);
 
-    fn params_correctness_estimate() -> f64 {
-        todo!()
+        let e_to_bits = |e: f64| -> f64 { e.log2() / 2_f64 };
+
+        let z_factor = |z: u64| -> f64 { ((z / 2) as f64).powi(2) };
+
+        let select_noise = |e_reg_sq: f64, e_gsw_sq: f64| -> f64 {
+            e_reg_sq + 2_f64 * (T_GSW as f64) * (D as f64) * z_factor(Z_GSW) * e_gsw_sq
+        };
+
+        let expand_noise = |e_sq: f64, t_auto: usize, z_auto: u64| -> f64 {
+            2_f64 * e_sq + (t_auto as f64) * (D as f64) * z_factor(z_auto) * sigma_sq
+        };
+
+        info!("Initial: {}", e_to_bits(sigma_sq));
+
+        // Query expansion
+        let e_reg = {
+            // Query expansion for Regevs
+            let mut e_curr = sigma_sq;
+
+            for i in 0..(log_d - Self::REGEV_EXPAND_ITERS) {
+                e_curr = expand_noise(e_curr, T_AUTO_GSW, Z_AUTO_GSW);
+                info!(
+                    "Query expand regev (step {} / {}): {}",
+                    i + 1,
+                    log_d,
+                    e_to_bits(e_curr)
+                );
+            }
+
+            for i in (log_d - Self::REGEV_EXPAND_ITERS)..log_d {
+                e_curr = expand_noise(e_curr, T_AUTO_REGEV, Z_AUTO_REGEV);
+                info!(
+                    "Query expand regev (step {} / {}): {}",
+                    i + 1,
+                    log_d,
+                    e_to_bits(e_curr)
+                );
+            }
+
+            e_curr
+        };
+        let e_gsw = {
+            // Query expansion for GSWs
+            let mut e_curr = sigma_sq;
+
+            for i in 0..(log_d - Self::GSW_EXPAND_ITERS) {
+                e_curr = expand_noise(e_curr, T_AUTO_GSW, Z_AUTO_GSW);
+                info!(
+                    "Query expand GSW (step {} / {}): {}",
+                    i + 1,
+                    log_d,
+                    e_to_bits(e_curr)
+                );
+            }
+
+            for i in (log_d - Self::GSW_EXPAND_ITERS)..log_d {
+                e_curr = expand_noise(e_curr, T_AUTO_GSW, Z_AUTO_GSW);
+                info!(
+                    "Query expand GSW (step {} / {}): {}",
+                    i + 1,
+                    log_d,
+                    e_to_bits(e_curr)
+                );
+            }
+
+            // Regev to GSW
+            let secret_norm_factor = 8_f64; // 8 widths
+            let initial_component = (D as f64) * e_curr * secret_norm_factor * sigma_sq;
+            let gadget_component =
+                2_f64 * (T_REGEV_TO_GSW as f64) * (D as f64) * z_factor(Z_REGEV_TO_GSW) * sigma_sq;
+            let e_converted = initial_component + gadget_component;
+            info!("Query expand GSW (converted): {}", e_to_bits(e_converted));
+            e_converted
+        };
+
+        // First dimension (NU1)
+        let e_firstdim = (Self::PACKED_DIM1_SIZE as f64) * (D as f64) * ((P / 2) as f64) * e_reg;
+        info!("First dimension: {}", e_to_bits(e_firstdim));
+
+        // Folding (NU2)
+        let e_fold = {
+            let mut e_curr = e_firstdim;
+            for i in 0..Self::NU2 {
+                e_curr = select_noise(e_curr, e_gsw);
+                info!(
+                    "Fold (step {} / {}): {}",
+                    i + 1,
+                    Self::NU2,
+                    e_to_bits(e_curr)
+                );
+            }
+            e_curr
+        };
+
+        // Rotating (NU3)
+        let e_rot = {
+            let mut e_curr = e_fold;
+            for i in 0..Self::NU3 {
+                e_curr = select_noise(e_curr, e_gsw);
+                info!(
+                    "Rotate (step {} / {}): {}",
+                    i + 1,
+                    Self::NU3,
+                    e_to_bits(e_curr)
+                );
+            }
+            e_curr
+        };
+
+        // Projecting (NU4)
+        let e_proj = {
+            let mut e_curr = e_rot;
+            for i in 0..Self::NU4 {
+                // TODO: check this is the right expression. Is expand right?
+                e_curr = select_noise(e_curr, e_gsw);
+                e_curr = expand_noise(e_curr, T_AUTO_GSW, Z_AUTO_GSW);
+                info!(
+                    "Project (step {} / {}): {}",
+                    i + 1,
+                    Self::NU4,
+                    e_to_bits(e_curr)
+                );
+            }
+            e_curr
+        };
+
+        // Ring packing
+        let ring_num_records = min(Self::BATCH_SIZE, Self::PACK_RATIO_RESPONSE);
+        let e_pack_ring = e_proj * ring_num_records as f64;
+        info!(
+            "Ring packing ({} record(s)): {}",
+            ring_num_records,
+            e_to_bits(e_pack_ring)
+        );
+
+        // Vector packing
+        let e_pack_vec = {
+            // Scalar to vector conversion
+            let e_one = e_pack_ring
+                + (T_SCAL_TO_VEC as f64) * (D as f64) * z_factor(Z_SCAL_TO_VEC) * sigma_sq;
+            info!("Vector packing (one ring elem): {}", e_to_bits(e_one));
+
+            let vec_num_elems = min(
+                Self::BATCH_SIZE.div_ceil(Self::PACK_RATIO_RESPONSE),
+                Self::N_VEC,
+            );
+            let e_full = e_one * vec_num_elems as f64;
+            info!(
+                "Vector packing (full, {} ring elem(s)): {}",
+                vec_num_elems,
+                e_to_bits(e_full)
+            );
+            e_full
+        };
+
+        let e_preswitch = e_pack_vec;
+        info!("***");
+        info!(
+            "Preswitch noise: {:.3} total bits; approx {:.3} of margin",
+            e_to_bits(e_preswitch),
+            (Q as f64).log2() - (P as f64).log2() - e_to_bits(e_preswitch) - 3_f64 // 3 bits = 8 widths
+        );
+        assert_eq!(Z_SWITCH, 2);
+        // With probability <= 2^(-41.088), the zero one term will have <= 1185 ones. 1185 / 2048 <= 0.579
+        // https://www.wolframalpha.com/input?i=Sum%5BBinomial%5B2048%2Ci%5D%2F2%5E2048%2C+%7Bi%2C0%2C1185%7D%5D
+        const ZERO_ONE_FACTOR: f64 = 0.579_f64;
+        let e_gadget = e_preswitch * (Q_SWITCH1 as f64).powi(2) / (Q as f64).powi(2)
+            + (Q_SWITCH1 as f64).powi(2) / (4_f64 * (Q_SWITCH2 as f64).powi(2))
+                * ((D as f64) * sigma_sq
+                + (D_SWITCH as f64) * sigma_sq
+                // TODO integrate this term with z_factor()
+                + (T_SWITCH as f64) * (D as f64) * (Z_SWITCH as f64).powi(2) * sigma_sq * ZERO_ONE_FACTOR);
+        let e_round = 1_f64;
+
+        info!(
+            "Switch rounding term noise bound (absolute / threshold): {} / {}",
+            e_round,
+            Q_SWITCH1 / (2 * P)
+        );
+        info!(
+            "Switch gadget term noise width (absolute / threshold): {:.3} / {}",
+            e_gadget.sqrt(),
+            Q_SWITCH1 / (2 * P)
+        );
+
+        use std::f64::consts::PI;
+        let error_rate = 2_f64
+            * (D_SWITCH as f64)
+            * f64::exp(-PI * (0.5_f64 * (Q_SWITCH1 / P) as f64 - e_round).powi(2) / e_gadget);
+
+        info!("Error rate: 2^({})", error_rate.log2());
+        info!("***");
+
+        clamp(error_rate, 0_f64, 1_f64)
     }
 
     fn params_public_param_size() -> usize {
-        let automorph_elems = floor_log(2, D as u64) * (T_COEFF_REGEV + T_COEFF_GSW);
-        let reg_to_gsw_elems = 2 * T_CONV;
+        let automorph_elems = floor_log(2, D as u64) * (T_AUTO_REGEV + T_AUTO_GSW);
+        let reg_to_gsw_elems = 2 * T_REGEV_TO_GSW;
         let scal_to_vec_elems = N_VEC * T_SCAL_TO_VEC;
         let q_elem_size = D * ceil_log(2, Q) / 8;
 
@@ -1064,7 +1263,7 @@ respire_impl!({
 
         let i0 = Instant::now();
         for (i, auto_key_regev) in auto_keys_regev.iter().enumerate() {
-            c_regevs = Self::do_coeff_expand_iter::<T_COEFF_REGEV, Z_COEFF_REGEV>(
+            c_regevs = Self::do_coeff_expand_iter::<T_AUTO_REGEV, Z_AUTO_REGEV>(
                 i,
                 c_regevs.as_slice(),
                 auto_key_regev,
@@ -1076,7 +1275,7 @@ respire_impl!({
 
         let i1 = Instant::now();
         for (i, auto_key_gsw) in auto_keys_gsw.iter().enumerate() {
-            c_gsws = Self::do_coeff_expand_iter::<T_COEFF_GSW, Z_COEFF_GSW>(
+            c_gsws = Self::do_coeff_expand_iter::<T_AUTO_GSW, Z_AUTO_GSW>(
                 i,
                 c_gsws.as_slice(),
                 auto_key_gsw,
@@ -1363,7 +1562,7 @@ respire_impl!({
                     );
                 }
                 true => {
-                    ct = Self::project_hom::<T_COEFF_GSW, Z_COEFF_GSW>(iter, &ct, gsw, auto_key);
+                    ct = Self::project_hom::<T_AUTO_GSW, Z_AUTO_GSW>(iter, &ct, gsw, auto_key);
                 }
             }
         }
@@ -1616,16 +1815,24 @@ respire_impl!({
         s_encode: &<Self as Respire>::EncodingKey,
     ) -> <Self as Respire>::RegevToGSWKey {
         let mut rng = ChaCha20Rng::from_entropy();
-        let a_t = Matrix::<1, M_CONV, <Self as Respire>::RingQFast>::rand_uniform(&mut rng);
-        let e_mat = Matrix::<1, M_CONV, <Self as Respire>::RingQFast>::rand_discrete_gaussian::<
-            _,
-            NOISE_WIDTH_MILLIONTHS,
-        >(&mut rng);
+        let a_t = Matrix::<1, M_REGEV_TO_GSW, <Self as Respire>::RingQFast>::rand_uniform(&mut rng);
+        let e_mat =
+            Matrix::<1, M_REGEV_TO_GSW, <Self as Respire>::RingQFast>::rand_discrete_gaussian::<
+                _,
+                NOISE_WIDTH_MILLIONTHS,
+            >(&mut rng);
         let mut bottom = &a_t * s_encode;
         bottom += &e_mat;
-        let g_vec = build_gadget::<<Self as Respire>::RingQFast, 1, T_CONV, Z_CONV, T_CONV>();
-        let mut s_encode_tensor_g = Matrix::<1, M_CONV, <Self as Respire>::RingQFast>::zero();
-        s_encode_tensor_g.copy_into(&g_vec, 0, T_CONV);
+        let g_vec = build_gadget::<
+            <Self as Respire>::RingQFast,
+            1,
+            T_REGEV_TO_GSW,
+            Z_REGEV_TO_GSW,
+            T_REGEV_TO_GSW,
+        >();
+        let mut s_encode_tensor_g =
+            Matrix::<1, M_REGEV_TO_GSW, <Self as Respire>::RingQFast>::zero();
+        s_encode_tensor_g.copy_into(&g_vec, 0, T_REGEV_TO_GSW);
         s_encode_tensor_g.copy_into(&(&g_vec * &(-s_encode)), 0, 0);
         bottom -= &(&s_encode_tensor_g * s_encode);
 
@@ -1641,10 +1848,14 @@ respire_impl!({
         for (i, ci) in cs.iter().enumerate() {
             c_hat.copy_into(ci, 0, i);
         }
-        let g_inv_c_hat =
-            gadget_inverse::<<Self as Respire>::RingQFast, 2, M_CONV, T_GSW, Z_CONV, T_CONV>(
-                &c_hat,
-            );
+        let g_inv_c_hat = gadget_inverse::<
+            <Self as Respire>::RingQFast,
+            2,
+            M_REGEV_TO_GSW,
+            T_GSW,
+            Z_REGEV_TO_GSW,
+            T_REGEV_TO_GSW,
+        >(&c_hat);
         let v_g_inv_c_hat = v_mat * &g_inv_c_hat;
         result.copy_into(&v_g_inv_c_hat, 0, 0);
         for (i, ci) in cs.iter().enumerate() {
