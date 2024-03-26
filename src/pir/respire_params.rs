@@ -43,8 +43,7 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpan
         T_GSW: 8,
         T_REGEV_TO_GSW: 4,
         T_AUTO_REGEV: 4,
-        // TODO: consider changing this back? need better noise somewhere else
-        T_AUTO_GSW: 20,
+        T_AUTO_GSW: 16,
         BATCH_SIZE: batch_size,
         N_VEC: n_vec,
         T_SCAL_TO_VEC: 8,
@@ -62,14 +61,14 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpan
 }
 
 pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
-    let mut params = respire_1024(4, 49);
+    let mut params = respire_1024(7, 49);
     params.NU1 -= 1;
     params.NU2 -= 3;
     params
 }
 
 pub const fn respire_1024_b256_base() -> RespireParamsExpanded {
-    let mut params = respire_1024(7, 398);
+    let mut params = respire_1024(10, 398);
     params.NU1 -= 2;
     params.NU2 -= 5;
     params
