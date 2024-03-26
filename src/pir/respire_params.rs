@@ -236,7 +236,6 @@ mod test {
     use crate::math::int_mod_cyclo::IntModCyclo;
     use crate::math::int_mod_poly::IntModPoly;
     use crate::math::matrix::Matrix;
-    use crate::math::ring_elem::RingElement;
     use crate::pir::respire::Respire;
 
     #[test]

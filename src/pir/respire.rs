@@ -377,7 +377,6 @@ pub trait Respire: PIR {
     const REGEV_EXPAND_ITERS: usize;
     const GSW_FOLD_COUNT: usize;
     const GSW_ROT_COUNT: usize;
-    const GSW_PROJ_COUNT: usize;
     const GSW_COUNT: usize;
     const GSW_EXPAND_ITERS: usize;
 
@@ -724,7 +723,6 @@ respire_impl!(Respire, {
         Vec<<Self as Respire>::RegevCiphertext>, // first dim
         Vec<<Self as Respire>::GSWCiphertext>,   // fold
         Vec<<Self as Respire>::GSWCiphertext>,   // rotate
-        Vec<<Self as Respire>::GSWCiphertext>,   // project
     );
     type ResponseOne = <Self as Respire>::RegevCiphertext;
     type ResponseOneCompressed = <Self as Respire>::VecRegevSmallTruncated;
@@ -745,12 +743,9 @@ respire_impl!(Respire, {
     const REGEV_COUNT: usize = 1 << NU1;
     const REGEV_EXPAND_ITERS: usize = NU1;
     const GSW_FOLD_COUNT: usize = NU2;
-    const GSW_ROT_COUNT: usize = Self::NU3;
-    // TODO add param to reduce this when we don't care about garbage being in the other slots
-    const GSW_PROJ_COUNT: usize = Self::NU4;
+    const GSW_ROT_COUNT: usize = Self::NU3 + Self::NU4;
 
-    const GSW_COUNT: usize =
-        (Self::GSW_FOLD_COUNT + Self::GSW_ROT_COUNT + Self::GSW_PROJ_COUNT) * T_GSW;
+    const GSW_COUNT: usize = (Self::GSW_FOLD_COUNT + Self::GSW_ROT_COUNT) * T_GSW;
     const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
 
     fn query_one(
@@ -813,7 +808,7 @@ respire_impl!(Respire, {
     ) -> <Self as Respire>::ResponseOne {
         let i0 = Instant::now();
         // Query expansion
-        let (regevs, gsws_fold, gsws_rot, gsws_proj) = Self::answer_query_expand(pp, q, qk);
+        let (regevs, gsws_fold, gsws_rot) = Self::answer_query_expand(pp, q, qk);
         let i1 = Instant::now();
         let regev_saved = regevs[0].clone();
 
@@ -830,15 +825,15 @@ respire_impl!(Respire, {
         let c_rot = Self::answer_rotate_select(&c_fold, gsws_rot.as_slice());
         let i4 = Instant::now();
 
-        // Project select
-        let c_proj = Self::answer_project_select(pp, &c_rot, gsws_proj.as_slice());
+        // Project
+        let c_proj = Self::answer_project(pp, &c_rot);
         let i5 = Instant::now();
 
         info!("(*) answer query expand: {:?}", i1 - i0);
         info!("(*) answer first dim: {:?}", i2 - i1);
         info!("(*) answer fold: {:?}", i3 - i2);
         info!("(*) answer rotate select: {:?}", i4 - i3);
-        info!("(*) answer project select: {:?}", i5 - i4);
+        info!("(*) answer project: {:?}", i5 - i4);
 
         if let Some((s_enc, _, _)) = qk {
             if log_enabled!(Info) {
@@ -852,7 +847,8 @@ respire_impl!(Respire, {
                 info!("measured noise first dim: {}", e_firstdim);
                 info!("measured noise fold: {}", e_fold);
                 info!("measured noise rotate select: {}", e_rot);
-                info!("measured noise project select: {}", e_proj);
+                // TODO: note that project noise is lower on the coefficients that are projected away. So reporting this average is a bit inaccurate.
+                info!("measured noise project*: {}", e_proj);
             }
         }
 
@@ -1041,13 +1037,12 @@ respire_impl!(Respire, {
         info!("Fold: {}", e_to_bits(e_fold));
 
         // Rotating (NU3)
-        let e_rot = select_noise(e_gsw, e_fold, Self::NU3);
+        let e_rot = select_noise(e_gsw, e_fold, Self::NU3 + Self::NU4);
         info!("Rotate select: {}", e_to_bits(e_rot));
 
         // Proj/select (NU4)
-        let e_rot_again = select_noise(e_gsw, e_rot, Self::NU4);
-        let e_proj = proj_noise(e_rot_again, T_AUTO_GSW, Z_AUTO_GSW, Self::NU3 + Self::NU4);
-        info!("Project select: {}", e_to_bits(e_proj));
+        let e_proj = proj_noise(e_rot, T_AUTO_GSW, Z_AUTO_GSW, Self::NU3 + Self::NU4);
+        info!("Project: {}", e_to_bits(e_proj));
 
         // Ring packing
         let ring_num_records = min(Self::BATCH_SIZE, Self::PACK_RATIO_RESPONSE);
@@ -1260,9 +1255,6 @@ respire_impl!({
         let c_gsws_rot = (0..Self::GSW_ROT_COUNT)
             .map(|_| c_gsws_iter.next().unwrap())
             .collect();
-        let c_gsws_proj = (0..Self::GSW_PROJ_COUNT)
-            .map(|_| c_gsws_iter.next().unwrap())
-            .collect();
         assert_eq!(c_gsws_iter.next(), None);
 
         let i3 = Instant::now();
@@ -1270,9 +1262,8 @@ respire_impl!({
         info!("(**) answer query expand (gsw): {:?}", i2 - i1);
         info!("(**) answer query expand (reg_to_gsw): {:?}", i3 - i2);
 
-        // TODO measure and report noise through this phase?
-
-        (c_regevs, c_gsws_fold, c_gsws_rot, c_gsws_proj)
+        // TODO measure and report noise through this phase? Difficult because need to know the exact encoding (since they are not rounded to q/p)
+        (c_regevs, c_gsws_fold, c_gsws_rot)
     }
 
     pub fn answer_first_dim(
@@ -1509,8 +1500,9 @@ respire_impl!({
         ct: &<Self as Respire>::RegevCiphertext,
         gsws_rot: &[<Self as Respire>::GSWCiphertext],
     ) -> <Self as Respire>::RegevCiphertext {
-        assert_eq!(gsws_rot.len(), Self::NU3);
+        assert_eq!(gsws_rot.len(), Self::NU3 + Self::NU4);
         let mut ct_curr = ct.clone();
+        // TODO no need to do last NU4 iters if no batching
         for (iter_num, gsw) in gsws_rot.iter().enumerate() {
             ct_curr = Self::select_hom(
                 &ct_curr,
@@ -1521,24 +1513,12 @@ respire_impl!({
         ct_curr
     }
 
-    pub fn answer_project_select(
+    pub fn answer_project(
         ((_, auto_key_gsws), _, _, _): &<Self as PIR>::PublicParams,
         ct: &<Self as Respire>::RegevCiphertext,
-        gsws_proj: &[<Self as Respire>::GSWCiphertext],
     ) -> <Self as Respire>::RegevCiphertext {
-        assert_eq!(gsws_proj.len(), Self::NU4);
         let mut ct_curr = ct.clone();
-
-        // Finish rotating first
-        for (iter_num, gsw) in gsws_proj.iter().enumerate() {
-            ct_curr = Self::select_hom(
-                &ct_curr,
-                &Self::regev_mul_x_pow(&ct_curr, 2 * D - (1 << (iter_num + Self::NU3))),
-                gsw,
-            );
-        }
-
-        // Do projection
+        // TODO no need to project if no batching
         let num_proj = Self::NU3 + Self::NU4;
         let inv =
             <Self as Respire>::RingQFast::from(mod_inverse(2_usize.pow(num_proj as u32) as u64, Q));
