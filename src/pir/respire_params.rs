@@ -61,14 +61,14 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpan
 }
 
 pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
-    let mut params = respire_1024(7, 49);
+    let mut params = respire_1024(6, 49);
     params.NU1 -= 1;
     params.NU2 -= 3;
     params
 }
 
 pub const fn respire_1024_b256_base() -> RespireParamsExpanded {
-    let mut params = respire_1024(10, 398);
+    let mut params = respire_1024(9, 398);
     params.NU1 -= 2;
     params.NU2 -= 5;
     params

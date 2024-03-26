@@ -1045,7 +1045,7 @@ respire_impl!(Respire, {
         info!("Rotate select: {}", e_to_bits(e_rot));
 
         // Proj/select (NU4)
-        let e_rot_again = select_noise(e_gsw, e_fold, Self::NU4);
+        let e_rot_again = select_noise(e_gsw, e_rot, Self::NU4);
         let e_proj = proj_noise(e_rot_again, T_AUTO_GSW, Z_AUTO_GSW, Self::NU3 + Self::NU4);
         info!("Project select: {}", e_to_bits(e_proj));
 
