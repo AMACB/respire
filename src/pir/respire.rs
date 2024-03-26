@@ -19,7 +19,7 @@ use crate::math::int_mod_cyclo::IntModCyclo;
 use crate::math::int_mod_cyclo_crt_eval::IntModCycloCRTEval;
 use crate::math::int_mod_cyclo_eval::IntModCycloEval;
 use crate::math::matrix::Matrix;
-use crate::math::number_theory::mod_pow;
+
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::ring_elem::{NormedRingElement, RingElement};
 use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits, reverse_bits_fast};
@@ -499,8 +499,6 @@ respire_impl!(PIR, {
         assert_eq!(records_iter.len(), Self::DB_SIZE);
         let records_encoded_iter = records_iter.map(|r| Self::encode_record(&r));
 
-        let proj_inv =
-            IntMod::<P>::from(mod_pow(mod_inverse(2, P), Self::GSW_PROJ_COUNT as u64, P));
         let records_eval: Vec<<Self as Respire>::RingQFast> = records_encoded_iter
             .chunks(Self::PACK_RATIO_DB)
             .into_iter()
@@ -514,7 +512,6 @@ respire_impl!(PIR, {
                             *coeff;
                     }
                 }
-                record_packed *= proj_inv;
                 <Self as Respire>::RingQFast::from(&record_packed.include_into::<Q>())
             })
             .collect();
@@ -1569,6 +1566,12 @@ respire_impl!({
         let mut ct_curr = ct.clone();
         let gsws_rot_iter = gsws_rot.iter().map(|x| (x, false));
         let gsws_proj_iter = gsws_proj.iter().map(|x| (x, true));
+
+        let inv =
+            <Self as Respire>::RingQFast::from(mod_inverse(Self::PACK_RATIO_RESPONSE as u64, Q));
+        ct_curr[(0, 0)] *= &inv;
+        ct_curr[(1, 0)] *= &inv;
+
         for (iter, ((gsw, is_proj), auto_key)) in gsws_rot_iter
             .chain(gsws_proj_iter)
             .zip(auto_key_gsws)
