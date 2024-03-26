@@ -4,7 +4,6 @@ use log::Level::Info;
 use log::{info, log_enabled};
 use std::cmp::{max, min};
 use std::f64::consts::PI;
-use std::slice;
 use std::time::Instant;
 
 use rand::{Rng, SeedableRng};
@@ -827,31 +826,37 @@ respire_impl!(Respire, {
         let c_fold = Self::answer_fold(c_firstdim, gsws_fold.as_slice());
         let i3 = Instant::now();
 
-        // Rotating and Projecting
-        let c_final =
-            Self::answer_rotate_project(pp, &c_fold, gsws_rot.as_slice(), gsws_proj.as_slice());
+        // Rotate select
+        let c_rot = Self::answer_rotate_select(&c_fold, gsws_rot.as_slice());
         let i4 = Instant::now();
+
+        // Project select
+        let c_proj = Self::answer_project_select(pp, &c_rot, gsws_proj.as_slice());
+        let i5 = Instant::now();
 
         info!("(*) answer query expand: {:?}", i1 - i0);
         info!("(*) answer first dim: {:?}", i2 - i1);
         info!("(*) answer fold: {:?}", i3 - i2);
-        info!("(*) answer rotate/project: {:?}", i4 - i3);
+        info!("(*) answer rotate select: {:?}", i4 - i3);
+        info!("(*) answer project select: {:?}", i5 - i4);
 
         if let Some((s_enc, _, _)) = qk {
             if log_enabled!(Info) {
                 let e_regev = Self::noise_subgaussian_bits(s_enc, &regev_saved);
                 let e_firstdim = Self::noise_subgaussian_bits(s_enc, &firstdim_saved);
                 let e_fold = Self::noise_subgaussian_bits(s_enc, &c_fold);
-                let e_final = Self::noise_subgaussian_bits(s_enc, &c_final);
+                let e_rot = Self::noise_subgaussian_bits(s_enc, &c_rot);
+                let e_proj = Self::noise_subgaussian_bits(s_enc, &c_proj);
 
                 info!("measured noise query expanded regev: {}", e_regev);
                 info!("measured noise first dim: {}", e_firstdim);
                 info!("measured noise fold: {}", e_fold);
-                info!("measured noise rotate/project: {}", e_final);
+                info!("measured noise rotate select: {}", e_rot);
+                info!("measured noise project select: {}", e_proj);
             }
         }
 
-        c_final
+        c_proj
     }
 
     fn answer_compress_chunk(
@@ -994,111 +999,55 @@ respire_impl!(Respire, {
             (t as f64) * z_factor
         };
 
-        let select_noise = |e_reg_sq: f64, e_gsw_sq: f64| -> f64 {
+        let select_noise = |e_gsw_sq: f64, e_reg_sq: f64, depth: usize| -> f64 {
             // m = 2t; t is absorbed into gadget_factor()
-            e_reg_sq + 2_f64 * (D as f64) * gadget_factor(T_GSW, Z_GSW) * e_gsw_sq
+            e_reg_sq + (depth as f64) * 2_f64 * (D as f64) * gadget_factor(T_GSW, Z_GSW) * e_gsw_sq
         };
 
-        let expand_noise = |e_sq: f64, t_auto: usize, z_auto: u64| -> f64 {
-            // TODO noise: can this be tightened for first iteration?
-            2_f64 * e_sq + (D as f64) * gadget_factor(t_auto, z_auto) * sigma_sq
+        let proj_noise = |e_sq: f64, t_auto: usize, z_auto: u64, depth: usize| -> f64 {
+            e_sq + ((2usize.pow(depth as u32) - 1) as f64)
+                * (D as f64)
+                * gadget_factor(t_auto, z_auto)
+                * sigma_sq
         };
 
         info!("Initial: {}", e_to_bits(sigma_sq));
 
         // Query expansion
-        let e_reg = {
-            // Query expansion for Regevs
-            let mut e_curr = sigma_sq;
-
-            for i in 0..log_d {
-                e_curr = expand_noise(e_curr, T_AUTO_REGEV, Z_AUTO_REGEV);
-                info!(
-                    "Query expand regev (step {} / {}): {}",
-                    i + 1,
-                    log_d,
-                    e_to_bits(e_curr)
-                );
-            }
-
-            e_curr
-        };
+        let e_reg = proj_noise(sigma_sq, T_AUTO_REGEV, Z_AUTO_REGEV, log_d);
+        info!("Query expand regev: {}", e_to_bits(e_reg));
+        let e_gsw_raw = proj_noise(sigma_sq, T_AUTO_GSW, Z_AUTO_GSW, log_d);
+        info!("Query expand GSW (raw): {}", e_to_bits(e_gsw_raw));
         let e_gsw = {
-            // Query expansion for GSWs
-            let mut e_curr = sigma_sq;
-
-            for i in 0..log_d {
-                e_curr = expand_noise(e_curr, T_AUTO_GSW, Z_AUTO_GSW);
-                info!(
-                    "Query expand GSW (step {} / {}): {}",
-                    i + 1,
-                    log_d,
-                    e_to_bits(e_curr)
-                );
-            }
-
             // Regev to GSW
             // TODO noise: figure out what value should be here. We want |s| <= factor * sigma.
             // 2048 * 2exp(-3pi) = 0.331. So ~2/3 of random secrets have factor <= 3.
             let secret_norm_factor = 3_f64;
-            let initial_component = (D as f64) * e_curr * secret_norm_factor * sigma_sq;
+            let initial_component = (D as f64) * e_gsw_raw * secret_norm_factor * sigma_sq;
             let gadget_component =
                 // m = 2t; t is absorbed into gadget_factor()
                 2_f64 * (D as f64) * gadget_factor(T_REGEV_TO_GSW, Z_REGEV_TO_GSW) * sigma_sq;
             let e_converted = initial_component + gadget_component;
-            info!("Query expand GSW (converted): {}", e_to_bits(e_converted));
             e_converted
         };
+        info!("Query expand GSW (converted): {}", e_to_bits(e_gsw));
 
         // First dimension (NU1)
         let e_firstdim = (Self::PACKED_DIM1_SIZE as f64) * (D as f64) * ((P / 2) as f64) * e_reg;
         info!("First dimension: {}", e_to_bits(e_firstdim));
 
         // Folding (NU2)
-        let e_fold = {
-            let mut e_curr = e_firstdim;
-            for i in 0..Self::NU2 {
-                e_curr = select_noise(e_curr, e_gsw);
-                info!(
-                    "Fold (step {} / {}): {}",
-                    i + 1,
-                    Self::NU2,
-                    e_to_bits(e_curr)
-                );
-            }
-            e_curr
-        };
+        let e_fold = select_noise(e_gsw, e_firstdim, Self::NU2);
+        info!("Fold: {}", e_to_bits(e_fold));
 
         // Rotating (NU3)
-        let e_rot = {
-            let mut e_curr = e_fold;
-            for i in 0..Self::NU3 {
-                e_curr = select_noise(e_curr, e_gsw);
-                info!(
-                    "Rotate (step {} / {}): {}",
-                    i + 1,
-                    Self::NU3,
-                    e_to_bits(e_curr)
-                );
-            }
-            e_curr
-        };
+        let e_rot = select_noise(e_gsw, e_fold, Self::NU3);
+        info!("Rotate select: {}", e_to_bits(e_rot));
 
-        // Projecting (NU4)
-        let e_proj = {
-            let mut e_curr = e_rot;
-            for i in 0..Self::NU4 {
-                e_curr = expand_noise(e_curr, T_AUTO_GSW, Z_AUTO_GSW);
-                e_curr = select_noise(e_curr, e_gsw);
-                info!(
-                    "Project (step {} / {}): {}",
-                    i + 1,
-                    Self::NU4,
-                    e_to_bits(e_curr)
-                );
-            }
-            e_curr
-        };
+        // Proj/select (NU4)
+        let e_rot_again = select_noise(e_gsw, e_fold, Self::NU4);
+        let e_proj = proj_noise(e_rot_again, T_AUTO_GSW, Z_AUTO_GSW, Self::NU3 + Self::NU4);
+        info!("Project select: {}", e_to_bits(e_proj));
 
         // Ring packing
         let ring_num_records = min(Self::BATCH_SIZE, Self::PACK_RATIO_RESPONSE);
@@ -1556,42 +1505,50 @@ respire_impl!({
         curr.remove(0)
     }
 
-    pub fn answer_rotate_project(
-        ((_, auto_key_gsws), _, _, _): &<Self as PIR>::PublicParams,
+    pub fn answer_rotate_select(
         ct: &<Self as Respire>::RegevCiphertext,
         gsws_rot: &[<Self as Respire>::GSWCiphertext],
+    ) -> <Self as Respire>::RegevCiphertext {
+        assert_eq!(gsws_rot.len(), Self::NU3);
+        let mut ct_curr = ct.clone();
+        for (iter_num, gsw) in gsws_rot.iter().enumerate() {
+            ct_curr = Self::select_hom(
+                &ct_curr,
+                &Self::regev_mul_x_pow(&ct_curr, 2 * D - (1 << iter_num)),
+                gsw,
+            );
+        }
+        ct_curr
+    }
+
+    pub fn answer_project_select(
+        ((_, auto_key_gsws), _, _, _): &<Self as PIR>::PublicParams,
+        ct: &<Self as Respire>::RegevCiphertext,
         gsws_proj: &[<Self as Respire>::GSWCiphertext],
     ) -> <Self as Respire>::RegevCiphertext {
-        // TODO use different T/Z/auto keys
+        assert_eq!(gsws_proj.len(), Self::NU4);
         let mut ct_curr = ct.clone();
-        let gsws_rot_iter = gsws_rot.iter().map(|x| (x, false));
-        let gsws_proj_iter = gsws_proj.iter().map(|x| (x, true));
 
+        // Finish rotating first
+        for (iter_num, gsw) in gsws_proj.iter().enumerate() {
+            ct_curr = Self::select_hom(
+                &ct_curr,
+                &Self::regev_mul_x_pow(&ct_curr, 2 * D - (1 << (iter_num + Self::NU3))),
+                gsw,
+            );
+        }
+
+        // Do projection
+        let num_proj = Self::NU3 + Self::NU4;
         let inv =
-            <Self as Respire>::RingQFast::from(mod_inverse(Self::PACK_RATIO_RESPONSE as u64, Q));
+            <Self as Respire>::RingQFast::from(mod_inverse(2_usize.pow(num_proj as u32) as u64, Q));
         ct_curr[(0, 0)] *= &inv;
         ct_curr[(1, 0)] *= &inv;
 
-        for (iter, ((gsw, is_proj), auto_key)) in gsws_rot_iter
-            .chain(gsws_proj_iter)
-            .zip(auto_key_gsws)
-            .enumerate()
-        {
-            ct_curr = match is_proj {
-                false => Self::select_hom(
-                    &ct_curr,
-                    &Self::regev_mul_x_pow(&ct_curr, 2 * D - (1 << iter)),
-                    gsw,
-                ),
-                true => {
-                    let expanded = Self::do_proj_iter::<T_AUTO_GSW, Z_AUTO_GSW>(
-                        iter,
-                        slice::from_ref(&ct_curr),
-                        auto_key,
-                    );
-                    Self::select_hom(&expanded[0], &expanded[1], gsw)
-                }
-            }
+        for (iter_num, auto_key) in auto_key_gsws.iter().enumerate().take(num_proj) {
+            // TODO use different T/Z/auto keys
+            ct_curr =
+                Self::do_proj_iter_one::<T_AUTO_GSW, Z_AUTO_GSW>(iter_num, &ct_curr, auto_key);
         }
         ct_curr
     }
@@ -1821,6 +1778,19 @@ respire_impl!({
             cts_new[2 * j + 1] = &ct_shifted + &ct_auto_shifted;
         }
         cts_new
+    }
+
+    ///
+    /// Same as do_proj_iter, but only does one projection
+    ///
+    pub fn do_proj_iter_one<const LEN: usize, const BASE: u64>(
+        which_iter: usize,
+        ct: &<Self as Respire>::RegevCiphertext,
+        auto_key: &<Self as Respire>::AutoKey<LEN>,
+    ) -> <Self as Respire>::RegevCiphertext {
+        assert_eq!(auto_key.1, (D >> which_iter) + 1);
+        let ct_auto = Self::auto_hom::<LEN, BASE>(auto_key, ct);
+        ct + &ct_auto
     }
 
     pub fn regev_to_gsw_setup(
