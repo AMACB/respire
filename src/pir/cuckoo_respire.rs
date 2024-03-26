@@ -180,7 +180,7 @@ impl<
         let answers = qs
             .iter()
             .zip(dbs)
-            .map(|(q, db)| BaseRespire::answer_one(pp, db, q))
+            .map(|(q, db)| BaseRespire::answer_one(pp, db, q, qk))
             .collect_vec();
         let answers_compressed = answers
             .chunks(BaseRespire::RESPONSE_CHUNK_SIZE)

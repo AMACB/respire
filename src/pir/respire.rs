@@ -1,6 +1,7 @@
 use bitvec::prelude::*;
 use itertools::Itertools;
-use log::info;
+use log::Level::Info;
+use log::{info, log_enabled};
 use std::cmp::{max, min};
 use std::f64::consts::PI;
 use std::time::Instant;
@@ -385,6 +386,7 @@ pub trait Respire: PIR {
         pp: &<Self as PIR>::PublicParams,
         db: &<Self as PIR>::Database,
         q: &<Self as Respire>::QueryOne,
+        qk: Option<&<Self as PIR>::QueryKey>,
     ) -> <Self as Respire>::ResponseOne;
     fn answer_compress_chunk(
         pp: &<Self as PIR>::PublicParams,
@@ -657,7 +659,10 @@ respire_impl!(PIR, {
         qk: Option<&<Self as PIR>::QueryKey>,
     ) -> <Self as PIR>::Response {
         assert_eq!(qs.len(), Self::BATCH_SIZE);
-        let answers = qs.iter().map(|q| Self::answer_one(pp, db, q)).collect_vec();
+        let answers = qs
+            .iter()
+            .map(|q| Self::answer_one(pp, db, q, qk))
+            .collect_vec();
         let answers_compressed = answers
             .chunks(N_VEC * Self::PACK_RATIO_RESPONSE)
             .map(|chunk| Self::answer_compress_chunk(pp, chunk, qk))
@@ -807,23 +812,26 @@ respire_impl!(Respire, {
         pp: &<Self as PIR>::PublicParams,
         db: &<Self as PIR>::Database,
         q: &<Self as Respire>::QueryOne,
+        qk: Option<&<Self as PIR>::QueryKey>,
     ) -> <Self as Respire>::ResponseOne {
         let i0 = Instant::now();
         // Query expansion
-        let (regevs, gsws_fold, gsws_rot, gsws_proj) = Self::answer_query_expand(pp, q);
+        let (regevs, gsws_fold, gsws_rot, gsws_proj) = Self::answer_query_expand(pp, q, qk);
         let i1 = Instant::now();
+        let regev_saved = regevs[0].clone();
 
         // First dimension
-        let first_dim_folded = Self::answer_first_dim(db, &regevs);
+        let c_firstdim = Self::answer_first_dim(db, &regevs);
         let i2 = Instant::now();
+        let firstdim_saved = c_firstdim[0].clone(); // save for noise logging
 
         // Folding
-        let result = Self::answer_fold(first_dim_folded, gsws_fold.as_slice());
+        let c_fold = Self::answer_fold(c_firstdim, gsws_fold.as_slice());
         let i3 = Instant::now();
 
         // Rotating and Projecting
-        let result_projected =
-            Self::answer_rotate_project(pp, result, gsws_rot.as_slice(), gsws_proj.as_slice());
+        let c_final =
+            Self::answer_rotate_project(pp, &c_fold, gsws_rot.as_slice(), gsws_proj.as_slice());
         let i4 = Instant::now();
 
         info!("(*) answer query expand: {:?}", i1 - i0);
@@ -831,7 +839,21 @@ respire_impl!(Respire, {
         info!("(*) answer fold: {:?}", i3 - i2);
         info!("(*) answer rotate/project: {:?}", i4 - i3);
 
-        result_projected
+        if let Some((s_enc, _, _)) = qk {
+            if log_enabled!(Info) {
+                let e_regev = Self::noise_subgaussian_bits(s_enc, &regev_saved);
+                let e_firstdim = Self::noise_subgaussian_bits(s_enc, &firstdim_saved);
+                let e_fold = Self::noise_subgaussian_bits(s_enc, &c_fold);
+                let e_final = Self::noise_subgaussian_bits(s_enc, &c_final);
+
+                info!("measured noise query expanded regev: {}", e_regev);
+                info!("measured noise first dim: {}", e_firstdim);
+                info!("measured noise fold: {}", e_fold);
+                info!("measured noise rotate/project: {}", e_final);
+            }
+        }
+
+        c_final
     }
 
     fn answer_compress_chunk(
@@ -965,9 +987,9 @@ respire_impl!(Respire, {
                 const ZERO_ONE_FACTOR: f64 = 1185_f64 / 2048_f64;
                 ZERO_ONE_FACTOR
             } else {
-                // TODO verify this factor is right
-                // const CHERNOFF_FACTOR: f64 = 0.6_f64;
-                (z.div_ceil(2) as f64).powi(2) // * CHERNOFF_FACTOR
+                // TODO noise: verify this factor is right
+                const CHERNOFF_FACTOR: f64 = 0.6_f64;
+                ((z / 2) as f64).powi(2) * CHERNOFF_FACTOR
             };
 
             (t as f64) * z_factor
@@ -989,17 +1011,7 @@ respire_impl!(Respire, {
             // Query expansion for Regevs
             let mut e_curr = sigma_sq;
 
-            for i in 0..(log_d - Self::REGEV_EXPAND_ITERS) {
-                e_curr = expand_noise(e_curr, T_AUTO_GSW, Z_AUTO_GSW);
-                info!(
-                    "Query expand regev (step {} / {}): {}",
-                    i + 1,
-                    log_d,
-                    e_to_bits(e_curr)
-                );
-            }
-
-            for i in (log_d - Self::REGEV_EXPAND_ITERS)..log_d {
+            for i in 0..log_d {
                 e_curr = expand_noise(e_curr, T_AUTO_REGEV, Z_AUTO_REGEV);
                 info!(
                     "Query expand regev (step {} / {}): {}",
@@ -1015,17 +1027,7 @@ respire_impl!(Respire, {
             // Query expansion for GSWs
             let mut e_curr = sigma_sq;
 
-            for i in 0..(log_d - Self::GSW_EXPAND_ITERS) {
-                e_curr = expand_noise(e_curr, T_AUTO_GSW, Z_AUTO_GSW);
-                info!(
-                    "Query expand GSW (step {} / {}): {}",
-                    i + 1,
-                    log_d,
-                    e_to_bits(e_curr)
-                );
-            }
-
-            for i in (log_d - Self::GSW_EXPAND_ITERS)..log_d {
+            for i in 0..log_d {
                 e_curr = expand_noise(e_curr, T_AUTO_GSW, Z_AUTO_GSW);
                 info!(
                     "Query expand GSW (step {} / {}): {}",
@@ -1036,7 +1038,9 @@ respire_impl!(Respire, {
             }
 
             // Regev to GSW
-            let secret_norm_factor = 8_f64; // 8 widths
+            // TODO noise: change this to 8, or make secret correction rigorous
+            // let secret_norm_factor = 8_f64; // 8 widths
+            let secret_norm_factor = 1_f64;
             let initial_component = (D as f64) * e_curr * secret_norm_factor * sigma_sq;
             let gadget_component =
                 // m = 2t; t is absorbed into gadget_factor()
@@ -1242,6 +1246,7 @@ respire_impl!({
     pub fn answer_query_expand(
         ((auto_keys_regev, auto_keys_gsw), regev_to_gsw_key, _, _): &<Self as PIR>::PublicParams,
         ((seed_reg, vec_reg), (seed_gsw, vec_gsw)): &<Self as Respire>::QueryOne,
+        _: Option<&<Self as PIR>::QueryKey>,
     ) -> <Self as Respire>::QueryOneExpanded {
         let inv = <Self as Respire>::RingQFast::from(mod_inverse(D as u64, Q));
         let mut c_regevs = {
@@ -1319,6 +1324,8 @@ respire_impl!({
         info!("(**) answer query expand (reg): {:?}", i1 - i0);
         info!("(**) answer query expand (gsw): {:?}", i2 - i1);
         info!("(**) answer query expand (reg_to_gsw): {:?}", i3 - i2);
+
+        // TODO measure and report noise through this phase?
 
         (c_regevs, c_gsws_fold, c_gsws_rot, c_gsws_proj)
     }
@@ -1555,11 +1562,12 @@ respire_impl!({
 
     pub fn answer_rotate_project(
         ((_, auto_key_gsws), _, _, _): &<Self as PIR>::PublicParams,
-        mut ct: <Self as Respire>::RegevCiphertext,
+        ct: &<Self as Respire>::RegevCiphertext,
         gsws_rot: &[<Self as Respire>::GSWCiphertext],
         gsws_proj: &[<Self as Respire>::GSWCiphertext],
     ) -> <Self as Respire>::RegevCiphertext {
         // TODO use different T/Z/auto keys
+        let mut ct_curr = ct.clone();
         let gsws_rot_iter = gsws_rot.iter().map(|x| (x, false));
         let gsws_proj_iter = gsws_proj.iter().map(|x| (x, true));
         for (iter, ((gsw, is_proj), auto_key)) in gsws_rot_iter
@@ -1569,18 +1577,19 @@ respire_impl!({
         {
             match is_proj {
                 false => {
-                    ct = Self::select_hom(
-                        &ct,
-                        &Self::regev_mul_x_pow(&ct, 2 * D - (1 << iter)),
+                    ct_curr = Self::select_hom(
+                        &ct_curr,
+                        &Self::regev_mul_x_pow(&ct_curr, 2 * D - (1 << iter)),
                         gsw,
                     );
                 }
                 true => {
-                    ct = Self::project_hom::<T_AUTO_GSW, Z_AUTO_GSW>(iter, &ct, gsw, auto_key);
+                    ct_curr =
+                        Self::project_hom::<T_AUTO_GSW, Z_AUTO_GSW>(iter, &ct_curr, gsw, auto_key);
                 }
             }
         }
-        ct
+        ct_curr
     }
 
     pub fn encode_setup() -> <Self as Respire>::RingQFast {
@@ -1792,7 +1801,7 @@ respire_impl!({
         cts: &[<Self as Respire>::RegevCiphertext],
         auto_key: &<Self as Respire>::AutoKey<LEN>,
     ) -> Vec<<Self as Respire>::RegevCiphertext> {
-        debug_assert_eq!(auto_key.1, D / (1 << which_iter) + 1);
+        assert_eq!(auto_key.1, (D >> which_iter) + 1);
         let len = cts.len();
         let mut cts_new = Vec::with_capacity(2 * len);
         cts_new.resize(2 * len, Matrix::zero());
@@ -1816,7 +1825,7 @@ respire_impl!({
         gsw: &<Self as Respire>::GSWCiphertext,
         auto_key: &<Self as Respire>::AutoKey<LEN>,
     ) -> <Self as Respire>::RegevCiphertext {
-        debug_assert_eq!(auto_key.1, D / (1 << which_iter) + 1);
+        assert_eq!(auto_key.1, (D >> which_iter) + 1);
         let shift_exp = 1 << which_iter;
         let diff = &Self::gsw_mul_x_pow(gsw, 2 * D - shift_exp) - gsw;
         let mul = Self::hybrid_mul_hom(ct, &diff);
