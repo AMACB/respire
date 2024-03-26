@@ -43,7 +43,8 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpan
         T_GSW: 8,
         T_REGEV_TO_GSW: 4,
         T_AUTO_REGEV: 4,
-        T_AUTO_GSW: 16,
+        // TODO: consider changing this back? need better noise somewhere else
+        T_AUTO_GSW: 20,
         BATCH_SIZE: batch_size,
         N_VEC: n_vec,
         T_SCAL_TO_VEC: 8,
@@ -52,7 +53,7 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpan
         D_RECORD: 256,
         NU1: 9,
         NU2: 8,
-        Q_SWITCH1: 6 * 257,
+        Q_SWITCH1: 12 * 257,
         Q_SWITCH2: 4169729, // 21.99 bits
         D_SWITCH: 1024,
         T_SWITCH: 22,
@@ -61,7 +62,7 @@ pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpan
 }
 
 pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
-    let mut params = respire_1024(7, 49);
+    let mut params = respire_1024(4, 49);
     params.NU1 -= 1;
     params.NU2 -= 3;
     params
@@ -296,89 +297,6 @@ mod test {
         let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
         let decrypted = RespireTest::decode_gsw_scaled(&s, &encrypt_gsw, &scale);
         assert_eq!(decrypted.round_down_into(), mu);
-    }
-
-    #[test]
-    fn test_project_hom() {
-        let s = RespireTest::encode_setup();
-        let gsw0 = RespireTest::encode_gsw(&s, &IntModCyclo::from(0_u64));
-        let gsw1 = RespireTest::encode_gsw(&s, &IntModCyclo::from(1_u64));
-        let mut msg_coeff = IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::zero();
-        msg_coeff.coeff[0] = IntMod::from(10_u64);
-        msg_coeff.coeff[1] = IntMod::from(20_u64);
-        msg_coeff.coeff[2] = IntMod::from(11_u64);
-        msg_coeff.coeff[3] = IntMod::from(21_u64);
-        let c = RespireTest::encode_regev(&s, &msg_coeff.scale_up_into());
-
-        let auto_key0 = RespireTest::auto_setup::<
-            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
-            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
-        >(RESPIRE_TEST_PARAMS.D + 1, &s);
-        let auto_key1 = RespireTest::auto_setup::<
-            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
-            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
-        >(RESPIRE_TEST_PARAMS.D / 2 + 1, &s);
-
-        let c_proj0 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
-            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
-        >(0, &c, &gsw0, &auto_key0);
-        let c_proj1 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
-            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
-        >(0, &c, &gsw1, &auto_key0);
-
-        let c_proj00 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
-            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
-        >(1, &c_proj0, &gsw0, &auto_key1);
-        let c_proj01 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
-            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
-        >(1, &c_proj0, &gsw1, &auto_key1);
-        let c_proj10 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
-            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
-        >(1, &c_proj1, &gsw0, &auto_key1);
-        let c_proj11 = RespireTest::project_hom::<
-            { RESPIRE_TEST_PARAMS.T_AUTO_GSW },
-            { RESPIRE_TEST_PARAMS.Z_AUTO_GSW },
-        >(1, &c_proj1, &gsw1, &auto_key1);
-
-        // let proj0 = RespireTest::decode_regev(&s, &c_proj0).round_down_into();
-        let mut proj0_expected = IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::zero();
-        proj0_expected.coeff[0] = IntMod::from(10_u64 * 2);
-        proj0_expected.coeff[2] = IntMod::from(11_u64 * 2);
-
-        let mut proj1_expected = IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::zero();
-        proj1_expected.coeff[0] = IntMod::from(20_u64 * 2);
-        proj1_expected.coeff[2] = IntMod::from(21_u64 * 2);
-
-        assert_eq!(
-            RespireTest::decode_regev(&s, &c_proj0).round_down_into(),
-            proj0_expected
-        );
-        assert_eq!(
-            RespireTest::decode_regev(&s, &c_proj1).round_down_into(),
-            proj1_expected
-        );
-
-        assert_eq!(
-            RespireTest::decode_regev(&s, &c_proj00).round_down_into(),
-            IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::from(10_u64 * 4)
-        );
-        assert_eq!(
-            RespireTest::decode_regev(&s, &c_proj01).round_down_into(),
-            IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::from(11_u64 * 4)
-        );
-        assert_eq!(
-            RespireTest::decode_regev(&s, &c_proj10).round_down_into(),
-            IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::from(20_u64 * 4)
-        );
-        assert_eq!(
-            RespireTest::decode_regev(&s, &c_proj11).round_down_into(),
-            IntModCyclo::<{ RESPIRE_TEST_PARAMS.D }, 256>::from(21_u64 * 4)
-        );
     }
 
     #[test]

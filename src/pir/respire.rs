@@ -4,6 +4,7 @@ use log::Level::Info;
 use log::{info, log_enabled};
 use std::cmp::{max, min};
 use std::f64::consts::PI;
+use std::slice;
 use std::time::Instant;
 
 use rand::{Rng, SeedableRng};
@@ -988,7 +989,8 @@ respire_impl!(Respire, {
                 ZERO_ONE_FACTOR
             } else {
                 // TODO noise: verify this factor is right
-                const CHERNOFF_FACTOR: f64 = 0.6_f64;
+                // const CHERNOFF_FACTOR: f64 = 0.6_f64;
+                const CHERNOFF_FACTOR: f64 = 1.0_f64;
                 ((z / 2) as f64).powi(2) * CHERNOFF_FACTOR
             };
 
@@ -1001,6 +1003,7 @@ respire_impl!(Respire, {
         };
 
         let expand_noise = |e_sq: f64, t_auto: usize, z_auto: u64| -> f64 {
+            // TODO noise: can this be tightened for first iteration?
             2_f64 * e_sq + (D as f64) * gadget_factor(t_auto, z_auto) * sigma_sq
         };
 
@@ -1038,9 +1041,9 @@ respire_impl!(Respire, {
             }
 
             // Regev to GSW
-            // TODO noise: change this to 8, or make secret correction rigorous
-            // let secret_norm_factor = 8_f64; // 8 widths
-            let secret_norm_factor = 1_f64;
+            // TODO noise: figure out what value should be here. We want |s| <= factor * sigma.
+            // 2048 * 2exp(-3pi) = 0.331. So ~2/3 of random secrets have factor <= 3.
+            let secret_norm_factor = 3_f64;
             let initial_component = (D as f64) * e_curr * secret_norm_factor * sigma_sq;
             let gadget_component =
                 // m = 2t; t is absorbed into gadget_factor()
@@ -1088,9 +1091,8 @@ respire_impl!(Respire, {
         let e_proj = {
             let mut e_curr = e_rot;
             for i in 0..Self::NU4 {
-                // TODO: check this is the right expression. Is expand right?
-                e_curr = select_noise(e_curr, e_gsw);
                 e_curr = expand_noise(e_curr, T_AUTO_GSW, Z_AUTO_GSW);
+                e_curr = select_noise(e_curr, e_gsw);
                 info!(
                     "Project (step {} / {}): {}",
                     i + 1,
@@ -1282,7 +1284,7 @@ respire_impl!({
 
         let i0 = Instant::now();
         for (i, auto_key_regev) in auto_keys_regev.iter().enumerate() {
-            c_regevs = Self::do_coeff_expand_iter::<T_AUTO_REGEV, Z_AUTO_REGEV>(
+            c_regevs = Self::do_proj_iter::<T_AUTO_REGEV, Z_AUTO_REGEV>(
                 i,
                 c_regevs.as_slice(),
                 auto_key_regev,
@@ -1294,11 +1296,8 @@ respire_impl!({
 
         let i1 = Instant::now();
         for (i, auto_key_gsw) in auto_keys_gsw.iter().enumerate() {
-            c_gsws = Self::do_coeff_expand_iter::<T_AUTO_GSW, Z_AUTO_GSW>(
-                i,
-                c_gsws.as_slice(),
-                auto_key_gsw,
-            );
+            c_gsws =
+                Self::do_proj_iter::<T_AUTO_GSW, Z_AUTO_GSW>(i, c_gsws.as_slice(), auto_key_gsw);
             let denom = D >> (i + 1);
             c_gsws.truncate((Self::GSW_COUNT + denom - 1) / denom);
         }
@@ -1575,17 +1574,19 @@ respire_impl!({
             .zip(auto_key_gsws)
             .enumerate()
         {
-            match is_proj {
-                false => {
-                    ct_curr = Self::select_hom(
-                        &ct_curr,
-                        &Self::regev_mul_x_pow(&ct_curr, 2 * D - (1 << iter)),
-                        gsw,
-                    );
-                }
+            ct_curr = match is_proj {
+                false => Self::select_hom(
+                    &ct_curr,
+                    &Self::regev_mul_x_pow(&ct_curr, 2 * D - (1 << iter)),
+                    gsw,
+                ),
                 true => {
-                    ct_curr =
-                        Self::project_hom::<T_AUTO_GSW, Z_AUTO_GSW>(iter, &ct_curr, gsw, auto_key);
+                    let expanded = Self::do_proj_iter::<T_AUTO_GSW, Z_AUTO_GSW>(
+                        iter,
+                        slice::from_ref(&ct_curr),
+                        auto_key,
+                    );
+                    Self::select_hom(&expanded[0], &expanded[1], gsw)
                 }
             }
         }
@@ -1796,7 +1797,7 @@ respire_impl!({
     /// * `cts`: the input ciphertexts
     /// * `auto_key`: the automorphism key, which should have power equal to `D / 2^which_iter + 1`
     ///
-    pub fn do_coeff_expand_iter<const LEN: usize, const BASE: u64>(
+    pub fn do_proj_iter<const LEN: usize, const BASE: u64>(
         which_iter: usize,
         cts: &[<Self as Respire>::RegevCiphertext],
         auto_key: &<Self as Respire>::AutoKey<LEN>,
@@ -1817,21 +1818,6 @@ respire_impl!({
             cts_new[2 * j + 1] = &ct_shifted + &ct_auto_shifted;
         }
         cts_new
-    }
-
-    pub fn project_hom<const LEN: usize, const BASE: u64>(
-        which_iter: usize,
-        ct: &<Self as Respire>::RegevCiphertext,
-        gsw: &<Self as Respire>::GSWCiphertext,
-        auto_key: &<Self as Respire>::AutoKey<LEN>,
-    ) -> <Self as Respire>::RegevCiphertext {
-        assert_eq!(auto_key.1, (D >> which_iter) + 1);
-        let shift_exp = 1 << which_iter;
-        let diff = &Self::gsw_mul_x_pow(gsw, 2 * D - shift_exp) - gsw;
-        let mul = Self::hybrid_mul_hom(ct, &diff);
-        let shifted = &mul + ct;
-        let auto = Self::auto_hom::<LEN, BASE>(auto_key, &shifted);
-        &shifted + &auto
     }
 
     pub fn regev_to_gsw_setup(
