@@ -8,14 +8,16 @@ use crate::math::ring_elem::*;
 
 pub const fn base_from_len(t: usize, q: u64) -> u64 {
     // z = floor(q^(1/t)) + 1
-    let mut z: u128 = 2;
-    while z <= (1 << 20) {
-        if (z - 1).pow(t as u32) <= (q as u128) && (q as u128) < z.pow(t as u32) {
-            return z as u64;
+    let mut z_lo: u64 = 2;
+    let mut z_hi: u64 = u64::MAX;
+    while z_lo < z_hi - 1 {
+        let z_mid = z_lo + (z_hi - z_lo) / 2;
+        match (z_mid - 1).checked_pow(t as u32) {
+            Some(x) if x <= q => z_lo = z_mid,
+            _ => z_hi = z_mid,
         }
-        z += 1;
     }
-    panic!("z could not be computed from t (is it bigger than 2^20?)");
+    z_lo
 }
 
 pub fn build_gadget<
