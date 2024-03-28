@@ -1,6 +1,5 @@
 //! The cyclotomic ring `Z_n[x]/x^d + 1)`, where `n = n_1 * n_2` and `d` is assumed to be a power of `2`.
 
-use crate::math::discrete_gaussian::DiscreteGaussian;
 use crate::math::gadget::{IntModDecomposition, RingElementDecomposable};
 use crate::math::int_mod::IntMod;
 use crate::math::int_mod_crt::IntModCRT;
@@ -236,44 +235,6 @@ impl<const D: usize, const N1: u64, const N2: u64> RandUniformSampled
         IntModCycloCRT {
             proj1: IntModCyclo::rand_uniform(rng),
             proj2: IntModCyclo::rand_uniform(rng),
-        }
-    }
-}
-
-impl<const D: usize, const N1: u64, const N2: u64> RandZeroOneSampled
-    for IntModCycloCRT<D, N1, N2>
-{
-    fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
-        let mut v = vec![0u64; D];
-        for i in 0..(D / 64) {
-            let rand = rng.gen::<u64>();
-            for bit in 0..64 {
-                v[i * 64 + bit] = (rand >> bit) & 1;
-            }
-        }
-
-        let rand = rng.gen::<u64>();
-        for bit in 0..(D % 64) {
-            v[(D / 64) * 64 + bit] = (rand >> bit) & 1;
-        }
-        IntModCycloCRT {
-            proj1: v.clone().into(),
-            proj2: v.into(),
-        }
-    }
-}
-
-impl<const D: usize, const N1: u64, const N2: u64> RandDiscreteGaussianSampled
-    for IntModCycloCRT<D, N1, N2>
-{
-    fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
-        let mut v = vec![0i64; D];
-        v.iter_mut()
-            .map(|x| *x = DiscreteGaussian::sample::<_, NOISE_WIDTH_MILLIONTHS>(rng))
-            .count();
-        IntModCycloCRT {
-            proj1: v.clone().into(),
-            proj2: v.into(),
         }
     }
 }

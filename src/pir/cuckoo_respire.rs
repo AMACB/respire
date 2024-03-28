@@ -48,6 +48,7 @@ impl<
     type DatabaseHint = Vec<Vec<Option<usize>>>;
     type State = Vec<(usize, usize)>;
     type RecordBytes = BaseRespire::RecordBytes;
+    const BYTES_PER_RECORD: usize = BaseRespire::BYTES_PER_RECORD;
     const NUM_RECORDS: usize = NUM_RECORDS;
     const BATCH_SIZE: usize = BATCH_SIZE;
 

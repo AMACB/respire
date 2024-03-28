@@ -24,7 +24,7 @@ use crate::math::ring_elem::{NormedRingElement, RingElement};
 use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits, reverse_bits_fast};
 
 use crate::math::simd_utils::*;
-use crate::pir::pir::PIR;
+use crate::pir::pir::{PIRRecordBytes, PIR};
 
 pub struct RespireImpl<
     const Q: u64,
@@ -41,11 +41,16 @@ pub struct RespireImpl<
     const Z_REGEV_TO_GSW: u64,
     const T_REGEV_TO_GSW: usize,
     const M_REGEV_TO_GSW: usize,
-    const BATCH_SIZE: usize,
-    const N_VEC: usize,
     const Z_SCAL_TO_VEC: u64,
     const T_SCAL_TO_VEC: usize,
-    const NOISE_WIDTH_MILLIONTHS: u64,
+    const BATCH_SIZE: usize,
+    const N_VEC: usize,
+    const ERROR_WIDTH_MILLIONTHS: u64,
+    const ERROR_WIDTH_VEC_MILLIONTHS: u64,
+    const ERROR_WIDTH_SWITCH_MILLIONTHS: u64,
+    const SECRET_BOUND: u64,
+    const SECRET_WIDTH_VEC_MILLIONTHS: u64,
+    const SECRET_WIDTH_SWITCH_MILLIONTHS: u64,
     const P: u64,
     const D_RECORD: usize,
     const NU1: usize,
@@ -67,10 +72,15 @@ pub struct RespireParams {
     pub T_AUTO_REGEV: usize,
     pub T_AUTO_GSW: usize,
     pub T_REGEV_TO_GSW: usize,
+    pub T_SCAL_TO_VEC: usize,
     pub BATCH_SIZE: usize,
     pub N_VEC: usize,
-    pub T_SCAL_TO_VEC: usize,
-    pub NOISE_WIDTH_MILLIONTHS: u64,
+    pub ERROR_WIDTH_MILLIONTHS: u64,
+    pub ERROR_WIDTH_VEC_MILLIONTHS: u64,
+    pub ERROR_WIDTH_SWITCH_MILLIONTHS: u64,
+    pub SECRET_BOUND: u64,
+    pub SECRET_WIDTH_VEC_MILLIONTHS: u64,
+    pub SECRET_WIDTH_SWITCH_MILLIONTHS: u64,
     pub P: u64,
     pub D_RECORD: usize,
     pub NU1: usize,
@@ -78,7 +88,6 @@ pub struct RespireParams {
     pub Q_SWITCH1: u64,
     pub Q_SWITCH2: u64,
     pub D_SWITCH: usize,
-    pub T_SWITCH: usize,
 }
 
 impl RespireParams {
@@ -89,7 +98,8 @@ impl RespireParams {
         let z_auto_gsw = base_from_len(self.T_AUTO_GSW, q);
         let z_regev_to_gsw = base_from_len(self.T_REGEV_TO_GSW, q);
         let z_scal_to_vec = base_from_len(self.T_SCAL_TO_VEC, q);
-        let z_switch = base_from_len(self.T_SWITCH, self.Q_SWITCH2);
+        let z_switch = 2;
+        let t_switch = floor_log(z_switch, self.Q_SWITCH2) + 1;
         RespireParamsExpanded {
             Q: q,
             Q_A: self.Q_A,
@@ -104,12 +114,17 @@ impl RespireParams {
             T_AUTO_GSW: self.T_AUTO_GSW,
             Z_REGEV_TO_GSW: z_regev_to_gsw,
             T_REGEV_TO_GSW: self.T_REGEV_TO_GSW,
-            BATCH_SIZE: self.BATCH_SIZE,
-            N_VEC: self.N_VEC,
             T_SCAL_TO_VEC: self.T_SCAL_TO_VEC,
             Z_SCAL_TO_VEC: z_scal_to_vec,
+            BATCH_SIZE: self.BATCH_SIZE,
+            N_VEC: self.N_VEC,
             M_REGEV_TO_GSW: 2 * self.T_REGEV_TO_GSW,
-            NOISE_WIDTH_MILLIONTHS: self.NOISE_WIDTH_MILLIONTHS,
+            ERROR_WIDTH_MILLIONTHS: self.ERROR_WIDTH_MILLIONTHS,
+            ERROR_WIDTH_VEC_MILLIONTHS: self.ERROR_WIDTH_VEC_MILLIONTHS,
+            ERROR_WIDTH_SWITCH_MILLIONTHS: self.ERROR_WIDTH_SWITCH_MILLIONTHS,
+            SECRET_BOUND: self.SECRET_BOUND,
+            SECRET_WIDTH_VEC_MILLIONTHS: self.SECRET_WIDTH_VEC_MILLIONTHS,
+            SECRET_WIDTH_SWITCH_MILLIONTHS: self.SECRET_WIDTH_SWITCH_MILLIONTHS,
             P: self.P,
             D_RECORD: self.D_RECORD,
             NU1: self.NU1,
@@ -117,7 +132,7 @@ impl RespireParams {
             Q_SWITCH1: self.Q_SWITCH1,
             Q_SWITCH2: self.Q_SWITCH2,
             D_SWITCH: self.D_SWITCH,
-            T_SWITCH: self.T_SWITCH,
+            T_SWITCH: t_switch,
             Z_SWITCH: z_switch,
             BYTES_PER_RECORD: (self.D_RECORD * floor_log(2, self.P)) / 8,
         }
@@ -141,11 +156,16 @@ pub struct RespireParamsExpanded {
     pub Z_REGEV_TO_GSW: u64,
     pub T_REGEV_TO_GSW: usize,
     pub M_REGEV_TO_GSW: usize,
-    pub BATCH_SIZE: usize,
-    pub N_VEC: usize,
     pub Z_SCAL_TO_VEC: u64,
     pub T_SCAL_TO_VEC: usize,
-    pub NOISE_WIDTH_MILLIONTHS: u64,
+    pub BATCH_SIZE: usize,
+    pub N_VEC: usize,
+    pub ERROR_WIDTH_MILLIONTHS: u64,
+    pub ERROR_WIDTH_VEC_MILLIONTHS: u64,
+    pub ERROR_WIDTH_SWITCH_MILLIONTHS: u64,
+    pub SECRET_BOUND: u64,
+    pub SECRET_WIDTH_VEC_MILLIONTHS: u64,
+    pub SECRET_WIDTH_SWITCH_MILLIONTHS: u64,
     pub P: u64,
     pub D_RECORD: usize,
     pub NU1: usize,
@@ -161,7 +181,7 @@ pub struct RespireParamsExpanded {
 #[macro_export]
 macro_rules! respire {
     ($params: expr) => {
-        RespireImpl<
+        $crate::pir::respire::RespireImpl<
             {$params.Q},
             {$params.Q_A},
             {$params.Q_B},
@@ -176,11 +196,16 @@ macro_rules! respire {
             {$params.Z_REGEV_TO_GSW},
             {$params.T_REGEV_TO_GSW},
             {$params.M_REGEV_TO_GSW},
-            {$params.BATCH_SIZE},
-            {$params.N_VEC},
             {$params.Z_SCAL_TO_VEC},
             {$params.T_SCAL_TO_VEC},
-            {$params.NOISE_WIDTH_MILLIONTHS},
+            {$params.BATCH_SIZE},
+            {$params.N_VEC},
+            {$params.ERROR_WIDTH_MILLIONTHS},
+            {$params.ERROR_WIDTH_VEC_MILLIONTHS},
+            {$params.ERROR_WIDTH_SWITCH_MILLIONTHS},
+            {$params.SECRET_BOUND},
+            {$params.SECRET_WIDTH_VEC_MILLIONTHS},
+            {$params.SECRET_WIDTH_SWITCH_MILLIONTHS},
             {$params.P},
             {$params.D_RECORD},
             {$params.NU1},
@@ -212,11 +237,16 @@ macro_rules! respire_impl {
                 const Z_REGEV_TO_GSW: u64,
                 const T_REGEV_TO_GSW: usize,
                 const M_REGEV_TO_GSW: usize,
-                const BATCH_SIZE: usize,
-                const N_VEC: usize,
                 const Z_SCAL_TO_VEC: u64,
                 const T_SCAL_TO_VEC: usize,
-                const NOISE_WIDTH_MILLIONTHS: u64,
+                const BATCH_SIZE: usize,
+                const N_VEC: usize,
+                const ERROR_WIDTH_MILLIONTHS: u64,
+                const ERROR_WIDTH_VEC_MILLIONTHS: u64,
+                const ERROR_WIDTH_SWITCH_MILLIONTHS: u64,
+                const SECRET_BOUND: u64,
+                const SECRET_WIDTH_VEC_MILLIONTHS: u64,
+                const SECRET_WIDTH_SWITCH_MILLIONTHS: u64,
                 const P: u64,
                 const D_RECORD: usize,
                 const NU1: usize,
@@ -243,11 +273,16 @@ macro_rules! respire_impl {
                 Z_REGEV_TO_GSW,
                 T_REGEV_TO_GSW,
                 M_REGEV_TO_GSW,
-                BATCH_SIZE,
-                N_VEC,
                 Z_SCAL_TO_VEC,
                 T_SCAL_TO_VEC,
-                NOISE_WIDTH_MILLIONTHS,
+                BATCH_SIZE,
+                N_VEC,
+                ERROR_WIDTH_MILLIONTHS,
+                ERROR_WIDTH_VEC_MILLIONTHS,
+                ERROR_WIDTH_SWITCH_MILLIONTHS,
+                SECRET_BOUND,
+                SECRET_WIDTH_VEC_MILLIONTHS,
+                SECRET_WIDTH_SWITCH_MILLIONTHS,
                 P,
                 D_RECORD,
                 NU1,
@@ -277,11 +312,16 @@ macro_rules! respire_impl {
                 const Z_REGEV_TO_GSW: u64,
                 const T_REGEV_TO_GSW: usize,
                 const M_REGEV_TO_GSW: usize,
-                const BATCH_SIZE: usize,
-                const N_VEC: usize,
                 const Z_SCAL_TO_VEC: u64,
                 const T_SCAL_TO_VEC: usize,
-                const NOISE_WIDTH_MILLIONTHS: u64,
+                const BATCH_SIZE: usize,
+                const N_VEC: usize,
+                const ERROR_WIDTH_MILLIONTHS: u64,
+                const ERROR_WIDTH_VEC_MILLIONTHS: u64,
+                const ERROR_WIDTH_SWITCH_MILLIONTHS: u64,
+                const SECRET_BOUND: u64,
+                const SECRET_WIDTH_VEC_MILLIONTHS: u64,
+                const SECRET_WIDTH_SWITCH_MILLIONTHS: u64,
                 const P: u64,
                 const D_RECORD: usize,
                 const NU1: usize,
@@ -307,11 +347,16 @@ macro_rules! respire_impl {
                 Z_REGEV_TO_GSW,
                 T_REGEV_TO_GSW,
                 M_REGEV_TO_GSW,
-                BATCH_SIZE,
-                N_VEC,
                 Z_SCAL_TO_VEC,
                 T_SCAL_TO_VEC,
-                NOISE_WIDTH_MILLIONTHS,
+                BATCH_SIZE,
+                N_VEC,
+                ERROR_WIDTH_MILLIONTHS,
+                ERROR_WIDTH_VEC_MILLIONTHS,
+                ERROR_WIDTH_SWITCH_MILLIONTHS,
+                SECRET_BOUND,
+                SECRET_WIDTH_VEC_MILLIONTHS,
+                SECRET_WIDTH_SWITCH_MILLIONTHS,
                 P,
                 D_RECORD,
                 NU1,
@@ -413,12 +458,25 @@ pub trait Respire: PIR {
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordBytesImpl<const LEN: usize> {
-    pub it: [u8; LEN],
+    it: [u8; LEN],
 }
 
 impl<const LEN: usize> Default for RecordBytesImpl<LEN> {
     fn default() -> Self {
         Self { it: [0u8; LEN] }
+    }
+}
+
+impl<const LEN: usize> PIRRecordBytes for RecordBytesImpl<LEN> {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        match bytes.try_into() {
+            Ok(bytes) => Some(Self { it: bytes }),
+            Err(_) => None,
+        }
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        &self.it
     }
 }
 
@@ -451,11 +509,16 @@ respire_impl!(PIR, {
 
     // Public types & constants
     type RecordBytes = RecordBytesImpl<BYTES_PER_RECORD>;
+    const BYTES_PER_RECORD: usize = BYTES_PER_RECORD;
     const NUM_RECORDS: usize = Self::DB_SIZE;
     const BATCH_SIZE: usize = BATCH_SIZE;
 
     fn print_summary() {
-        eprintln!("RESPIRE with {} records", Self::NUM_RECORDS);
+        eprintln!(
+            "RESPIRE with {} bytes x {} records",
+            Self::BYTES_PER_RECORD,
+            Self::NUM_RECORDS
+        );
         eprintln!("Parameters: {:#?}", Self::params());
         eprintln!(
             "Public param size: {:.3} KiB",
@@ -581,8 +644,10 @@ respire_impl!(PIR, {
             let mut rng = ChaCha20Rng::from_entropy();
             let mut result = Matrix::zero();
             for i in 0..N_VEC {
-                result[(i, 0)] =
-                    IntModCycloEval::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+                result[(i, 0)] = IntModCycloEval::rand_discrete_gaussian::<
+                    _,
+                    SECRET_WIDTH_SWITCH_MILLIONTHS,
+                >(&mut rng);
             }
             result
         };
@@ -950,12 +1015,17 @@ respire_impl!(Respire, {
             T_AUTO_GSW,
             Z_REGEV_TO_GSW,
             T_REGEV_TO_GSW,
+            Z_SCAL_TO_VEC,
+            T_SCAL_TO_VEC,
             BATCH_SIZE,
             N_VEC,
-            T_SCAL_TO_VEC,
-            Z_SCAL_TO_VEC,
             M_REGEV_TO_GSW,
-            NOISE_WIDTH_MILLIONTHS,
+            ERROR_WIDTH_MILLIONTHS,
+            ERROR_WIDTH_VEC_MILLIONTHS,
+            ERROR_WIDTH_SWITCH_MILLIONTHS,
+            SECRET_BOUND,
+            SECRET_WIDTH_VEC_MILLIONTHS,
+            SECRET_WIDTH_SWITCH_MILLIONTHS,
             P,
             D_RECORD,
             NU1,
@@ -972,7 +1042,16 @@ respire_impl!(Respire, {
     fn params_error_rate_estimate() -> f64 {
         info!("*** Error estimates (bits) ***");
         // We use square subgaussian widths as units
-        let sigma_sq: f64 = ((NOISE_WIDTH_MILLIONTHS as f64) / 1_000_000_f64).powi(2);
+        let error_width_sq: f64 = ((ERROR_WIDTH_MILLIONTHS as f64) / 1_000_000_f64).powi(2);
+        let error_width_vec_sq: f64 = ((ERROR_WIDTH_VEC_MILLIONTHS as f64) / 1_000_000_f64).powi(2);
+        let error_width_switch_sq: f64 =
+            ((ERROR_WIDTH_SWITCH_MILLIONTHS as f64) / 1_000_000_f64).powi(2);
+        let secret_bound_sq: f64 = (SECRET_BOUND as f64).powi(2);
+        let secret_width_vec_sq: f64 =
+            ((SECRET_WIDTH_VEC_MILLIONTHS as f64) / 1_000_000_f64).powi(2);
+        let secret_width_switch_sq: f64 =
+            ((SECRET_WIDTH_SWITCH_MILLIONTHS as f64) / 1_000_000_f64).powi(2);
+
         let log_d: usize = ceil_log(2, D as u64);
 
         let e_to_bits = |e: f64| -> f64 { e.log2() / 2_f64 };
@@ -1004,25 +1083,22 @@ respire_impl!(Respire, {
             e_sq + ((2usize.pow(depth as u32) - 1) as f64)
                 * (D as f64)
                 * gadget_factor(t_auto, z_auto)
-                * sigma_sq
+                * error_width_sq
         };
 
-        info!("Initial: {}", e_to_bits(sigma_sq));
+        info!("Initial: {}", e_to_bits(error_width_sq));
 
         // Query expansion
-        let e_reg = proj_noise(sigma_sq, T_AUTO_REGEV, Z_AUTO_REGEV, log_d);
+        let e_reg = proj_noise(error_width_sq, T_AUTO_REGEV, Z_AUTO_REGEV, log_d);
         info!("Query expand regev: {}", e_to_bits(e_reg));
-        let e_gsw_raw = proj_noise(sigma_sq, T_AUTO_GSW, Z_AUTO_GSW, log_d);
+        let e_gsw_raw = proj_noise(error_width_sq, T_AUTO_GSW, Z_AUTO_GSW, log_d);
         info!("Query expand GSW (raw): {}", e_to_bits(e_gsw_raw));
         let e_gsw = {
             // Regev to GSW
-            // TODO noise: figure out what value should be here. We want |s| <= factor * sigma.
-            // 2048 * 2exp(-3pi) = 0.331. So ~2/3 of random secrets have factor <= 3.
-            let secret_norm_factor = 3_f64;
-            let initial_component = (D as f64) * e_gsw_raw * secret_norm_factor * sigma_sq;
+            let initial_component = (D as f64) * e_gsw_raw * secret_bound_sq;
             let gadget_component =
                 // m = 2t; t is absorbed into gadget_factor()
-                2_f64 * (D as f64) * gadget_factor(T_REGEV_TO_GSW, Z_REGEV_TO_GSW) * sigma_sq;
+                2_f64 * (D as f64) * gadget_factor(T_REGEV_TO_GSW, Z_REGEV_TO_GSW) * error_width_sq;
             let e_converted = initial_component + gadget_component;
             e_converted
         };
@@ -1056,8 +1132,8 @@ respire_impl!(Respire, {
         // Vector packing
         let e_pack_vec = {
             // Scalar to vector conversion
-            let e_one =
-                e_pack_ring + (D as f64) * gadget_factor(T_SCAL_TO_VEC, Z_SCAL_TO_VEC) * sigma_sq;
+            let e_one = e_pack_ring
+                + (D as f64) * gadget_factor(T_SCAL_TO_VEC, Z_SCAL_TO_VEC) * error_width_vec_sq;
             info!("Vector packing (one ring elem): {}", e_to_bits(e_one));
 
             let vec_num_elems = min(
@@ -1081,12 +1157,16 @@ respire_impl!(Respire, {
             (Q as f64).log2() - (P as f64).log2() - e_to_bits(e_preswitch) - 3_f64 // 3 bits = 8 widths
         );
         assert_eq!(Z_SWITCH, 2);
+        let e_preswitch = 8_f64 * e_preswitch;
 
         let e_gadget = e_preswitch * (Q_SWITCH1 as f64).powi(2) / (Q as f64).powi(2)
             + (Q_SWITCH1 as f64).powi(2) / (4_f64 * (Q_SWITCH2 as f64).powi(2))
-                * ((D as f64) * sigma_sq
-                    + (D_SWITCH as f64) * sigma_sq
-                    + 4_f64 * (D as f64) * gadget_factor(T_SWITCH, Z_SWITCH) * sigma_sq);
+                * ((D as f64) * secret_width_vec_sq
+                    + (D_SWITCH as f64) * secret_width_switch_sq
+                    + 4_f64
+                        * (D as f64)
+                        * gadget_factor(T_SWITCH, Z_SWITCH)
+                        * error_width_switch_sq);
         let e_round = 1_f64;
 
         info!(
@@ -1133,9 +1213,12 @@ respire_impl!(Respire, {
     }
 
     fn params_response_one_size(trunc_len: usize) -> usize {
-        let log_q1 = (Q_SWITCH1 as f64).log2();
-        let log_q2 = (Q_SWITCH2 as f64).log2();
-        ((D_SWITCH as f64) * (log_q2 + (trunc_len as f64) * log_q1) / 8_f64).ceil() as usize
+        // Technically we can do ceil(d * (log(q2) + len * log(q1)) by packing into a single large integer.
+        // But for simplicity assume each IntMod<Q1> / IntMod<Q2> is serialized individually.
+        let log_q1 = ceil_log(2, Q_SWITCH1);
+        let log_q2 = ceil_log(2, Q_SWITCH2);
+        ((D_SWITCH as f64) * (log_q2 as f64 + (trunc_len as f64) * log_q1 as f64) / 8_f64).ceil()
+            as usize
     }
 });
 
@@ -1535,13 +1618,22 @@ respire_impl!({
 
     pub fn encode_setup() -> <Self as Respire>::RingQFast {
         let mut rng = ChaCha20Rng::from_entropy();
-        <Self as Respire>::RingQFast::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng)
+        let mut result = <Self as Respire>::RingQ::zero();
+        for coeff in result.coeff.iter_mut() {
+            *coeff = IntMod::from(rng.gen_range(-(SECRET_BOUND as i64)..(SECRET_BOUND as i64)));
+        }
+        <Self as Respire>::RingQFast::from(&result)
     }
 
     pub fn encode_vec_setup() -> <Self as Respire>::VecEncodingKey {
+        let mut rng = ChaCha20Rng::from_entropy();
         let mut result = Matrix::zero();
         for i in 0..N_VEC {
-            result[(i, 0)] = Self::encode_setup();
+            result[(i, 0)] = <Self as Respire>::RingQFast::from(
+                &<Self as Respire>::RingQ::rand_discrete_gaussian::<_, SECRET_WIDTH_VEC_MILLIONTHS>(
+                    &mut rng,
+                ),
+            );
         }
         result
     }
@@ -1553,8 +1645,10 @@ respire_impl!({
         let mut rng = ChaCha20Rng::from_entropy();
         let mut c = Matrix::zero();
         c[(0, 0)] = <Self as Respire>::RingQFast::rand_uniform(&mut rng);
-        let e = <Self as Respire>::RingQFast::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(
-            &mut rng,
+        let e = <Self as Respire>::RingQFast::from(
+            &<Self as Respire>::RingQ::rand_discrete_gaussian::<_, ERROR_WIDTH_MILLIONTHS>(
+                &mut rng,
+            ),
         );
         let mut c1 = &c[(0, 0)] * s_encode;
         c1 += &e;
@@ -1573,8 +1667,10 @@ respire_impl!({
             let mut seeded_rng = ChaCha20Rng::from_seed(seed);
             <Self as Respire>::RingQFast::rand_uniform(&mut seeded_rng)
         };
-        let e = <Self as Respire>::RingQFast::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(
-            &mut rng,
+        let e = <Self as Respire>::RingQFast::from(
+            &<Self as Respire>::RingQ::rand_discrete_gaussian::<_, ERROR_WIDTH_MILLIONTHS>(
+                &mut rng,
+            ),
         );
         let mut c1 = &c0 * s_encode;
         c1 += &e;
@@ -1595,13 +1691,34 @@ respire_impl!({
         result
     }
 
+    pub fn rand_discrete_gaussian_matrix<
+        const WIDTH_MILLIONTHS: u64,
+        const N: usize,
+        const M: usize,
+        T: Rng,
+    >(
+        rng: &mut T,
+    ) -> Matrix<N, M, <Self as Respire>::RingQFast> {
+        let mut result = Matrix::zero();
+        for r in 0..N {
+            for c in 0..M {
+                result[(r, c)] = <Self as Respire>::RingQFast::from(
+                    &<Self as Respire>::RingQ::rand_discrete_gaussian::<_, WIDTH_MILLIONTHS>(rng),
+                );
+            }
+        }
+        result
+    }
+
     pub fn encode_vec_regev(
         s_vec: &<Self as Respire>::VecEncodingKey,
         mu: &Matrix<N_VEC, 1, <Self as Respire>::RingQ>,
     ) -> <Self as Respire>::VecRegevCiphertext {
         let mut rng = ChaCha20Rng::from_entropy();
         let c_r = <Self as Respire>::RingQFast::rand_uniform(&mut rng);
-        let e = Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+        let e = Self::rand_discrete_gaussian_matrix::<ERROR_WIDTH_VEC_MILLIONTHS, N_VEC, 1, _>(
+            &mut rng,
+        );
         let mut c_m = s_vec * &c_r;
         c_m += &e;
         c_m += &mu.map_ring(|r| <Self as Respire>::RingQFast::from(r));
@@ -1628,8 +1745,8 @@ respire_impl!({
     ) -> <Self as Respire>::GSWCiphertext {
         let mut rng = ChaCha20Rng::from_entropy();
         let a_t: Matrix<1, M_GSW, <Self as Respire>::RingQFast> = Matrix::rand_uniform(&mut rng);
-        let e_mat: Matrix<1, M_GSW, <Self as Respire>::RingQFast> =
-            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+        let e_mat =
+            Self::rand_discrete_gaussian_matrix::<ERROR_WIDTH_MILLIONTHS, 1, M_GSW, _>(&mut rng);
         let c_mat: Matrix<2, M_GSW, <Self as Respire>::RingQFast> =
             &Matrix::stack(&a_t, &(&(&a_t * s_encode) + &e_mat))
                 + &(&build_gadget::<<Self as Respire>::RingQFast, 2, M_GSW, Z_GSW, T_GSW>()
@@ -1698,8 +1815,8 @@ respire_impl!({
     ) -> <Self as Respire>::AutoKey<LEN> {
         let mut rng = ChaCha20Rng::from_entropy();
         let a_t: Matrix<1, LEN, <Self as Respire>::RingQFast> = Matrix::rand_uniform(&mut rng);
-        let e_t: Matrix<1, LEN, <Self as Respire>::RingQFast> =
-            Matrix::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(&mut rng);
+        let e_t =
+            Self::rand_discrete_gaussian_matrix::<ERROR_WIDTH_MILLIONTHS, 1, LEN, _>(&mut rng);
         let mut bottom = &a_t * s_encode;
         bottom += &e_t;
         bottom -= &(&build_gadget::<<Self as Respire>::RingQFast, 1, LEN, BASE, LEN>()
@@ -1779,10 +1896,9 @@ respire_impl!({
         let mut rng = ChaCha20Rng::from_entropy();
         let a_t = Matrix::<1, M_REGEV_TO_GSW, <Self as Respire>::RingQFast>::rand_uniform(&mut rng);
         let e_mat =
-            Matrix::<1, M_REGEV_TO_GSW, <Self as Respire>::RingQFast>::rand_discrete_gaussian::<
-                _,
-                NOISE_WIDTH_MILLIONTHS,
-            >(&mut rng);
+            Self::rand_discrete_gaussian_matrix::<ERROR_WIDTH_MILLIONTHS, 1, M_REGEV_TO_GSW, _>(
+                &mut rng,
+            );
         let mut bottom = &a_t * s_encode;
         bottom += &e_mat;
         let g_vec = build_gadget::<
@@ -1837,7 +1953,7 @@ respire_impl!({
         let e_mat =
             Matrix::<N_VEC, T_SWITCH, IntModCycloEval<D, Q_SWITCH2>>::rand_discrete_gaussian::<
                 _,
-                NOISE_WIDTH_MILLIONTHS,
+                ERROR_WIDTH_SWITCH_MILLIONTHS,
             >(&mut rng);
         let mut b_mat = &(-s_from)
             * &build_gadget::<IntModCycloEval<D, Q_SWITCH2>, 1, T_SWITCH, Z_SWITCH, T_SWITCH>();
@@ -1859,11 +1975,12 @@ respire_impl!({
 
             let a_t =
                 Matrix::<1, T_SCAL_TO_VEC, <Self as Respire>::RingQFast>::rand_uniform(&mut rng);
-            let e_mat =
-                Matrix::<N_VEC, T_SCAL_TO_VEC, <Self as Respire>::RingQFast>::rand_discrete_gaussian::<
-                    _,
-                    NOISE_WIDTH_MILLIONTHS,
-                >(&mut rng);
+            let e_mat = Self::rand_discrete_gaussian_matrix::<
+                ERROR_WIDTH_VEC_MILLIONTHS,
+                N_VEC,
+                T_SCAL_TO_VEC,
+                _,
+            >(&mut rng);
             let mut bottom = s_vec * &a_t;
             bottom += &e_mat;
             let embedding = &(&unit * s_scal)

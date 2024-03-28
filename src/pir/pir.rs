@@ -1,3 +1,8 @@
+pub trait PIRRecordBytes: Clone + Default {
+    fn from_bytes(bytes: &[u8]) -> Option<Self>;
+    fn as_bytes(&self) -> &[u8];
+}
+
 pub trait PIR {
     // Associated types
     type QueryKey;
@@ -9,8 +14,8 @@ pub trait PIR {
     type State;
 
     // A single raw record
-    type RecordBytes: Clone + Default;
-
+    type RecordBytes: PIRRecordBytes;
+    const BYTES_PER_RECORD: usize;
     const NUM_RECORDS: usize;
     const BATCH_SIZE: usize;
 

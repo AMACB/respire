@@ -255,22 +255,6 @@ impl<const D: usize, const N1: u64, const N2: u64> RandUniformSampled
     }
 }
 
-impl<const D: usize, const N1: u64, const N2: u64> RandZeroOneSampled
-    for IntModCycloCRTEval<D, N1, N2>
-{
-    fn rand_zero_one<T: Rng>(rng: &mut T) -> Self {
-        (&IntModCycloCRT::rand_zero_one(rng)).into()
-    }
-}
-
-impl<const D: usize, const N1: u64, const N2: u64> RandDiscreteGaussianSampled
-    for IntModCycloCRTEval<D, N1, N2>
-{
-    fn rand_discrete_gaussian<T: Rng, const NOISE_WIDTH_MILLIONTHS: u64>(rng: &mut T) -> Self {
-        (&IntModCycloCRT::rand_discrete_gaussian::<_, NOISE_WIDTH_MILLIONTHS>(rng)).into()
-    }
-}
-
 // Other polynomial-specific operations.
 
 impl<const D: usize, const N1: u64, const N2: u64> IntModCycloCRTEval<D, N1, N2> {

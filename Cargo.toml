@@ -31,14 +31,5 @@ harness = false
 name = "pir"
 harness = false
 
-[[bin]]
-name = "cuckoo32"
-
-[[bin]]
-name = "cuckoo256"
-
-[[bin]]
-name = "single_record"
-
 [dev-dependencies]
 criterion = "0.5.1"

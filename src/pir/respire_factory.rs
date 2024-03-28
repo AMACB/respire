@@ -1,6 +1,5 @@
-use crate::pir::cuckoo_respire::CuckooRespireImpl;
-use crate::pir::pir::PIR;
-use crate::pir::respire::{RecordBytesImpl, RespireImpl, RespireParams, RespireParamsExpanded};
+use crate::pir::pir::{PIRRecordBytes, PIR};
+use crate::pir::respire::{RespireParams, RespireParamsExpanded};
 use crate::respire;
 use itertools::Itertools;
 use log::info;
@@ -10,91 +9,68 @@ use std::time::Instant;
 // Parameter factory functions
 //
 
-pub const fn respire_512(n_vec: usize, batch_size: usize) -> RespireParamsExpanded {
-    RespireParams {
-        Q_A: 268369921,
-        Q_B: 249561089,
-        D: 2048,
-        T_GSW: 8,
-        T_REGEV_TO_GSW: 4,
-        T_AUTO_REGEV: 4,
-        T_AUTO_GSW: 16,
-        BATCH_SIZE: batch_size,
-        N_VEC: n_vec,
-        T_SCAL_TO_VEC: 8,
-        NOISE_WIDTH_MILLIONTHS: 6_400_000,
-        P: 17,
-        D_RECORD: 512,
-        NU1: 9,
-        NU2: 9,
-        Q_SWITCH1: 6 * 17,
-        Q_SWITCH2: 163841, // 17.32 bits
-        D_SWITCH: 512,
-        T_SWITCH: 18,
+#[allow(non_snake_case)]
+pub struct FactoryParams {
+    pub BATCH_SIZE: usize,
+    pub N_VEC: usize,
+    pub P: u64,
+    pub D_RECORD: usize,
+    pub NU1: usize,
+    pub NU2: usize,
+    pub Q_SWITCH1: u64,
+    pub Q_SWITCH2: u64,
+    pub D_SWITCH: usize,
+    pub WIDTH_SWITCH_MILLIONTHS: u64,
+}
+
+impl FactoryParams {
+    pub const fn expand(&self) -> RespireParamsExpanded {
+        RespireParams {
+            Q_A: 268369921,
+            Q_B: 249561089,
+            D: 2048,
+            T_GSW: 8,
+            T_REGEV_TO_GSW: 4,
+            T_AUTO_REGEV: 4,
+            T_AUTO_GSW: 16,
+            T_SCAL_TO_VEC: 8,
+            BATCH_SIZE: self.BATCH_SIZE,
+            N_VEC: self.N_VEC,
+            ERROR_WIDTH_MILLIONTHS: 9_900_000,
+            ERROR_WIDTH_VEC_MILLIONTHS: 9_900_000,
+            ERROR_WIDTH_SWITCH_MILLIONTHS: self.WIDTH_SWITCH_MILLIONTHS,
+            SECRET_BOUND: 7,
+            SECRET_WIDTH_VEC_MILLIONTHS: 9_900_000,
+            SECRET_WIDTH_SWITCH_MILLIONTHS: self.WIDTH_SWITCH_MILLIONTHS,
+            P: self.P,
+            D_RECORD: self.D_RECORD,
+            NU1: self.NU1,
+            NU2: self.NU2,
+            Q_SWITCH1: self.Q_SWITCH1,
+            Q_SWITCH2: self.Q_SWITCH2,
+            D_SWITCH: self.D_SWITCH,
+        }
+        .expand()
     }
-    .expand()
 }
-
-pub const fn respire_1024(n_vec: usize, batch_size: usize) -> RespireParamsExpanded {
-    RespireParams {
-        Q_A: 268369921,
-        Q_B: 249561089,
-        D: 2048,
-        T_GSW: 8,
-        T_REGEV_TO_GSW: 4,
-        T_AUTO_REGEV: 4,
-        T_AUTO_GSW: 16,
-        BATCH_SIZE: batch_size,
-        N_VEC: n_vec,
-        T_SCAL_TO_VEC: 8,
-        NOISE_WIDTH_MILLIONTHS: 6_400_000,
-        P: 257,
-        D_RECORD: 256,
-        NU1: 9,
-        NU2: 8,
-        Q_SWITCH1: 12 * 257,
-        Q_SWITCH2: 4169729, // 21.99 bits
-        D_SWITCH: 1024,
-        T_SWITCH: 22,
-    }
-    .expand()
-}
-
-pub const fn respire_1024_b32_base() -> RespireParamsExpanded {
-    let mut params = respire_1024(6, 49);
-    params.NU1 -= 1;
-    params.NU2 -= 3;
-    params
-}
-
-pub const fn respire_1024_b256_base() -> RespireParamsExpanded {
-    let mut params = respire_1024(9, 398);
-    params.NU1 -= 2;
-    params.NU2 -= 5;
-    params
-}
-
-//
-// Parameter instantiations
-//
 
 // For quick testing
 
-pub const RESPIRE_TEST_PARAMS: RespireParamsExpanded = respire_512(1, 1);
+pub const RESPIRE_TEST_PARAMS: RespireParamsExpanded = FactoryParams {
+    BATCH_SIZE: 1,
+    N_VEC: 1,
+    P: 16,
+    D_RECORD: 512,
+    NU1: 9,
+    NU2: 9,
+    Q_SWITCH1: 8 * 16,
+    Q_SWITCH2: 1032193, // 19.97 bits
+    D_SWITCH: 512,
+    WIDTH_SWITCH_MILLIONTHS: 46_000_000,
+}
+.expand();
+
 pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
-
-// Known good parameters
-
-pub const RESPIRE_SINGLE_RECORD_PARAMS: RespireParamsExpanded = respire_512(1, 1);
-pub type RespireSingleRecord = respire!(RESPIRE_SINGLE_RECORD_PARAMS);
-
-pub const RESPIRE_BATCH32_BASE_PARAMS: RespireParamsExpanded = respire_1024_b32_base();
-pub type RespireBatch32Base = respire!(RESPIRE_BATCH32_BASE_PARAMS);
-pub type RespireCuckoo32 = CuckooRespireImpl<32, 49, { 2usize.pow(20) }, RespireBatch32Base>;
-
-pub const RESPIRE_BATCH256_BASE_PARAMS: RespireParamsExpanded = respire_1024_b256_base();
-pub type RespireBatch256Base = respire!(RESPIRE_BATCH256_BASE_PARAMS);
-pub type RespireCuckoo256 = CuckooRespireImpl<256, 398, { 2usize.pow(20) }, RespireBatch256Base>;
 
 #[cfg(not(target_feature = "avx2"))]
 pub fn has_avx2() -> bool {
@@ -117,9 +93,7 @@ pub fn has_avx2() -> bool {
 //     extract_time: Duration,
 // }
 
-pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item = usize>>(
-    iter: I,
-) {
+pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
     eprintln!("Running PIR...");
     eprintln!(
         "AVX2 is {}",
@@ -133,9 +107,9 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
     ThePIR::print_summary();
     eprintln!("========");
 
-    let mut records: Vec<RecordBytesImpl<256>> = Vec::with_capacity(ThePIR::NUM_RECORDS);
+    let mut records: Vec<ThePIR::RecordBytes> = Vec::with_capacity(ThePIR::NUM_RECORDS);
     for i in 0..ThePIR::NUM_RECORDS as u64 {
-        let mut record = [0_u8; 256];
+        let mut record = vec![0_u8; ThePIR::BYTES_PER_RECORD];
         record[0] = (i % 256) as u8;
         record[1] = ((i / 256) % 256) as u8;
         record[2] = 42_u8;
@@ -147,20 +121,8 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
         // for i in 8..256 {
         //     record[i] = random();
         // }
-        records.push(RecordBytesImpl { it: record });
+        records.push(ThePIR::RecordBytes::from_bytes(record.as_slice()).unwrap());
     }
-
-    // FIXME: both of these are out of date. The former is replaced by the jupyter notebook though?
-
-    // eprintln!(
-    //     "Estimated relative noise: 2^({})",
-    //     RESPIRE_TEST_PARAMS.noise_estimate().log2()
-    // );
-
-    // eprintln!(
-    //     "Relative noise threshold: 2^({})",
-    //     RESPIRE_TEST_PARAMS.relative_noise_threshold().log2()
-    // );
 
     let pre_start = Instant::now();
     let (db, db_hint) = ThePIR::encode_db(records.iter().cloned());
@@ -191,12 +153,12 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
         let extract_total = extract_end - extract_start;
 
         for (idx, decoded_record) in indices.iter().copied().zip(extracted) {
-            if decoded_record != records[idx] {
+            if decoded_record.as_bytes() != records[idx].as_bytes() {
                 eprintln!("**** **** **** **** ERROR **** **** **** ****");
                 eprintln!("protocol failed");
-                dbg!(idx);
-                dbg!(&decoded_record);
-                dbg!(&records[idx]);
+                eprintln!("idx = {}", idx);
+                eprintln!("decoded record = {:?}", decoded_record.as_bytes());
+                eprintln!("actual record = {:?}", records[idx].as_bytes());
             }
         }
 
@@ -215,16 +177,15 @@ pub fn run_pir<ThePIR: PIR<RecordBytes = RecordBytesImpl<256>>, I: Iterator<Item
 
 #[macro_export]
 macro_rules! generate_main {
-    ($name: path) => {
-        type ThePIR = $name;
+    ($name: ident) => {
         fn main() {
             use rand::{Rng, SeedableRng};
             use rand_chacha::ChaCha20Rng;
             use $crate::pir::pir::PIR;
-            use $crate::pir::respire_params::run_pir;
+            use $crate::pir::respire_factory::run_pir;
             env_logger::init();
             let mut rng = ChaCha20Rng::from_entropy();
-            run_pir::<ThePIR, _>((0..).map(|_| rng.gen_range(0_usize..ThePIR::NUM_RECORDS)));
+            run_pir::<$name, _>((0..).map(|_| rng.gen_range(0_usize..$name::NUM_RECORDS)));
         }
     };
 }
