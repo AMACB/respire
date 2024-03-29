@@ -24,15 +24,15 @@ pub struct FactoryParams {
 }
 
 impl FactoryParams {
-    pub const fn expand(&self) -> RespireParamsExpanded {
+    pub const fn expand(&self) -> RespireParams {
         RespireParams {
             Q_A: 268369921,
             Q_B: 249561089,
             D: 2048,
             T_GSW: 8,
             T_REGEV_TO_GSW: 4,
-            T_AUTO_REGEV: 4,
-            T_AUTO_GSW: 16,
+            T_AUTO_REGEV: 3,
+            T_AUTO_GSW: 9,
             T_SCAL_TO_VEC: 8,
             BATCH_SIZE: self.BATCH_SIZE,
             N_VEC: self.N_VEC,
@@ -50,7 +50,6 @@ impl FactoryParams {
             Q_SWITCH2: self.Q_SWITCH2,
             D_SWITCH: self.D_SWITCH,
         }
-        .expand()
     }
 }
 
@@ -68,6 +67,7 @@ pub const RESPIRE_TEST_PARAMS: RespireParamsExpanded = FactoryParams {
     D_SWITCH: 512,
     WIDTH_SWITCH_MILLIONTHS: 46_000_000,
 }
+.expand()
 .expand();
 
 pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);

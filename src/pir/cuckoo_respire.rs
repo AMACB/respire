@@ -1,7 +1,7 @@
 use crate::pir::pir::PIR;
 use crate::pir::respire::Respire;
 use itertools::Itertools;
-use log::info;
+use log::{info, warn};
 use rand::{thread_rng, Rng};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -72,7 +72,7 @@ impl<
         );
 
         let (resp_size, resp_full_vecs, resp_rem) = Self::params_response_info();
-        eprintln!(
+        info!(
             "Response: {} record(s) => {} ring elem(s) => {} full vector(s), {} remainder",
             Self::NUM_BUCKET,
             Self::NUM_BUCKET.div_ceil(BaseRespire::PACK_RATIO_RESPONSE),
@@ -117,6 +117,13 @@ impl<
             max_count,
             BaseRespire::DB_SIZE
         );
+        if (max_count as f64 / BaseRespire::DB_SIZE as f64) < 2f64 / 3f64 {
+            warn!(
+                "Buckets are not very full ({} / {})",
+                max_count,
+                BaseRespire::DB_SIZE
+            );
+        }
         assert!(max_count <= BaseRespire::DB_SIZE);
 
         for b in bucket_layouts.iter_mut() {

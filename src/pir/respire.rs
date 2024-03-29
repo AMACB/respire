@@ -530,13 +530,14 @@ respire_impl!(PIR, {
         );
 
         let (resp_size, resp_full_vecs, resp_rem) = Self::params_response_info();
-        eprintln!(
+        info!(
             "Response: {} record(s) => {} ring elem(s) => {} full vector(s), {} remainder",
             Self::BATCH_SIZE,
             Self::BATCH_SIZE.div_ceil(Self::PACK_RATIO_RESPONSE),
             resp_full_vecs,
             resp_rem
         );
+        
         eprintln!(
             "Response size (batch): {:.3} KiB",
             resp_size as f64 / 1024_f64
@@ -1116,13 +1117,14 @@ respire_impl!(Respire, {
         let e_rot = select_noise(e_gsw, e_fold, Self::NU3 + Self::NU4);
         info!("Rotate select: {}", e_to_bits(e_rot));
 
-        // Proj/select (NU4)
-        let e_proj = proj_noise(e_rot, T_AUTO_GSW, Z_AUTO_GSW, Self::NU3 + Self::NU4);
-        info!("Project: {}", e_to_bits(e_proj));
-
-        // Ring packing
+        // Proj/select (NU4) + ring packing
+        let e_proj_component = proj_noise(0_f64, T_AUTO_GSW, Z_AUTO_GSW, Self::NU3 + Self::NU4);
+        info!(
+            "    Projection *new* error component: {}",
+            e_to_bits(e_proj_component)
+        );
         let ring_num_records = min(Self::BATCH_SIZE, Self::PACK_RATIO_RESPONSE);
-        let e_pack_ring = e_proj * ring_num_records as f64;
+        let e_pack_ring = e_rot + e_proj_component * ring_num_records as f64;
         info!(
             "Ring packing ({} record(s)): {}",
             ring_num_records,
@@ -1159,31 +1161,34 @@ respire_impl!(Respire, {
         assert_eq!(Z_SWITCH, 2);
         let e_preswitch = 8_f64 * e_preswitch;
 
-        let e_gadget = e_preswitch * (Q_SWITCH1 as f64).powi(2) / (Q as f64).powi(2)
-            + (Q_SWITCH1 as f64).powi(2) / (4_f64 * (Q_SWITCH2 as f64).powi(2))
-                * ((D as f64) * secret_width_vec_sq
-                    + (D_SWITCH as f64) * secret_width_switch_sq
-                    + 4_f64
-                        * (D as f64)
-                        * gadget_factor(T_SWITCH, Z_SWITCH)
-                        * error_width_switch_sq);
+        let e_subg_preswitch = e_preswitch * (Q_SWITCH1 as f64).powi(2) / (Q as f64).powi(2);
+        let e_subg_gadget = (Q_SWITCH1 as f64).powi(2) / (4_f64 * (Q_SWITCH2 as f64).powi(2))
+            * ((D as f64) * secret_width_vec_sq
+                + (D_SWITCH as f64) * secret_width_switch_sq
+                + 4_f64 * (D as f64) * gadget_factor(T_SWITCH, Z_SWITCH) * error_width_switch_sq);
+        let e_subg = e_subg_preswitch + e_subg_gadget;
         let e_round = 1_f64;
+        let threshold = Q_SWITCH1 / (2 * P);
 
         info!(
             "Switch rounding term noise bound (absolute / threshold): {} / {}",
-            e_round,
-            Q_SWITCH1 / (2 * P)
+            e_round, threshold
         );
+
+        info!("Switch subgaussian term noise widths (absolute / threshold):");
+
         info!(
-            "Switch gadget term noise width (absolute / threshold): {:.3} / {}",
-            e_gadget.sqrt(),
-            Q_SWITCH1 / (2 * P)
+            "    preswitch: {:.3} / {}",
+            e_subg_preswitch.sqrt(),
+            threshold
         );
+        info!("    gadget: {:.3} / {}", e_subg_gadget.sqrt(), threshold);
+        info!("    total: {:.3} / {}", e_subg.sqrt(), threshold);
 
         use std::f64::consts::PI;
         let error_rate = 2_f64
             * (D_SWITCH as f64)
-            * f64::exp(-PI * (0.5_f64 * (Q_SWITCH1 / P) as f64 - e_round).powi(2) / e_gadget);
+            * f64::exp(-PI * (0.5_f64 * (Q_SWITCH1 / P) as f64 - e_round).powi(2) / e_subg);
 
         info!("Error rate: 2^({})", error_rate.log2());
         info!("***");
@@ -1199,6 +1204,23 @@ respire_impl!(Respire, {
 
         let compress_elems = N_VEC * T_SWITCH;
         let q2_elem_size = D * ceil_log(2, Q_SWITCH2) / 8;
+
+        info!(
+            "automorph pp: {:.3} KiB",
+            (automorph_elems * q_elem_size) as f64 / 1024_f64
+        );
+        info!(
+            "regev to GSW pp: {:.3} KiB",
+            (reg_to_gsw_elems * q_elem_size) as f64 / 1024_f64
+        );
+        info!(
+            "scal to vec pp: {:.3} KiB",
+            (scal_to_vec_elems * q_elem_size) as f64 / 1024_f64
+        );
+        info!(
+            "compress pp: {:.3} KiB",
+            (compress_elems * q2_elem_size) as f64 / 1024_f64
+        );
         return (automorph_elems + reg_to_gsw_elems + scal_to_vec_elems) * q_elem_size
             + compress_elems * q2_elem_size;
     }
