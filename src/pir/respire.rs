@@ -537,7 +537,7 @@ respire_impl!(PIR, {
             resp_full_vecs,
             resp_rem
         );
-        
+
         eprintln!(
             "Response size (batch): {:.3} KiB",
             resp_size as f64 / 1024_f64
@@ -561,22 +561,34 @@ respire_impl!(PIR, {
         assert_eq!(records_iter.len(), Self::DB_SIZE);
         let records_encoded_iter = records_iter.map(|r| Self::encode_record(&r));
 
-        let records_eval: Vec<<Self as Respire>::RingQFast> = records_encoded_iter
-            .chunks(Self::PACK_RATIO_DB)
-            .into_iter()
-            .map(|chunk| {
-                let mut record_packed = IntModCyclo::<D, P>::zero();
-                for (record_in_chunk, record) in chunk.enumerate() {
-                    // Transpose so projection is more significant
-                    let packed_offset = reverse_bits(Self::PACK_RATIO_DB, record_in_chunk);
-                    for (coeff_idx, coeff) in record.coeff.iter().enumerate() {
-                        record_packed.coeff[Self::PACK_RATIO_DB * coeff_idx + packed_offset] =
-                            *coeff;
-                    }
+        assert!(Q_A <= u32::MAX as u64);
+        assert!(Q_B <= u32::MAX as u64);
+        assert_eq!(Self::DB_SIZE % Self::PACK_RATIO_DB, 0);
+
+        info!("Encoding DB...");
+        let mut records_eval = Vec::with_capacity(Self::DB_SIZE / Self::PACK_RATIO_DB);
+        for chunk in records_encoded_iter.chunks(Self::PACK_RATIO_DB).into_iter() {
+            let mut record_packed = IntModCyclo::<D, P>::zero();
+            for (record_in_chunk, record) in chunk.enumerate() {
+                // Transpose so projection is more significant
+                let packed_offset = reverse_bits(Self::PACK_RATIO_DB, record_in_chunk);
+                for (coeff_idx, coeff) in record.coeff.iter().enumerate() {
+                    record_packed.coeff[Self::PACK_RATIO_DB * coeff_idx + packed_offset] = *coeff;
                 }
-                <Self as Respire>::RingQFast::from(&record_packed.include_into::<Q>())
-            })
-            .collect();
+            }
+            let value = <Self as Respire>::RingQFast::from(&record_packed.include_into::<Q>());
+            let mut compressed_value = [0u64; D];
+            for i in 0..D {
+                compressed_value[i] = {
+                    let lo = u64::from(value.proj1.evals[i]);
+                    let hi = u64::from(value.proj2.evals[i]);
+                    (hi << 32) | lo
+                };
+            }
+            records_eval.push(compressed_value);
+        }
+
+        info!("Transposing DB...");
 
         #[cfg(not(target_feature = "avx2"))]
         {
@@ -592,12 +604,11 @@ respire_impl!(PIR, {
 
                     let to_idx = eval_vec_idx * Self::PACKED_DB_SIZE + db_idx_t;
                     let from_idx = eval_vec_idx;
-                    let lo = u64::from(records_eval[db_idx].proj1.evals[from_idx]);
-                    let hi = u64::from(records_eval[db_idx].proj2.evals[from_idx]);
-                    db[to_idx] = (hi << 32) | lo;
+                    db[to_idx] = records_eval[db_idx][from_idx];
                 }
             }
 
+            info!("Done processing DB");
             (db, ())
         }
 
@@ -619,9 +630,7 @@ respire_impl!(PIR, {
                     let mut db_vec: SimdVec = Aligned32([0_u64; 4]);
                     for lane in 0..SIMD_LANES {
                         let from_idx = eval_vec_idx * SIMD_LANES + lane;
-                        let lo = u64::from(records_eval[db_idx].proj1.evals[from_idx]);
-                        let hi = u64::from(records_eval[db_idx].proj2.evals[from_idx]);
-                        db_vec.0[lane] = (hi << 32) | lo;
+                        db_vec.0[lane] = records_eval[db_idx][from_idx];
                     }
 
                     let to_idx = eval_vec_idx * Self::PACKED_DB_SIZE + db_idx_t;
@@ -629,6 +638,7 @@ respire_impl!(PIR, {
                 }
             }
 
+            info!("Done processing DB");
             (db, ())
         }
     }
