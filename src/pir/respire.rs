@@ -555,19 +555,19 @@ respire_impl!(PIR, {
         )
     }
 
-    fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
-        records_iter: I,
+    #[inline]
+    fn encode_db<F: Fn(usize) -> Self::RecordBytes>(
+        records_generator: F,
     ) -> (Self::Database, Self::DatabaseHint) {
-        assert_eq!(records_iter.len(), Self::DB_SIZE);
-        let records_encoded_iter = records_iter.map(|r| Self::encode_record(&r));
+        let records_encoded_generator = |idx: usize| Self::encode_record(&records_generator(idx));
 
         assert!(Q_A <= u32::MAX as u64);
         assert!(Q_B <= u32::MAX as u64);
         assert_eq!(Self::DB_SIZE % Self::PACK_RATIO_DB, 0);
 
-        info!("Encoding DB...");
-        let mut records_eval = Vec::with_capacity(Self::DB_SIZE / Self::PACK_RATIO_DB);
-        for chunk in records_encoded_iter.chunks(Self::PACK_RATIO_DB).into_iter() {
+        let records_packed_generator = |chunk_idx: usize| {
+            let chunk = (Self::PACK_RATIO_DB * chunk_idx..Self::PACK_RATIO_DB * (chunk_idx + 1))
+                .map(|idx| records_encoded_generator(idx));
             let mut record_packed = IntModCyclo::<D, P>::zero();
             for (record_in_chunk, record) in chunk.enumerate() {
                 // Transpose so projection is more significant
@@ -577,23 +577,87 @@ respire_impl!(PIR, {
                 }
             }
             let value = <Self as Respire>::RingQFast::from(&record_packed.include_into::<Q>());
-            let mut compressed_value = [0u64; D];
+            let mut packed_value = [0u64; D];
             for i in 0..D {
-                compressed_value[i] = {
+                packed_value[i] = {
                     let lo = u64::from(value.proj1.evals[i]);
                     let hi = u64::from(value.proj2.evals[i]);
                     (hi << 32) | lo
                 };
             }
-            records_eval.push(compressed_value);
-        }
+            packed_value
+        };
 
-        info!("Transposing DB...");
+        // Quick and dirty buffered iterator implementation
+        struct BufferedRecordsIterator<T: Clone, F: Fn(usize) -> T, const N: usize> {
+            idx: usize,
+            size: usize,
+            buffer: Vec<T>,
+            source: F,
+        }
+        impl<T: Clone, F: Fn(usize) -> T, const N: usize> BufferedRecordsIterator<T, F, N> {
+            fn new(size: usize, source: F) -> Self {
+                let buffer = Vec::with_capacity(N);
+                Self {
+                    idx: 0,
+                    size,
+                    buffer,
+                    source,
+                }
+            }
+        }
+        impl<T: Clone, F: Fn(usize) -> T, const N: usize> Iterator for BufferedRecordsIterator<T, F, N> {
+            type Item = T;
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.idx >= self.size {
+                    None
+                } else {
+                    if self.idx % N == 0 {
+                        if self.buffer.len() == 0 {
+                            // First time
+                            for i in 0..N {
+                                if self.idx + i >= self.size {
+                                    break;
+                                }
+                                self.buffer.push((self.source)(self.idx + i));
+                            }
+                        } else {
+                            for i in 0..N {
+                                if self.idx + i >= self.size {
+                                    break;
+                                }
+                                self.buffer[i] = (self.source)(self.idx + i);
+                            }
+                        }
+                    }
+                    let result = self.buffer[self.idx % N].clone();
+                    self.idx += 1;
+                    Some(result)
+                }
+            }
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let rem = self.size - self.idx;
+                (rem, Some(rem))
+            }
+        }
+        impl<T: Clone, F: Fn(usize) -> T, const N: usize> ExactSizeIterator
+            for BufferedRecordsIterator<T, F, N>
+        {
+        }
+        // 16 MiB buffer, assuming d = 2048
+        let records_packed_iter = BufferedRecordsIterator::<_, _, 65536>::new(
+            Self::DB_SIZE / Self::PACK_RATIO_DB,
+            records_packed_generator,
+        );
+        assert_eq!(records_packed_iter.len(), Self::PACKED_DB_SIZE);
+
+        info!("Encoding DB...");
+        let mut db: Vec<SimdVec>;
 
         #[cfg(not(target_feature = "avx2"))]
         {
-            let mut db: Vec<SimdVec> = (0..(D * Self::PACKED_DB_SIZE)).map(|_| 0_u64).collect();
-            for db_idx in 0..Self::PACKED_DB_SIZE {
+            db = (0..(D * Self::PACKED_DB_SIZE)).map(|_| 0_u64).collect();
+            for (db_idx, record_packed) in records_packed_iter.enumerate() {
                 for eval_vec_idx in 0..D {
                     // Transpose the index
                     let (db_i, db_j) = (
@@ -604,21 +668,18 @@ respire_impl!(PIR, {
 
                     let to_idx = eval_vec_idx * Self::PACKED_DB_SIZE + db_idx_t;
                     let from_idx = eval_vec_idx;
-                    db[to_idx] = records_eval[db_idx][from_idx];
+                    db[to_idx] = record_packed[from_idx];
                 }
             }
-
-            info!("Done processing DB");
-            (db, ())
         }
 
         #[cfg(target_feature = "avx2")]
         {
-            let mut db: Vec<SimdVec> = (0..((D / SIMD_LANES) * Self::PACKED_DB_SIZE))
+            db = (0..((D / SIMD_LANES) * Self::PACKED_DB_SIZE))
                 .map(|_| Aligned32([0_u64; 4]))
                 .collect();
 
-            for db_idx in 0..Self::PACKED_DB_SIZE {
+            for (db_idx, record_packed) in records_packed_iter.enumerate() {
                 for eval_vec_idx in 0..(D / SIMD_LANES) {
                     // Transpose the index
                     let (db_i, db_j) = (
@@ -630,17 +691,17 @@ respire_impl!(PIR, {
                     let mut db_vec: SimdVec = Aligned32([0_u64; 4]);
                     for lane in 0..SIMD_LANES {
                         let from_idx = eval_vec_idx * SIMD_LANES + lane;
-                        db_vec.0[lane] = records_eval[db_idx][from_idx];
+                        db_vec.0[lane] = record_packed[from_idx];
                     }
 
                     let to_idx = eval_vec_idx * Self::PACKED_DB_SIZE + db_idx_t;
                     db[to_idx] = db_vec;
                 }
             }
-
-            info!("Done processing DB");
-            (db, ())
         }
+
+        info!("Done processing DB");
+        (db, ())
     }
 
     fn setup() -> (<Self as PIR>::QueryKey, <Self as PIR>::PublicParams) {
@@ -2040,7 +2101,7 @@ respire_impl!({
         (result_rand, result_embed)
     }
 
-    pub fn encode_record(bytes: &RecordBytesImpl<BYTES_PER_RECORD>) -> IntModCyclo<D_RECORD, P> {
+    pub fn encode_record(bytes: &RecordBytesImpl<BYTES_PER_RECORD>) -> <Self as Respire>::Record {
         let bit_iter = BitSlice::<u8, Msb0>::from_slice(&bytes.it);
         let p_bits = floor_log(2, P);
         let coeff = bit_iter
@@ -2051,7 +2112,7 @@ respire_impl!({
         IntModCyclo::from(coeff_slice)
     }
 
-    pub fn decode_record(record: &IntModCyclo<D_RECORD, P>) -> [u8; BYTES_PER_RECORD] {
+    pub fn decode_record(record: &<Self as Respire>::Record) -> [u8; BYTES_PER_RECORD] {
         let p_bits = floor_log(2, P);
         let bit_iter = record.coeff.iter().flat_map(|x| {
             u64::from(*x)

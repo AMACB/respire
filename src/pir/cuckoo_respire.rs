@@ -96,16 +96,12 @@ impl<
         )
     }
 
-    fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
-        records_iter: I,
+    fn encode_db<F: Fn(usize) -> Self::RecordBytes>(
+        records_generator: F,
     ) -> (Self::Database, Self::DatabaseHint) {
-        let record_count = records_iter.len();
-        assert_eq!(record_count, Self::NUM_RECORDS);
-
         // TODO the bucket layouts can be determined during setup since it is database independent
         let mut bucket_layouts = vec![Vec::with_capacity(BaseRespire::DB_SIZE); Self::NUM_BUCKET];
-        let records = records_iter.collect_vec();
-        for i in 0..records.len() {
+        for i in 0..Self::NUM_RECORDS {
             let (b1, b2, b3) = Self::idx_to_buckets(i);
             bucket_layouts[b1].push(Some(i));
             bucket_layouts[b2].push(Some(i));
@@ -134,11 +130,11 @@ impl<
 
         let mut result = Vec::with_capacity(Self::NUM_BUCKET);
         let zero = Self::RecordBytes::default();
-        for b in bucket_layouts.iter() {
-            let bucket_records = b
-                .iter()
-                .map(|x| x.map_or(zero.clone(), |i| records[i].clone()));
-            result.push(BaseRespire::encode_db(bucket_records).0);
+        for (b_idx, b) in bucket_layouts.iter().enumerate() {
+            info!("Encoding bucket {} of {}...", b_idx + 1, Self::NUM_BUCKET);
+            let bucket_records_generator =
+                |i: usize| b[i].map_or(zero.clone(), |i| records_generator(i));
+            result.push(BaseRespire::encode_db(bucket_records_generator).0);
         }
         (result, bucket_layouts)
     }

@@ -21,8 +21,8 @@ pub trait PIR {
 
     fn print_summary();
 
-    fn encode_db<I: ExactSizeIterator<Item = Self::RecordBytes>>(
-        records_iter: I,
+    fn encode_db<F: Fn(usize) -> Self::RecordBytes>(
+        records_generator: F,
     ) -> (Self::Database, Self::DatabaseHint);
     fn setup() -> (Self::QueryKey, Self::PublicParams);
     fn query(

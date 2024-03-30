@@ -107,8 +107,7 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
     ThePIR::print_summary();
     eprintln!("========");
 
-    let mut records: Vec<ThePIR::RecordBytes> = Vec::with_capacity(ThePIR::NUM_RECORDS);
-    for i in 0..ThePIR::NUM_RECORDS as u64 {
+    let records_generator = |i: usize| {
         let mut record = vec![0_u8; ThePIR::BYTES_PER_RECORD];
         record[0] = (i % 256) as u8;
         record[1] = ((i / 256) % 256) as u8;
@@ -121,11 +120,11 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
         // for i in 8..256 {
         //     record[i] = random();
         // }
-        records.push(ThePIR::RecordBytes::from_bytes(record.as_slice()).unwrap());
-    }
+        ThePIR::RecordBytes::from_bytes(record.as_slice()).unwrap()
+    };
 
     let pre_start = Instant::now();
-    let (db, db_hint) = ThePIR::encode_db(records.iter().cloned());
+    let (db, db_hint) = ThePIR::encode_db(records_generator);
     let pre_end = Instant::now();
     info!("{:?} to preprocess", pre_end - pre_start);
 
@@ -153,12 +152,12 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
         let extract_total = extract_end - extract_start;
 
         for (idx, decoded_record) in indices.iter().copied().zip(extracted) {
-            if decoded_record.as_bytes() != records[idx].as_bytes() {
+            if decoded_record.as_bytes() != records_generator(idx).as_bytes() {
                 eprintln!("**** **** **** **** ERROR **** **** **** ****");
                 eprintln!("protocol failed");
                 eprintln!("idx = {}", idx);
                 eprintln!("decoded record = {:?}", decoded_record.as_bytes());
-                eprintln!("actual record = {:?}", records[idx].as_bytes());
+                eprintln!("actual record = {:?}", records_generator(idx).as_bytes());
             }
         }
 
