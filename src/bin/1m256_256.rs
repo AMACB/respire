@@ -13,7 +13,7 @@ const BASE_PARAMS: RespireParamsExpanded = FactoryParams {
     Q_SWITCH1: 8 * 16,
     Q_SWITCH2: 249857,
     D_SWITCH: 2048,
-    WIDTH_SWITCH_MILLIONTHS: 9_900_000, // this can be much smaller if needed
+    WIDTH_SWITCH_MILLIONTHS: 9_900_000, // this can be much smaller (3.0) if needed
 }
 .expand()
 .expand();
