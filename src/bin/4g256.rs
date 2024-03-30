@@ -9,7 +9,7 @@ const PARAMS: RespireParamsExpanded = FactoryParams {
     D_RECORD: 512,
     NU1: 11,
     NU2: 11,
-    Q_SWITCH1: 8 * 16,
+    Q_SWITCH1: 16 * 16,
     Q_SWITCH2: 1032193,
     D_SWITCH: 512,
     WIDTH_SWITCH_MILLIONTHS: 46_000_000,
