@@ -1,4 +1,4 @@
-use crate::pir::pir::PIR;
+use crate::pir::pir::{TimeStats, PIR};
 use crate::pir::respire::Respire;
 use itertools::Itertools;
 use log::{info, warn};
@@ -7,6 +7,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
+use std::time::Instant;
 
 pub trait CuckooRespire: PIR {
     type BaseRespire: PIR + Respire;
@@ -98,7 +99,9 @@ impl<
 
     fn encode_db<F: Fn(usize) -> Self::RecordBytes>(
         records_generator: F,
+        time_stats: Option<&mut TimeStats>,
     ) -> (Self::Database, Self::DatabaseHint) {
+        let begin = Instant::now();
         // TODO the bucket layouts can be determined during setup since it is database independent
         let mut bucket_layouts = vec![Vec::with_capacity(BaseRespire::DB_SIZE); Self::NUM_BUCKET];
         for i in 0..Self::NUM_RECORDS {
@@ -134,20 +137,27 @@ impl<
             info!("Encoding bucket {} of {}...", b_idx + 1, Self::NUM_BUCKET);
             let bucket_records_generator =
                 |i: usize| b[i].map_or(zero.clone(), |i| records_generator(i));
-            result.push(BaseRespire::encode_db(bucket_records_generator).0);
+            result.push(BaseRespire::encode_db(bucket_records_generator, None).0);
+        }
+
+        let end = Instant::now();
+        if let Some(time_stats) = time_stats {
+            time_stats.add("encode", end - begin);
         }
         (result, bucket_layouts)
     }
 
-    fn setup() -> (Self::QueryKey, Self::PublicParams) {
-        BaseRespire::setup()
+    fn setup(time_stats: Option<&mut TimeStats>) -> (Self::QueryKey, Self::PublicParams) {
+        BaseRespire::setup(time_stats)
     }
 
     fn query(
         qk: &Self::QueryKey,
         record_idxs: &[usize],
         bucket_layouts: &Self::DatabaseHint,
+        mut time_stats: Option<&mut TimeStats>,
     ) -> (Self::Query, Self::State) {
+        let cuckoo_begin = Instant::now();
         assert_eq!(record_idxs.len(), Self::BATCH_SIZE);
         let cuckoo_mapping = Self::cuckoo(record_idxs, 2usize.pow(16)).unwrap();
         assert_eq!(cuckoo_mapping.len(), Self::BATCH_SIZE);
@@ -163,12 +173,16 @@ impl<
                 .unwrap()
                 .0;
         }
+        let cuckoo_end = Instant::now();
+        if let Some(time_stats) = time_stats.as_deref_mut() {
+            time_stats.add("query_cuckoo", cuckoo_end - cuckoo_begin);
+        }
 
         assert_eq!(actual_idxs.len(), Self::NUM_BUCKET);
         let q = actual_idxs
             .iter()
             .copied()
-            .map(|idx| BaseRespire::query_one(qk, idx))
+            .map(|idx| BaseRespire::query_one(qk, idx, time_stats.as_deref_mut()))
             .collect_vec();
 
         (q, cuckoo_mapping)
@@ -179,16 +193,19 @@ impl<
         dbs: &Self::Database,
         qs: &Self::Query,
         qk: Option<&Self::QueryKey>,
+        mut time_stats: Option<&mut TimeStats>,
     ) -> Self::Response {
         assert_eq!(qs.len(), Self::NUM_BUCKET);
         let answers = qs
             .iter()
             .zip(dbs)
-            .map(|(q, db)| BaseRespire::answer_one(pp, db, q, qk))
+            .map(|(q, db)| BaseRespire::answer_one(pp, db, q, qk, time_stats.as_deref_mut()))
             .collect_vec();
         let answers_compressed = answers
             .chunks(BaseRespire::RESPONSE_CHUNK_SIZE)
-            .map(|chunk| BaseRespire::answer_compress_chunk(pp, chunk, qk))
+            .map(|chunk| {
+                BaseRespire::answer_compress_chunk(pp, chunk, qk, time_stats.as_deref_mut())
+            })
             .collect_vec();
         answers_compressed
     }
@@ -197,10 +214,11 @@ impl<
         qk: &Self::QueryKey,
         r: &Self::Response,
         cuckoo_mapping: &Self::State,
+        mut time_stats: Option<&mut TimeStats>,
     ) -> Vec<Self::RecordBytes> {
         let mut result_by_bucket = Vec::with_capacity(Self::NUM_BUCKET);
         for r_one in r {
-            let extracted = BaseRespire::extract_one(qk, r_one);
+            let extracted = BaseRespire::extract_one(qk, r_one, time_stats.as_deref_mut());
             for record in extracted {
                 if result_by_bucket.len() < Self::NUM_BUCKET {
                     result_by_bucket.push(record);
@@ -209,10 +227,15 @@ impl<
         }
         assert_eq!(result_by_bucket.len(), Self::NUM_BUCKET);
 
+        let uncuckoo_begin = Instant::now();
         let mut result = vec![BaseRespire::RecordBytes::default(); Self::BATCH_SIZE];
         assert_eq!(cuckoo_mapping.len(), Self::BATCH_SIZE);
         for (bucket_idx, idxs_idx) in cuckoo_mapping.iter().copied() {
             result[idxs_idx] = result_by_bucket[bucket_idx].clone();
+        }
+        let uncuckoo_end = Instant::now();
+        if let Some(time_stats) = time_stats {
+            time_stats.add("extract_uncuckoo", uncuckoo_end - uncuckoo_begin);
         }
         result
     }

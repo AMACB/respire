@@ -1,9 +1,12 @@
-use crate::pir::pir::{PIRRecordBytes, PIR};
+use std::time::Instant;
+use crate::pir::pir::{PIRRecordBytes, TimeStats, PIR};
 use crate::pir::respire::{RespireParams, RespireParamsExpanded};
 use crate::respire;
+use clap::Parser;
 use itertools::Itertools;
 use log::info;
-use std::time::Instant;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha20Rng;
 
 //
 // Parameter factory functions
@@ -123,33 +126,25 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
         ThePIR::RecordBytes::from_bytes(record.as_slice()).unwrap()
     };
 
-    let pre_start = Instant::now();
-    let (db, db_hint) = ThePIR::encode_db(records_generator);
-    let pre_end = Instant::now();
-    info!("{:?} to preprocess", pre_end - pre_start);
+    let mut init_times = TimeStats::new();
+    let (db, db_hint) = ThePIR::encode_db(records_generator, Some(&mut init_times));
+    let (qk, pp) = ThePIR::setup(Some(&mut init_times));
+    info!("Init times:\n{}", init_times);
+    info!("Total time = {:?}", init_times.total());
 
-    let setup_start = Instant::now();
-    let (qk, pp) = ThePIR::setup();
-    let setup_end = Instant::now();
-    info!("{:?} to setup", setup_end - setup_start);
-
-    let check = |indices: &[usize]| {
-        eprintln!("Testing record indices {:?}", &indices);
+    let run_trial = |indices: &[usize]| {
+        eprintln!("Running trial on indices {:?}", &indices);
         assert_eq!(indices.len(), ThePIR::BATCH_SIZE);
-        let query_start = Instant::now();
-        let (q, st) = ThePIR::query(&qk, indices, &db_hint);
-        let query_end = Instant::now();
-        let query_total = query_end - query_start;
+        let mut trial_times = TimeStats::new();
 
-        let answer_start = Instant::now();
-        let response = ThePIR::answer(&pp, &db, &q, Some(&qk));
-        let answer_end = Instant::now();
-        let answer_total = answer_end - answer_start;
+        let begin = Instant::now();
+        let (q, st) = ThePIR::query(&qk, indices, &db_hint, Some(&mut trial_times));
+        let response = ThePIR::answer(&pp, &db, &q, Some(&qk), Some(&mut trial_times));
+        let extracted = ThePIR::extract(&qk, &response, &st, Some(&mut trial_times));
+        let end = Instant::now();
 
-        let extract_start = Instant::now();
-        let extracted = ThePIR::extract(&qk, &response, &st);
-        let extract_end = Instant::now();
-        let extract_total = extract_end - extract_start;
+        info!("Trial times:\n{}\n** total: {:?}", trial_times,  trial_times.total());
+        eprintln!("End to end time: {:?}", end - begin);
 
         for (idx, decoded_record) in indices.iter().copied().zip(extracted) {
             if decoded_record.as_bytes() != records_generator(idx).as_bytes() {
@@ -160,33 +155,35 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
                 eprintln!("actual record = {:?}", records_generator(idx).as_bytes());
             }
         }
-
-        info!("{:?} to query", query_total);
-        info!("{:?} to answer", answer_total);
-        info!("{:?} to extract", extract_total);
-
-        eprintln!("{:?} total", query_total + answer_total + extract_total);
     };
 
     for chunk in iter.chunks(ThePIR::BATCH_SIZE).into_iter() {
         let c_vec = chunk.collect_vec();
-        check(c_vec.as_slice());
+        run_trial(c_vec.as_slice());
     }
 }
 
 #[macro_export]
 macro_rules! generate_main {
-    ($name: ident) => {
+    ($name: path) => {
         fn main() {
-            use rand::{Rng, SeedableRng};
-            use rand_chacha::ChaCha20Rng;
-            use $crate::pir::pir::PIR;
-            use $crate::pir::respire_factory::run_pir;
-            env_logger::init();
-            let mut rng = ChaCha20Rng::from_entropy();
-            run_pir::<$name, _>((0..).map(|_| rng.gen_range(0_usize..$name::NUM_RECORDS)));
+            $crate::pir::respire_factory::factory_main::<$name>();
         }
     };
+}
+
+#[derive(Parser, Debug)]
+struct Args {
+    trials: usize,
+}
+
+pub fn factory_main<ThePIR: PIR>() {
+    env_logger::init();
+    let args = Args::parse();
+
+    let mut rng = ChaCha20Rng::from_entropy();
+    let record_gen = |_| rng.gen_range(0_usize..ThePIR::NUM_RECORDS);
+    run_pir::<ThePIR, _>((0usize..args.trials * ThePIR::BATCH_SIZE).map(record_gen));
 }
 
 #[cfg(test)]
@@ -282,7 +279,7 @@ mod test {
 
     #[test]
     fn test_post_process_only() {
-        let (qk, pp) = RespireTest::setup();
+        let (qk, pp) = RespireTest::setup(None);
         let (_, s_vec, _) = &qk;
         let mut m = <RespireTest as Respire>::RecordPackedSmall::zero();
         for i in 0..RESPIRE_TEST_PARAMS.N_VEC {
