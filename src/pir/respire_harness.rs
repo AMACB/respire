@@ -5,7 +5,7 @@ use clap::Parser;
 use itertools::Itertools;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 //
 // Parameter factory functions
@@ -84,18 +84,12 @@ pub fn has_avx2() -> bool {
     true
 }
 
-// TODO encapsulate stats into struct instead of printing directly
-// struct RunResult {
-//     success: bool,
-//     noise: f64,
-//     // preprocess_time: Duration,
-//     // setup_time: Duration,
-//     query_time: Duration,
-//     answer_time: Duration,
-//     extract_time: Duration,
-// }
+pub struct RunResult {
+    pub init_times: Stats<Duration>,
+    pub all_trial_times: Vec<Stats<Duration>>,
+}
 
-pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
+pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) -> RunResult {
     eprintln!("Running PIR...");
     eprintln!(
         "AVX2 is {}",
@@ -129,9 +123,19 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
     let (db, db_hint) = ThePIR::encode_db(records_generator, Some(&mut init_times));
     let (qk, pp) = ThePIR::setup(Some(&mut init_times));
     eprintln!("Init times:\n{:?}", init_times);
-    eprintln!("Init time (end-to-end): {:?}", init_times.total());
+    eprintln!(
+        "Init time (end-to-end): {:?}",
+        init_times
+            .as_vec()
+            .iter()
+            .copied()
+            .fold(Duration::new(0, 0), |acc, x| acc + x.1)
+    );
+    eprintln!("========");
 
-    let run_trial = |indices: &[usize]| {
+    let mut all_trial_times = Vec::new();
+
+    let mut run_trial = |indices: &[usize]| {
         eprintln!("Running trial on indices {:?}", &indices);
         assert_eq!(indices.len(), ThePIR::BATCH_SIZE);
         let mut trial_times = Stats::new();
@@ -145,9 +149,14 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
         eprintln!(
             "Trial times:\n{:?}\n** total: {:?}",
             trial_times,
-            trial_times.total()
+            trial_times
+                .as_vec()
+                .iter()
+                .copied()
+                .fold(Duration::new(0, 0), |acc, x| acc + x.1)
         );
         eprintln!("Trial time (end-to-end): {:?}", end - begin);
+        all_trial_times.push(trial_times);
 
         for (idx, decoded_record) in indices.iter().copied().zip(extracted) {
             if decoded_record.as_bytes() != records_generator(idx).as_bytes() {
@@ -158,11 +167,17 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
                 eprintln!("actual record = {:?}", records_generator(idx).as_bytes());
             }
         }
+        eprintln!("========");
     };
 
     for chunk in iter.chunks(ThePIR::BATCH_SIZE).into_iter() {
         let c_vec = chunk.collect_vec();
         run_trial(c_vec.as_slice());
+    }
+
+    RunResult {
+        init_times,
+        all_trial_times,
     }
 }
 
@@ -170,7 +185,7 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
 macro_rules! generate_main {
     ($name: path) => {
         fn main() {
-            $crate::pir::respire_factory::factory_main::<$name>();
+            $crate::pir::respire_harness::harness_main::<$name>();
         }
     };
 }
@@ -180,13 +195,58 @@ struct Args {
     trials: usize,
 }
 
-pub fn factory_main<ThePIR: PIR>() {
+pub fn harness_main<ThePIR: PIR>() {
     env_logger::init();
     let args = Args::parse();
 
     let mut rng = ChaCha20Rng::from_entropy();
     let record_gen = |_| rng.gen_range(0_usize..ThePIR::NUM_RECORDS);
-    run_pir::<ThePIR, _>((0usize..args.trials * ThePIR::BATCH_SIZE).map(record_gen));
+    let run_result =
+        run_pir::<ThePIR, _>((0usize..args.trials * ThePIR::BATCH_SIZE).map(record_gen));
+
+    let trial_times = run_result
+        .all_trial_times
+        .iter()
+        .map(|tt| tt.as_vec())
+        .collect_vec();
+    let stat_names = trial_times[0].iter().map(|x| x.0).collect_vec();
+    for tt in trial_times.iter() {
+        assert_eq!(tt.iter().map(|x| x.0).collect_vec(), stat_names);
+    }
+
+    let mut means = Vec::with_capacity(trial_times.len());
+    let mut stddevs = Vec::with_capacity(trial_times.len());
+
+    eprintln!("Summary times:");
+
+    for (stat_i, stat_name) in stat_names.iter().copied().enumerate() {
+        let mut sum = 0_f64;
+        let mut sum_sq = 0_f64;
+        for tt in trial_times.iter() {
+            let value = tt[stat_i].1.as_nanos() as f64;
+            sum += value;
+            sum_sq += value.powi(2);
+        }
+
+        let mean = sum / trial_times.len() as f64;
+        let stddev = (sum_sq / trial_times.len() as f64 - mean.powi(2)).sqrt();
+
+        let mean = mean.round() as u64;
+        let stddev = stddev.round() as u64;
+        means.push(mean);
+        stddevs.push(stddev);
+        eprintln!(
+            "    {}: {:?} mean, {:?} stddev",
+            stat_name,
+            Duration::from_nanos(mean),
+            Duration::from_nanos(stddev)
+        );
+    }
+
+    eprintln!("mean, stddev in CSV format (times in nanoseconds):");
+    eprintln!("{}", stat_names.join(", "));
+    eprintln!("{}", means.iter().map(u64::to_string).join(", "));
+    eprintln!("{}", stddevs.iter().map(u64::to_string).join(", "));
 }
 
 #[cfg(test)]

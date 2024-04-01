@@ -1,5 +1,5 @@
 use respire::pir::respire::RespireParamsExpanded;
-use respire::pir::respire_factory::FactoryParams;
+use respire::pir::respire_harness::FactoryParams;
 use respire::{generate_main, respire};
 
 const PARAMS: RespireParamsExpanded = FactoryParams {
