@@ -120,17 +120,24 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) -> RunResult {
     };
 
     let mut init_times = Stats::new();
+    let begin = Instant::now();
     let (db, db_hint) = ThePIR::encode_db(records_generator, Some(&mut init_times));
     let (qk, pp) = ThePIR::setup(Some(&mut init_times));
-    eprintln!("Init times:\n{:?}", init_times);
-    eprintln!(
-        "Init time (end-to-end): {:?}",
+    let end = Instant::now();
+
+    init_times.add(
+        "total",
         init_times
             .as_vec()
             .iter()
-            .copied()
-            .fold(Duration::new(0, 0), |acc, x| acc + x.1)
+            .fold(Duration::new(0, 0), |acc, x| acc + x.1),
     );
+
+    eprintln!("Init times:");
+    for (stat, value) in init_times.as_vec() {
+        eprintln!("    {}: {:?}", stat, value);
+    }
+    eprintln!("Init time (end-to-end): {:?}", end - begin);
     eprintln!("========");
 
     let mut all_trial_times = Vec::new();
@@ -146,15 +153,18 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) -> RunResult {
         let extracted = ThePIR::extract(&qk, &response, &st, Some(&mut trial_times));
         let end = Instant::now();
 
-        eprintln!(
-            "Trial times:\n{:?}\n** total: {:?}",
-            trial_times,
+        trial_times.add(
+            "total",
             trial_times
                 .as_vec()
                 .iter()
-                .copied()
-                .fold(Duration::new(0, 0), |acc, x| acc + x.1)
+                .fold(Duration::new(0, 0), |acc, x| acc + x.1),
         );
+
+        eprintln!("Trial times:");
+        for (stat, value) in trial_times.as_vec() {
+            eprintln!("    {}: {:?}", stat, value);
+        }
         eprintln!("Trial time (end-to-end): {:?}", end - begin);
         all_trial_times.push(trial_times);
 

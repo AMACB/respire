@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
 use std::ops::AddAssign;
 use std::time::Duration;
 
@@ -38,27 +37,6 @@ impl<T: AddAssign<T> + Copy + Default> Stats<T> {
             result.push((name, self.stats[name]));
         }
         result
-    }
-
-    // pub fn total(&self) -> T {
-    //     let mut stats_iter = self.stats.values().copied();
-    //     let mut result = stats_iter.next().unwrap_or_default();
-    //     for x in stats_iter {
-    //         result += x;
-    //     }
-    //     result
-    // }
-}
-
-impl<T: AddAssign<T> + Copy + Default + Debug> Debug for Stats<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for (i, name) in self.order.iter().copied().enumerate() {
-            write!(f, "{}: {:?}", name, self.stats[name])?;
-            if i < self.order.len() - 1 {
-                writeln!(f)?;
-            }
-        }
-        Ok(())
     }
 }
 
