@@ -1,12 +1,11 @@
-use std::time::Instant;
-use crate::pir::pir::{PIRRecordBytes, TimeStats, PIR};
+use crate::pir::pir::{PIRRecordBytes, Stats, PIR};
 use crate::pir::respire::{RespireParams, RespireParamsExpanded};
 use crate::respire;
 use clap::Parser;
 use itertools::Itertools;
-use log::info;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
+use std::time::Instant;
 
 //
 // Parameter factory functions
@@ -126,16 +125,16 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
         ThePIR::RecordBytes::from_bytes(record.as_slice()).unwrap()
     };
 
-    let mut init_times = TimeStats::new();
+    let mut init_times = Stats::new();
     let (db, db_hint) = ThePIR::encode_db(records_generator, Some(&mut init_times));
     let (qk, pp) = ThePIR::setup(Some(&mut init_times));
-    info!("Init times:\n{}", init_times);
-    info!("Total time = {:?}", init_times.total());
+    eprintln!("Init times:\n{:?}", init_times);
+    eprintln!("Init time (end-to-end): {:?}", init_times.total());
 
     let run_trial = |indices: &[usize]| {
         eprintln!("Running trial on indices {:?}", &indices);
         assert_eq!(indices.len(), ThePIR::BATCH_SIZE);
-        let mut trial_times = TimeStats::new();
+        let mut trial_times = Stats::new();
 
         let begin = Instant::now();
         let (q, st) = ThePIR::query(&qk, indices, &db_hint, Some(&mut trial_times));
@@ -143,8 +142,12 @@ pub fn run_pir<ThePIR: PIR, I: Iterator<Item = usize>>(iter: I) {
         let extracted = ThePIR::extract(&qk, &response, &st, Some(&mut trial_times));
         let end = Instant::now();
 
-        info!("Trial times:\n{}\n** total: {:?}", trial_times,  trial_times.total());
-        eprintln!("End to end time: {:?}", end - begin);
+        eprintln!(
+            "Trial times:\n{:?}\n** total: {:?}",
+            trial_times,
+            trial_times.total()
+        );
+        eprintln!("Trial time (end-to-end): {:?}", end - begin);
 
         for (idx, decoded_record) in indices.iter().copied().zip(extracted) {
             if decoded_record.as_bytes() != records_generator(idx).as_bytes() {

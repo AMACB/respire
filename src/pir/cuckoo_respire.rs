@@ -1,4 +1,4 @@
-use crate::pir::pir::{TimeStats, PIR};
+use crate::pir::pir::{Stats, PIR};
 use crate::pir::respire::Respire;
 use itertools::Itertools;
 use log::{info, warn};
@@ -7,7 +7,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub trait CuckooRespire: PIR {
     type BaseRespire: PIR + Respire;
@@ -99,7 +99,7 @@ impl<
 
     fn encode_db<F: Fn(usize) -> Self::RecordBytes>(
         records_generator: F,
-        time_stats: Option<&mut TimeStats>,
+        time_stats: Option<&mut Stats<Duration>>,
     ) -> (Self::Database, Self::DatabaseHint) {
         let begin = Instant::now();
         // TODO the bucket layouts can be determined during setup since it is database independent
@@ -147,7 +147,7 @@ impl<
         (result, bucket_layouts)
     }
 
-    fn setup(time_stats: Option<&mut TimeStats>) -> (Self::QueryKey, Self::PublicParams) {
+    fn setup(time_stats: Option<&mut Stats<Duration>>) -> (Self::QueryKey, Self::PublicParams) {
         BaseRespire::setup(time_stats)
     }
 
@@ -155,7 +155,7 @@ impl<
         qk: &Self::QueryKey,
         record_idxs: &[usize],
         bucket_layouts: &Self::DatabaseHint,
-        mut time_stats: Option<&mut TimeStats>,
+        mut time_stats: Option<&mut Stats<Duration>>,
     ) -> (Self::Query, Self::State) {
         let cuckoo_begin = Instant::now();
         assert_eq!(record_idxs.len(), Self::BATCH_SIZE);
@@ -193,7 +193,7 @@ impl<
         dbs: &Self::Database,
         qs: &Self::Query,
         qk: Option<&Self::QueryKey>,
-        mut time_stats: Option<&mut TimeStats>,
+        mut time_stats: Option<&mut Stats<Duration>>,
     ) -> Self::Response {
         assert_eq!(qs.len(), Self::NUM_BUCKET);
         let answers = qs
@@ -214,7 +214,7 @@ impl<
         qk: &Self::QueryKey,
         r: &Self::Response,
         cuckoo_mapping: &Self::State,
-        mut time_stats: Option<&mut TimeStats>,
+        mut time_stats: Option<&mut Stats<Duration>>,
     ) -> Vec<Self::RecordBytes> {
         let mut result_by_bucket = Vec::with_capacity(Self::NUM_BUCKET);
         for r_one in r {

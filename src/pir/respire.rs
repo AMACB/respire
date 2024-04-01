@@ -4,7 +4,7 @@ use log::Level::Info;
 use log::{info, log_enabled};
 use std::cmp::{max, min};
 use std::f64::consts::PI;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -24,7 +24,7 @@ use crate::math::ring_elem::{NormedRingElement, RingElement};
 use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits, reverse_bits_fast};
 
 use crate::math::simd_utils::*;
-use crate::pir::pir::{PIRRecordBytes, TimeStats, PIR};
+use crate::pir::pir::{PIRRecordBytes, Stats, PIR};
 
 pub struct RespireImpl<
     const Q: u64,
@@ -428,20 +428,20 @@ pub trait Respire: PIR {
     fn query_one(
         qk: &<Self as PIR>::QueryKey,
         idx: usize,
-        time_stats: Option<&mut TimeStats>,
+        time_stats: Option<&mut Stats<Duration>>,
     ) -> <Self as Respire>::QueryOne;
     fn answer_one(
         pp: &<Self as PIR>::PublicParams,
         db: &<Self as PIR>::Database,
         q: &<Self as Respire>::QueryOne,
         qk: Option<&<Self as PIR>::QueryKey>,
-        time_stats: Option<&mut TimeStats>,
+        time_stats: Option<&mut Stats<Duration>>,
     ) -> <Self as Respire>::ResponseOne;
     fn answer_compress_chunk(
         pp: &<Self as PIR>::PublicParams,
         chunk: &[<Self as Respire>::ResponseOne],
         qk: Option<&<Self as PIR>::QueryKey>,
-        time_stats: Option<&mut TimeStats>,
+        time_stats: Option<&mut Stats<Duration>>,
     ) -> <Self as Respire>::ResponseOneCompressed;
     fn answer_compress_vec(
         pp: &<Self as PIR>::PublicParams,
@@ -451,7 +451,7 @@ pub trait Respire: PIR {
     fn extract_one(
         qk: &<Self as PIR>::QueryKey,
         r: &<Self as Respire>::ResponseOneCompressed,
-        time_stats: Option<&mut TimeStats>,
+        time_stats: Option<&mut Stats<Duration>>,
     ) -> Vec<<Self as PIR>::RecordBytes>;
 
     fn params() -> RespireParamsExpanded;
@@ -564,7 +564,7 @@ respire_impl!(PIR, {
 
     fn encode_db<F: Fn(usize) -> Self::RecordBytes>(
         records_generator: F,
-        time_stats: Option<&mut TimeStats>,
+        time_stats: Option<&mut Stats<Duration>>,
     ) -> (Self::Database, Self::DatabaseHint) {
         let begin = Instant::now();
         let records_encoded_generator = |idx: usize| Self::encode_record(&records_generator(idx));
@@ -719,7 +719,7 @@ respire_impl!(PIR, {
     }
 
     fn setup(
-        time_stats: Option<&mut TimeStats>,
+        time_stats: Option<&mut Stats<Duration>>,
     ) -> (<Self as PIR>::QueryKey, <Self as PIR>::PublicParams) {
         let begin = Instant::now();
         // Regev/GSW secret key
@@ -797,7 +797,7 @@ respire_impl!(PIR, {
         qk: &<Self as PIR>::QueryKey,
         indices: &[usize],
         _: &<Self as PIR>::DatabaseHint,
-        mut time_stats: Option<&mut TimeStats>,
+        mut time_stats: Option<&mut Stats<Duration>>,
     ) -> (<Self as PIR>::Query, <Self as PIR>::State) {
         assert_eq!(indices.len(), Self::BATCH_SIZE);
         let q = indices
@@ -813,7 +813,7 @@ respire_impl!(PIR, {
         db: &<Self as PIR>::Database,
         qs: &<Self as PIR>::Query,
         qk: Option<&<Self as PIR>::QueryKey>,
-        mut time_stats: Option<&mut TimeStats>,
+        mut time_stats: Option<&mut Stats<Duration>>,
     ) -> <Self as PIR>::Response {
         assert_eq!(qs.len(), Self::BATCH_SIZE);
         let answers = qs
@@ -831,7 +831,7 @@ respire_impl!(PIR, {
         qk: &Self::QueryKey,
         r: &Self::Response,
         _: &Self::State,
-        mut time_stats: Option<&mut TimeStats>,
+        mut time_stats: Option<&mut Stats<Duration>>,
     ) -> Vec<Self::RecordBytes> {
         let mut result = Vec::with_capacity(Self::BATCH_SIZE);
         for r_one in r {
@@ -917,7 +917,7 @@ respire_impl!(Respire, {
     fn query_one(
         (s_encode, _, _): &<Self as PIR>::QueryKey,
         idx: usize,
-        time_stats: Option<&mut TimeStats>,
+        time_stats: Option<&mut Stats<Duration>>,
     ) -> <Self as Respire>::QueryOne {
         let begin = Instant::now();
         assert!(idx < Self::DB_SIZE);
@@ -978,7 +978,7 @@ respire_impl!(Respire, {
         db: &<Self as PIR>::Database,
         q: &<Self as Respire>::QueryOne,
         qk: Option<&<Self as PIR>::QueryKey>,
-        mut time_stats: Option<&mut TimeStats>,
+        mut time_stats: Option<&mut Stats<Duration>>,
     ) -> <Self as Respire>::ResponseOne {
         // Query expansion
         let (regevs, gsws_fold, gsws_rot) =
@@ -1035,7 +1035,7 @@ respire_impl!(Respire, {
         pp: &<Self as PIR>::PublicParams,
         chunk: &[<Self as Respire>::ResponseOne],
         qk: Option<&<Self as PIR>::QueryKey>,
-        time_stats: Option<&mut TimeStats>,
+        time_stats: Option<&mut Stats<Duration>>,
     ) -> <Self as Respire>::ResponseOneCompressed {
         let begin = Instant::now();
         let mut scalar_cts = Vec::with_capacity(Self::RESPONSE_CHUNK_SIZE);
@@ -1110,7 +1110,7 @@ respire_impl!(Respire, {
     fn extract_one(
         qk: &<Self as PIR>::QueryKey,
         r: &<Self as Respire>::ResponseOneCompressed,
-        time_stats: Option<&mut TimeStats>,
+        time_stats: Option<&mut Stats<Duration>>,
     ) -> Vec<<Self as PIR>::RecordBytes> {
         let begin = Instant::now();
         let ret = Self::extract_bytes_one(&Self::extract_ring_one(qk, r));
@@ -1415,7 +1415,7 @@ respire_impl!({
         ((auto_keys_regev, auto_keys_gsw), regev_to_gsw_key, _, _): &<Self as PIR>::PublicParams,
         ((seed_reg, vec_reg), (seed_gsw, vec_gsw)): &<Self as Respire>::QueryOne,
         _: Option<&<Self as PIR>::QueryKey>,
-        time_stats: Option<&mut TimeStats>,
+        time_stats: Option<&mut Stats<Duration>>,
     ) -> <Self as Respire>::QueryOneExpanded {
         let inv = <Self as Respire>::RingQFast::from(mod_inverse(D as u64, Q));
         let mut c_regevs = {
