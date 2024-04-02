@@ -8,8 +8,8 @@ const BASE_PARAMS: RespireParamsExpanded = FactoryParams {
     N_VEC: 4,
     P: 16,
     D_RECORD: 512,
-    NU1: 8,
-    NU2: 8,
+    NU1: 9,
+    NU2: 9,
     Q_SWITCH1: 4 * 16,
     Q_SWITCH2: 249857,
     D_SWITCH: 2048,
@@ -19,6 +19,6 @@ const BASE_PARAMS: RespireParamsExpanded = FactoryParams {
 .expand();
 
 type BasePIR = respire!(BASE_PARAMS);
-type CuckooPIR = CuckooRespireImpl<8, 13, { 2usize.pow(20) }, BasePIR>;
+type CuckooPIR = CuckooRespireImpl<8, 13, { 2usize.pow(22) }, BasePIR>;
 
 generate_main!(CuckooPIR);

@@ -59,5 +59,15 @@ const PARAMS: RespireParamsExpanded = FactoryParams {
 // 31 bits: 2147389441
 // 32 bits: 4294955009
 
+/*
+# LWE estimator code
+from estimator import *
+from estimator.nd import stddevf
+from estimator.nd import NoiseDistribution as ND
+
+def scheme(d, q, w):
+    return schemes.LWEParameters(n=d, q=q, Xs=ND.DiscreteGaussian(stddevf(w)), Xe=ND.DiscreteGaussian(stddevf(w)))
+*/
+
 type ThePIR = respire!(PARAMS);
 generate_main!(ThePIR);
