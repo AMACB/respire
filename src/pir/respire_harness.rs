@@ -246,10 +246,11 @@ pub fn harness_main<ThePIR: PIR>() {
         means.push(mean);
         stddevs.push(stddev);
         eprintln!(
-            "    {}: {:?} mean, {:?} stddev",
+            "    {}: {:?} mean, {:?} stddev ({:.3}%)",
             stat_name,
             Duration::from_nanos(mean),
-            Duration::from_nanos(stddev)
+            Duration::from_nanos(stddev),
+            stddev as f64 / mean as f64 / 100_f64,
         );
     }
 

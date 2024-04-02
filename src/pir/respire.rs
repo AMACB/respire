@@ -522,9 +522,10 @@ respire_impl!(PIR, {
 
     fn print_summary() {
         eprintln!(
-            "RESPIRE with {} bytes x {} records",
+            "RESPIRE with {} bytes x {} records ({:.3} MiB)",
             Self::BYTES_PER_RECORD,
-            Self::NUM_RECORDS
+            Self::NUM_RECORDS,
+            (Self::BYTES_PER_RECORD * Self::NUM_RECORDS) as f64 / 1024_f64 / 1024_f64,
         );
         eprintln!("Parameters: {:#?}", Self::params());
         eprintln!(

@@ -56,11 +56,16 @@ impl<
     fn print_summary() {
         assert_eq!(BaseRespire::BATCH_SIZE, Self::NUM_BUCKET);
         eprintln!(
-            "Cuckoo RESPIRE ({} records, {} batch size, {} buckets, {} bucket size)",
+            "Cuckoo RESPIRE with {} bytes x {} records ({:.3} MiB)",
+            BaseRespire::BYTES_PER_RECORD,
             Self::NUM_RECORDS,
+            (BaseRespire::BYTES_PER_RECORD * Self::NUM_RECORDS) as f64 / 1024_f64 / 1024_f64,
+        );
+        eprintln!(
+            "Cuckoo hashing with 3 hash functions, {} batch size, {} buckets, {} bucket size",
             Self::BATCH_SIZE,
             Self::NUM_BUCKET,
-            BaseRespire::DB_SIZE
+            BaseRespire::DB_SIZE,
         );
         eprintln!("Parameters (base RESPIRE): {:#?}", BaseRespire::params());
         eprintln!(
