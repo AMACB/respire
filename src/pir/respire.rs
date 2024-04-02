@@ -1326,6 +1326,9 @@ respire_impl!(Respire, {
         let compress_elems = N_VEC * T_SWITCH;
         let q2_elem_size = D * ceil_log(2, Q_SWITCH2) / 8;
 
+        // This code assumes we implement use PRG trick to compress the randomness components of the
+        // public params. Technically though, this hasn't been implemented.
+
         info!(
             "automorph pp: {:.3} KiB",
             (automorph_elems * q_elem_size) as f64 / 1024_f64
