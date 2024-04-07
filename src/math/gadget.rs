@@ -212,4 +212,18 @@ mod test {
         let m_hopefully = &g_mat * &g_inv_m;
         assert_eq!(m, m_hopefully, "gadget inverse was not correct");
     }
+
+    #[test]
+    fn gadget_factors() {
+        let q = 268369921 * 249561089;
+        for t in 2..56 {
+            let z = base_from_len(t, q);
+            eprintln!(
+                "t = {}, z = {}, gadget factor = {}",
+                t,
+                z,
+                t as u64 * (z / 2).pow(2)
+            );
+        }
+    }
 }

@@ -23,9 +23,94 @@ pub struct FactoryParams {
     pub Q_SWITCH2: u64,
     pub D_SWITCH: usize,
     pub WIDTH_SWITCH_MILLIONTHS: u64,
+    pub T_AUTO_REGEV: usize,
+    pub T_AUTO_GSW: usize,
 }
 
 impl FactoryParams {
+    pub const fn single_record_256(nu1: usize, nu2: usize) -> Self {
+        // *** NOTES ***
+        //
+        // Other 256 bytes, p = 16:
+        // q2 = 1032193, width = 46.0
+        // q2 = 2056193, width = 70.0
+        // q2 = 16760833, width = 253.0
+        //
+        // p = 256, d_record = 256 seems hopeless (gadget term too big)
+        //
+        // Other d_record = d_switch = 512:
+        // 128 byte records:
+        //     p = 4
+        //     q1 = 6 * 4,
+        //     q2: 61441,
+        //     width = 9.2
+        // 64 byte records:
+        //     p = 2
+        //     q1 = 6 * 2
+        //     q2 = 12289
+        //     width = 4.0
+        //
+        // Values for q2:
+        // 14 bits: 12289
+        // 16 bits: 61441
+        // 17 bits: 114689
+        // 18 bits: 249857
+        // 19 bits: 520193
+        // 20 bits: 1032193
+        // 21 bits: 2056193
+        // 22 bits: 4169729
+        // 23 bits: 8380417
+        // 24 bits: 16760833
+        // 25 bits: 33550337
+        // 26 bits: 67104769
+        // 27 bits: 134176769
+        // 28 bits: 268369921
+        // 29 bits: 536813569
+        // 30 bits: 1073692673
+        // 31 bits: 2147389441
+        // 32 bits: 4294955009
+        /*
+        # LWE estimator code
+        from estimator import *
+        from estimator.nd import stddevf
+        from estimator.nd import NoiseDistribution as ND
+
+        def scheme(d, q, w):
+            return schemes.LWEParameters(n=d, q=q, Xs=ND.DiscreteGaussian(stddevf(w)), Xe=ND.DiscreteGaussian(stddevf(w)))
+        */
+        FactoryParams {
+            BATCH_SIZE: 1,
+            N_VEC: 1,
+            P: 16,
+            D_RECORD: 512,
+            NU1: nu1,
+            NU2: nu2,
+            Q_SWITCH1: 16 * 16,
+            Q_SWITCH2: 16760833,
+            D_SWITCH: 512,
+            WIDTH_SWITCH_MILLIONTHS: 253_600_000,
+            T_AUTO_REGEV: 4,
+            T_AUTO_GSW: 16,
+        }
+    }
+
+    pub const fn batch_256(batch_size: usize, n_vec: usize, nu1: usize, nu2: usize) -> Self {
+        FactoryParams {
+            BATCH_SIZE: batch_size,
+            N_VEC: n_vec,
+            P: 16,
+            D_RECORD: 512,
+            NU1: nu1,
+            NU2: nu2,
+            Q_SWITCH1: 8 * 16,
+            Q_SWITCH2: 249857,
+            D_SWITCH: 2048,
+            WIDTH_SWITCH_MILLIONTHS: 2_001_000,
+            T_AUTO_REGEV: 4,
+            T_AUTO_GSW: 20,
+        }
+    }
+
     pub const fn expand(&self) -> RespireParams {
         RespireParams {
             Q_A: 268369921,
@@ -33,8 +118,8 @@ impl FactoryParams {
             D: 2048,
             T_GSW: 8,
             T_REGEV_TO_GSW: 4,
-            T_AUTO_REGEV: 3,
-            T_AUTO_GSW: 9,
+            T_AUTO_REGEV: self.T_AUTO_REGEV,
+            T_AUTO_GSW: self.T_AUTO_GSW,
             T_SCAL_TO_VEC: 8,
             BATCH_SIZE: self.BATCH_SIZE,
             N_VEC: self.N_VEC,
@@ -57,20 +142,8 @@ impl FactoryParams {
 
 // For quick testing
 
-pub const RESPIRE_TEST_PARAMS: RespireParamsExpanded = FactoryParams {
-    BATCH_SIZE: 1,
-    N_VEC: 1,
-    P: 16,
-    D_RECORD: 512,
-    NU1: 9,
-    NU2: 9,
-    Q_SWITCH1: 8 * 16,
-    Q_SWITCH2: 1032193, // 19.97 bits
-    D_SWITCH: 512,
-    WIDTH_SWITCH_MILLIONTHS: 46_000_000,
-}
-.expand()
-.expand();
+pub const RESPIRE_TEST_PARAMS: RespireParamsExpanded =
+    FactoryParams::single_record_256(9, 9).expand().expand();
 
 pub type RespireTest = respire!(RESPIRE_TEST_PARAMS);
 

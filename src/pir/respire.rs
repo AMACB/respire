@@ -1181,16 +1181,25 @@ respire_impl!(Respire, {
         let gadget_factor = |t: usize, z: u64| -> f64 {
             assert!(z >= 2);
 
-            let z_factor = if z == 2 {
-                // With probability <= 2^(-41.088), the zero one term will have <= 1185 ones. 1185 / 2048 <= 0.579
-                // https://www.wolframalpha.com/input?i=Sum%5BBinomial%5B2048%2Ci%5D%2F2%5E2048%2C+%7Bi%2C0%2C1185%7D%5D
-                const ZERO_ONE_FACTOR: f64 = 1185_f64 / 2048_f64;
-                ZERO_ONE_FACTOR
-            } else {
-                // TODO noise: verify this factor is right
-                // const CHERNOFF_FACTOR: f64 = 0.6_f64;
-                const CHERNOFF_FACTOR: f64 = 1.0_f64;
-                ((z / 2) as f64).powi(2) * CHERNOFF_FACTOR
+            let z_factor = match z {
+                2 => {
+                    // With probability <= 2^(-48.421), a random binary gadget will have <= 1200 equal 1
+                    // N(log(1 - sum(binomial(2048, x) * (1/2)^2048, x, 0, 1200), 2)) = -48.4216972197488
+                    const BINARY_FACTOR: f64 = 1200_f64 / 2048_f64;
+                    BINARY_FACTOR
+                }
+                // 3 => {
+                //     // With probability <= 2^(-48.506), a random ternary gadget will have <= 1528 coefficients equal +- 1
+                //     // N(log(1 - sum(binomial(2048, x) * (2/3)^x * (1/3)^(2048-x), x, 0, 1528), 2)) = -48.5067228501629
+                //     const TERNARY_FACTOR: f64 = 1528_f64 / 2048_f64;
+                //     TERNARY_FACTOR
+                // }
+                _ => {
+                    // TODO noise: verify this factor is right
+                    // const CHERNOFF_FACTOR: f64 = 0.6_f64;
+                    const CHERNOFF_FACTOR: f64 = 1.0_f64;
+                    ((z / 2) as f64).powi(2) * CHERNOFF_FACTOR
+                }
             };
 
             (t as f64) * z_factor
@@ -1202,10 +1211,8 @@ respire_impl!(Respire, {
         };
 
         let proj_noise = |e_sq: f64, t_auto: usize, z_auto: u64, depth: usize| -> f64 {
-            e_sq + ((2usize.pow(depth as u32) - 1) as f64)
-                * (D as f64)
-                * gadget_factor(t_auto, z_auto)
-                * error_width_sq
+            let ct = (4usize.pow(depth as u32) - 1) / 3;
+            e_sq + ct as f64 * (D as f64) * gadget_factor(t_auto, z_auto) * error_width_sq
         };
 
         info!("Initial: {}", e_to_bits(error_width_sq));
@@ -1222,6 +1229,14 @@ respire_impl!(Respire, {
                 // m = 2t; t is absorbed into gadget_factor()
                 2_f64 * (D as f64) * gadget_factor(T_REGEV_TO_GSW, Z_REGEV_TO_GSW) * error_width_sq;
             let e_converted = initial_component + gadget_component;
+            info!(
+                "    Regev to GSW initial component: {}",
+                e_to_bits(initial_component),
+            );
+            info!(
+                "    Regev to GSW gadget component: {}",
+                e_to_bits(gadget_component),
+            );
             e_converted
         };
         info!("Query expand GSW (converted): {}", e_to_bits(e_gsw));

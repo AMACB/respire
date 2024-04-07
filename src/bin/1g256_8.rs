@@ -3,20 +3,7 @@ use respire::pir::respire::RespireParamsExpanded;
 use respire::pir::respire_harness::FactoryParams;
 use respire::{generate_main, respire};
 
-const BASE_PARAMS: RespireParamsExpanded = FactoryParams {
-    BATCH_SIZE: 13,
-    N_VEC: 4,
-    P: 16,
-    D_RECORD: 512,
-    NU1: 9,
-    NU2: 9,
-    Q_SWITCH1: 4 * 16,
-    Q_SWITCH2: 249857,
-    D_SWITCH: 2048,
-    WIDTH_SWITCH_MILLIONTHS: 2_001_000,
-}
-.expand()
-.expand();
+const BASE_PARAMS: RespireParamsExpanded = FactoryParams::batch_256(13, 2, 9, 9).expand().expand();
 
 type BasePIR = respire!(BASE_PARAMS);
 type CuckooPIR = CuckooRespireImpl<8, 13, { 2usize.pow(22) }, BasePIR>;
