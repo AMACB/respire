@@ -417,7 +417,6 @@ pub trait Respire: PIR {
     const NU1: usize;
     const NU3: usize;
     const NU2: usize;
-    const NU4: usize;
     const REGEV_COUNT: usize;
     const REGEV_EXPAND_ITERS: usize;
     const GSW_FOLD_COUNT: usize;
@@ -902,13 +901,12 @@ respire_impl!(Respire, {
     const RESPONSE_CHUNK_SIZE: usize = N_VEC * Self::PACK_RATIO_RESPONSE;
     const NU1: usize = NU1;
     const NU2: usize = NU2;
-    const NU3: usize = ceil_log(2, (D / D_SWITCH) as u64);
-    const NU4: usize = ceil_log(2, Self::PACK_RATIO_RESPONSE as u64);
+    const NU3: usize = ceil_log(2, (D / D_RECORD) as u64);
 
     const REGEV_COUNT: usize = 1 << NU1;
     const REGEV_EXPAND_ITERS: usize = NU1;
     const GSW_FOLD_COUNT: usize = NU2;
-    const GSW_ROT_COUNT: usize = Self::NU3 + Self::NU4;
+    const GSW_ROT_COUNT: usize = Self::NU3;
 
     const GSW_COUNT: usize = (Self::GSW_FOLD_COUNT + Self::GSW_ROT_COUNT) * T_GSW;
     const GSW_EXPAND_ITERS: usize = ceil_log(2, Self::GSW_COUNT as u64);
@@ -920,7 +918,7 @@ respire_impl!(Respire, {
     ) -> <Self as Respire>::QueryOne {
         let begin = Instant::now();
         assert!(idx < Self::DB_SIZE);
-        let last_dims_size = 2usize.pow((Self::NU2 + Self::NU3 + Self::NU4) as u32);
+        let last_dims_size = 2usize.pow((Self::NU2 + Self::NU3) as u32);
         let (idx_i, idx_j) = (idx / last_dims_size, idx % last_dims_size);
 
         let mut mu_regev = <Self as Respire>::RingQ::zero();
@@ -929,12 +927,12 @@ respire_impl!(Respire, {
                 IntMod::<P>::from((i == idx_i) as u64).scale_up_into();
         }
 
-        // [NU2 + NU3 + NU4] x [T_GSW]
+        // [NU2 + NU3] x [T_GSW]
         let mut mu_gsw = <Self as Respire>::RingQ::zero();
 
         let mut bits = Vec::with_capacity(NU2);
         let mut idx_j_curr = idx_j;
-        for _ in 0..(Self::NU2 + Self::NU3 + Self::NU4) {
+        for _ in 0..(Self::NU2 + Self::NU3) {
             bits.push(idx_j_curr % 2);
             idx_j_curr /= 2;
         }
@@ -1248,11 +1246,11 @@ respire_impl!(Respire, {
         info!("Fold: {}", e_to_bits(e_fold));
 
         // Rotating (NU3)
-        let e_rot = select_noise(e_gsw, e_fold, Self::NU3 + Self::NU4);
+        let e_rot = select_noise(e_gsw, e_fold, Self::NU3);
         info!("Rotate select: {}", e_to_bits(e_rot));
 
-        // Proj/select (NU4) + ring packing
-        let e_proj_component = proj_noise(0_f64, T_AUTO_GSW, Z_AUTO_GSW, Self::NU3 + Self::NU4);
+        // Proj/select (NU3) + ring packing
+        let e_proj_component = proj_noise(0_f64, T_AUTO_GSW, Z_AUTO_GSW, Self::NU3);
         info!(
             "    Projection *new* error component: {}",
             e_to_bits(e_proj_component)
@@ -1746,11 +1744,10 @@ respire_impl!({
         ct: &<Self as Respire>::RegevCiphertext,
         gsws_rot: &[<Self as Respire>::GSWCiphertext],
     ) -> <Self as Respire>::RegevCiphertext {
-        assert_eq!(gsws_rot.len(), Self::NU3 + Self::NU4);
+        assert_eq!(gsws_rot.len(), Self::NU3);
         let mut ct_curr = ct.clone();
-        // TODO no need to do last NU4 iters if no batching
         for (iter_num, gsw) in gsws_rot.iter().enumerate() {
-            let rot = 1 << (Self::NU3 + Self::NU4 - 1 - iter_num);
+            let rot = 1 << (Self::NU3 - 1 - iter_num);
             ct_curr =
                 Self::select_hom(&ct_curr, &Self::regev_mul_x_pow(&ct_curr, 2 * D - rot), gsw);
         }
@@ -1763,7 +1760,7 @@ respire_impl!({
     ) -> <Self as Respire>::RegevCiphertext {
         let mut ct_curr = ct.clone();
         // TODO no need to project if no batching
-        let num_proj = Self::NU3 + Self::NU4;
+        let num_proj = Self::NU3;
         let inv =
             <Self as Respire>::RingQFast::from(mod_inverse(2_usize.pow(num_proj as u32) as u64, Q));
         ct_curr[(0, 0)] *= &inv;
