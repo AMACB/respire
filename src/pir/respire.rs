@@ -21,7 +21,7 @@ use crate::math::matrix::Matrix;
 
 use crate::math::rand_sampled::{RandDiscreteGaussianSampled, RandUniformSampled};
 use crate::math::ring_elem::{NormedRingElement, RingElement};
-use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits, reverse_bits_fast};
+use crate::math::utils::{ceil_log, floor_log, mod_inverse, reverse_bits_fast};
 
 use crate::math::simd_utils::*;
 use crate::pir::pir::{PIRRecordBytes, Stats, PIR};
@@ -579,10 +579,8 @@ respire_impl!(PIR, {
                 .map(|idx| records_encoded_generator(idx));
             let mut record_packed = IntModCyclo::<D, P>::zero();
             for (record_in_chunk, record) in chunk.enumerate() {
-                // Transpose so projection is more significant
-                let packed_offset = reverse_bits(Self::PACK_RATIO_DB, record_in_chunk);
                 for (coeff_idx, coeff) in record.coeff.iter().enumerate() {
-                    record_packed.coeff[Self::PACK_RATIO_DB * coeff_idx + packed_offset] = *coeff;
+                    record_packed.coeff[Self::PACK_RATIO_DB * coeff_idx + record_in_chunk] = *coeff;
                 }
             }
             let value = <Self as Respire>::RingQFast::from(&record_packed.include_into::<Q>());
@@ -1752,11 +1750,9 @@ respire_impl!({
         let mut ct_curr = ct.clone();
         // TODO no need to do last NU4 iters if no batching
         for (iter_num, gsw) in gsws_rot.iter().enumerate() {
-            ct_curr = Self::select_hom(
-                &ct_curr,
-                &Self::regev_mul_x_pow(&ct_curr, 2 * D - (1 << iter_num)),
-                gsw,
-            );
+            let rot = 1 << (Self::NU3 + Self::NU4 - 1 - iter_num);
+            ct_curr =
+                Self::select_hom(&ct_curr, &Self::regev_mul_x_pow(&ct_curr, 2 * D - rot), gsw);
         }
         ct_curr
     }
