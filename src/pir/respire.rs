@@ -1298,7 +1298,6 @@ respire_impl!(Respire, {
         let e_subg_preswitch = e_preswitch * (Q_SWITCH1 as f64).powi(2) / (Q as f64).powi(2);
         let e_subg_gadget = (Q_SWITCH1 as f64).powi(2) / (4_f64 * (Q_SWITCH2 as f64).powi(2))
             * ((D as f64) * secret_width_vec_sq
-                + (D_SWITCH as f64) * secret_width_switch_sq
                 + 4_f64 * (D as f64) * gadget_factor(T_SWITCH, Z_SWITCH) * error_width_switch_sq);
         let e_subg = e_subg_preswitch + e_subg_gadget;
         let e_round = 1_f64;
