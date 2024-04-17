@@ -1167,8 +1167,8 @@ respire_impl!(Respire, {
         let secret_bound_sq: f64 = (SECRET_BOUND as f64).powi(2);
         let secret_width_vec_sq: f64 =
             ((SECRET_WIDTH_VEC_MILLIONTHS as f64) / 1_000_000_f64).powi(2);
-        let secret_width_switch_sq: f64 =
-            ((SECRET_WIDTH_SWITCH_MILLIONTHS as f64) / 1_000_000_f64).powi(2);
+        // let secret_width_switch_sq: f64 =
+        //     ((SECRET_WIDTH_SWITCH_MILLIONTHS as f64) / 1_000_000_f64).powi(2);
 
         let log_d: usize = ceil_log(2, D as u64);
 
