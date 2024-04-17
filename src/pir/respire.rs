@@ -1266,20 +1266,22 @@ respire_impl!(Respire, {
         // Vector packing
         let e_pack_vec = {
             // Scalar to vector conversion
-            let e_one = e_pack_ring
-                + (D as f64) * gadget_factor(T_SCAL_TO_VEC, Z_SCAL_TO_VEC) * error_width_vec_sq;
-            info!("Vector packing (one ring elem): {}", e_to_bits(e_one));
-
+            let e_init = e_pack_ring;
             let vec_num_elems = min(
                 Self::BATCH_SIZE.div_ceil(Self::PACK_RATIO_RESPONSE),
                 Self::N_VEC,
             );
-            let e_full = e_one * vec_num_elems as f64;
+            let e_extra = vec_num_elems as f64
+                * (D as f64)
+                * gadget_factor(T_SCAL_TO_VEC, Z_SCAL_TO_VEC)
+                * error_width_vec_sq;
             info!(
-                "Vector packing (full, {} ring elem(s)): {}",
+                "    Vector packing *new* error component ({} ring elem(s)): {}",
                 vec_num_elems,
-                e_to_bits(e_full)
+                e_to_bits(e_extra),
             );
+            let e_full = e_init + e_extra;
+            info!("Vector packing: {}", e_to_bits(e_full));
             e_full
         };
 
@@ -1319,7 +1321,7 @@ respire_impl!(Respire, {
 
         use std::f64::consts::PI;
         let error_rate = 2_f64
-            * (D_SWITCH as f64)
+            * (D_RECORD as f64)
             * f64::exp(-PI * (0.5_f64 * (Q_SWITCH1 / P) as f64 - e_round).powi(2) / e_subg);
 
         info!("Error rate: 2^({})", error_rate.log2());
