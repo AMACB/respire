@@ -90,7 +90,7 @@ impl FactoryParams {
             D_SWITCH: 512,
             WIDTH_SWITCH_MILLIONTHS: 253_600_000,
             T_AUTO_REGEV: 4,
-            T_AUTO_GSW: 16,
+            T_AUTO_GSW: 20,
         }
     }
 
@@ -102,7 +102,7 @@ impl FactoryParams {
             D_RECORD: 512,
             NU1: nu1,
             NU2: nu2,
-            Q_SWITCH1: 4 * 16,
+            Q_SWITCH1: 8 * 16,
             Q_SWITCH2: 249857,
             D_SWITCH: 2048,
             WIDTH_SWITCH_MILLIONTHS: 2_001_000,

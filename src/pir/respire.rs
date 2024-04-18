@@ -1238,7 +1238,8 @@ respire_impl!(Respire, {
         info!("Query expand GSW (converted): {}", e_to_bits(e_gsw));
 
         // First dimension (NU1)
-        let e_firstdim = (Self::PACKED_DIM1_SIZE as f64) * (D as f64) * ((P / 2) as f64) * e_reg;
+        let e_firstdim =
+            (Self::PACKED_DIM1_SIZE as f64) * (D as f64) * ((P / 2) as f64).powi(2) * e_reg;
         info!("First dimension: {}", e_to_bits(e_firstdim));
 
         // Folding (NU2)
@@ -1300,7 +1301,7 @@ respire_impl!(Respire, {
             * ((D as f64) * secret_width_vec_sq
                 + 4_f64 * (D as f64) * gadget_factor(T_SWITCH, Z_SWITCH) * error_width_switch_sq);
         let e_subg = e_subg_preswitch + e_subg_gadget;
-        let e_round = 1_f64;
+        let e_round = (2f64 + Q_SWITCH1 as f64 / Q as f64 * (Q % P) as f64) / 2f64;
         let threshold = Q_SWITCH1 / (2 * P);
 
         info!(
