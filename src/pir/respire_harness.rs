@@ -16,15 +16,15 @@ pub struct FactoryParams {
     pub BATCH_SIZE: usize,
     pub N_VEC: usize,
     pub P: u64,
-    pub D_RECORD: usize,
+    pub D3: usize,
     pub NU1: usize,
     pub NU2: usize,
-    pub Q_SWITCH1: u64,
-    pub Q_SWITCH2: u64,
-    pub D_SWITCH: usize,
-    pub WIDTH_SWITCH_MILLIONTHS: u64,
-    pub T_AUTO_REGEV: usize,
-    pub T_AUTO_GSW: usize,
+    pub Q3: u64,
+    pub Q2: u64,
+    pub D2: usize,
+    pub WIDTH_COMPRESS_MILLIONTHS: u64,
+    pub T_PROJ_SHORT: usize,
+    pub T_PROJ_LONG: usize,
 }
 
 impl FactoryParams {
@@ -82,15 +82,15 @@ impl FactoryParams {
             BATCH_SIZE: 1,
             N_VEC: 1,
             P: 16,
-            D_RECORD: 512,
+            D3: 512,
             NU1: nu1,
             NU2: nu2,
-            Q_SWITCH1: 16 * 16,
-            Q_SWITCH2: 16760833,
-            D_SWITCH: 512,
-            WIDTH_SWITCH_MILLIONTHS: 253_600_000,
-            T_AUTO_REGEV: 4,
-            T_AUTO_GSW: 20,
+            Q3: 16 * 16,
+            Q2: 16760833,
+            D2: 512,
+            WIDTH_COMPRESS_MILLIONTHS: 253_600_000,
+            T_PROJ_SHORT: 4,
+            T_PROJ_LONG: 20,
         }
     }
 
@@ -99,43 +99,43 @@ impl FactoryParams {
             BATCH_SIZE: batch_size,
             N_VEC: n_vec,
             P: 16,
-            D_RECORD: 512,
+            D3: 512,
             NU1: nu1,
             NU2: nu2,
-            Q_SWITCH1: 8 * 16,
-            Q_SWITCH2: 249857,
-            D_SWITCH: 2048,
-            WIDTH_SWITCH_MILLIONTHS: 2_001_000,
-            T_AUTO_REGEV: 4,
-            T_AUTO_GSW: 20,
+            Q3: 8 * 16,
+            Q2: 249857,
+            D2: 2048,
+            WIDTH_COMPRESS_MILLIONTHS: 2_001_000,
+            T_PROJ_SHORT: 4,
+            T_PROJ_LONG: 20,
         }
     }
 
     pub const fn expand(&self) -> RespireParams {
         RespireParams {
-            Q_A: 268369921,
-            Q_B: 249561089,
-            D: 2048,
+            Q1A: 268369921,
+            Q1B: 249561089,
+            D1: 2048,
             T_GSW: 8,
-            T_REGEV_TO_GSW: 4,
-            T_AUTO_REGEV: self.T_AUTO_REGEV,
-            T_AUTO_GSW: self.T_AUTO_GSW,
-            T_SCAL_TO_VEC: 2,
+            T_RLWE_TO_GSW: 4,
+            T_PROJ_SHORT: self.T_PROJ_SHORT,
+            T_PROJ_LONG: self.T_PROJ_LONG,
+            T_VECTORIZE: 2,
             BATCH_SIZE: self.BATCH_SIZE,
             N_VEC: self.N_VEC,
             ERROR_WIDTH_MILLIONTHS: 9_900_000,
             ERROR_WIDTH_VEC_MILLIONTHS: 9_900_000,
-            ERROR_WIDTH_SWITCH_MILLIONTHS: self.WIDTH_SWITCH_MILLIONTHS,
+            ERROR_WIDTH_COMPRESS_MILLIONTHS: self.WIDTH_COMPRESS_MILLIONTHS,
             SECRET_BOUND: 7,
             SECRET_WIDTH_VEC_MILLIONTHS: 9_900_000,
-            SECRET_WIDTH_SWITCH_MILLIONTHS: self.WIDTH_SWITCH_MILLIONTHS,
+            SECRET_WIDTH_COMPRESS_MILLIONTHS: self.WIDTH_COMPRESS_MILLIONTHS,
             P: self.P,
-            D_RECORD: self.D_RECORD,
+            D3: self.D3,
             NU1: self.NU1,
             NU2: self.NU2,
-            Q_SWITCH1: self.Q_SWITCH1,
-            Q_SWITCH2: self.Q_SWITCH2,
-            D_SWITCH: self.D_SWITCH,
+            Q3: self.Q3,
+            Q2: self.Q2,
+            D2: self.D2,
         }
     }
 }
@@ -355,11 +355,11 @@ mod test {
     #[test]
     fn test_gsw() {
         let s = RespireTest::encode_setup();
-        type RingPP = IntModCyclo<{ RESPIRE_TEST_PARAMS.D }, 1024>;
+        type RingPP = IntModCyclo<{ RESPIRE_TEST_PARAMS.D1 }, 1024>;
         let mu = RingPP::from(111_u64);
         let encrypt = RespireTest::encode_gsw(&s, &mu.include_into());
 
-        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
+        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q1 / 1024);
         let decrypt = RespireTest::decode_gsw_scaled(&s, &encrypt, &scale);
         assert_eq!(decrypt.round_down_into(), mu);
     }
@@ -368,14 +368,14 @@ mod test {
     fn test_auto_hom() {
         let s = RespireTest::encode_setup();
         let auto_key = RespireTest::auto_setup::<
-            { RESPIRE_TEST_PARAMS.T_AUTO_REGEV },
-            { RESPIRE_TEST_PARAMS.Z_AUTO_REGEV },
+            { RESPIRE_TEST_PARAMS.T_PROJ_SHORT },
+            { RESPIRE_TEST_PARAMS.Z_PROJ_SHORT },
         >(3, &s);
         let x = <RespireTest as Respire>::RingP::from(IntModPoly::x());
         let encrypt = RespireTest::encode_regev(&s, &x.scale_up_into());
         let encrypt_auto = RespireTest::auto_hom::<
-            { RESPIRE_TEST_PARAMS.T_AUTO_REGEV },
-            { RESPIRE_TEST_PARAMS.Z_AUTO_REGEV },
+            { RESPIRE_TEST_PARAMS.T_PROJ_SHORT },
+            { RESPIRE_TEST_PARAMS.Z_PROJ_SHORT },
         >(&auto_key, &encrypt);
         let decrypt: <RespireTest as Respire>::RingP =
             RespireTest::decode_regev(&s, &encrypt_auto).round_down_into();
@@ -386,7 +386,7 @@ mod test {
     fn test_regev_to_gsw() {
         let s = RespireTest::encode_setup();
         let s_regev_to_gsw = RespireTest::regev_to_gsw_setup(&s);
-        type RingPP = IntModCyclo<{ RESPIRE_TEST_PARAMS.D }, 1024>;
+        type RingPP = IntModCyclo<{ RESPIRE_TEST_PARAMS.D1 }, 1024>;
         let mu = RingPP::from(567_u64);
         let mut mu_curr = mu.include_into();
         let mut encrypt_vec = Vec::with_capacity(RESPIRE_TEST_PARAMS.T_GSW);
@@ -396,7 +396,7 @@ mod test {
         }
         let encrypt_gsw = RespireTest::regev_to_gsw(&s_regev_to_gsw, encrypt_vec.as_slice());
 
-        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q / 1024);
+        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q1 / 1024);
         let decrypted = RespireTest::decode_gsw_scaled(&s, &encrypt_gsw, &scale);
         assert_eq!(decrypted.round_down_into(), mu);
     }
