@@ -44,7 +44,7 @@ impl<
     type QueryKey = BaseRespire::QueryKey;
     type PublicParams = BaseRespire::PublicParams;
     type Query = Vec<BaseRespire::QueryOne>;
-    type Response = Vec<BaseRespire::ResponseOneCompressed>;
+    type Response = Vec<BaseRespire::AnswerOneCompressed>;
     type Database = Vec<<BaseRespire as PIR>::Database>;
     type DatabaseHint = Vec<Vec<Option<usize>>>;
     type State = Vec<(usize, usize)>;

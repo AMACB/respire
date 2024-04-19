@@ -346,9 +346,9 @@ mod test {
     fn test_regev() {
         let s = RespireTest::encode_setup();
         let mu = <RespireTest as Respire>::RingP::from(12_u64);
-        let encoded = RespireTest::encode_regev(&s, &mu.scale_up_into());
+        let encoded = RespireTest::encode_rlwe(&s, &mu.scale_up_into());
         let decoded: <RespireTest as Respire>::RingP =
-            RespireTest::decode_regev(&s, &encoded).round_down_into();
+            RespireTest::decode_rlwe(&s, &encoded).round_down_into();
         assert_eq!(mu, decoded);
     }
 
@@ -359,7 +359,7 @@ mod test {
         let mu = RingPP::from(111_u64);
         let encrypt = RespireTest::encode_gsw(&s, &mu.include_into());
 
-        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q1 / 1024);
+        let scale = <RespireTest as Respire>::RingQ1Fast::from(RESPIRE_TEST_PARAMS.Q1 / 1024);
         let decrypt = RespireTest::decode_gsw_scaled(&s, &encrypt, &scale);
         assert_eq!(decrypt.round_down_into(), mu);
     }
@@ -372,31 +372,31 @@ mod test {
             { RESPIRE_TEST_PARAMS.Z_PROJ_SHORT },
         >(3, &s);
         let x = <RespireTest as Respire>::RingP::from(IntModPoly::x());
-        let encrypt = RespireTest::encode_regev(&s, &x.scale_up_into());
+        let encrypt = RespireTest::encode_rlwe(&s, &x.scale_up_into());
         let encrypt_auto = RespireTest::auto_hom::<
             { RESPIRE_TEST_PARAMS.T_PROJ_SHORT },
             { RESPIRE_TEST_PARAMS.Z_PROJ_SHORT },
         >(&auto_key, &encrypt);
         let decrypt: <RespireTest as Respire>::RingP =
-            RespireTest::decode_regev(&s, &encrypt_auto).round_down_into();
+            RespireTest::decode_rlwe(&s, &encrypt_auto).round_down_into();
         assert_eq!(decrypt, &(&x * &x) * &x);
     }
 
     #[test]
     fn test_regev_to_gsw() {
         let s = RespireTest::encode_setup();
-        let s_regev_to_gsw = RespireTest::regev_to_gsw_setup(&s);
+        let s_regev_to_gsw = RespireTest::rlwe_to_gsw_setup(&s);
         type RingPP = IntModCyclo<{ RESPIRE_TEST_PARAMS.D1 }, 1024>;
         let mu = RingPP::from(567_u64);
         let mut mu_curr = mu.include_into();
         let mut encrypt_vec = Vec::with_capacity(RESPIRE_TEST_PARAMS.T_GSW);
         for _ in 0..RESPIRE_TEST_PARAMS.T_GSW {
-            encrypt_vec.push(RespireTest::encode_regev(&s, &mu_curr));
+            encrypt_vec.push(RespireTest::encode_rlwe(&s, &mu_curr));
             mu_curr *= IntMod::from(RESPIRE_TEST_PARAMS.Z_GSW);
         }
-        let encrypt_gsw = RespireTest::regev_to_gsw(&s_regev_to_gsw, encrypt_vec.as_slice());
+        let encrypt_gsw = RespireTest::rlwe_to_gsw(&s_regev_to_gsw, encrypt_vec.as_slice());
 
-        let scale = <RespireTest as Respire>::RingQFast::from(RESPIRE_TEST_PARAMS.Q1 / 1024);
+        let scale = <RespireTest as Respire>::RingQ1Fast::from(RESPIRE_TEST_PARAMS.Q1 / 1024);
         let decrypted = RespireTest::decode_gsw_scaled(&s, &encrypt_gsw, &scale);
         assert_eq!(decrypted.round_down_into(), mu);
     }
@@ -405,21 +405,20 @@ mod test {
     fn test_scal_to_vec() {
         let s_scal = RespireTest::encode_setup();
         let s_vec = RespireTest::encode_vec_setup();
-        let s_scal_to_vec = RespireTest::scal_to_vec_setup(&s_scal, &s_vec);
+        let s_scal_to_vec = RespireTest::vectorize_setup(&s_scal, &s_vec);
 
-        let mut cs = Vec::<<RespireTest as Respire>::RegevCiphertext>::with_capacity(
-            RESPIRE_TEST_PARAMS.N_VEC,
-        );
+        let mut cs =
+            Vec::<<RespireTest as Respire>::RLWEEncoding>::with_capacity(RESPIRE_TEST_PARAMS.N_VEC);
         let mut expected =
             Matrix::<{ RESPIRE_TEST_PARAMS.N_VEC }, 1, <RespireTest as Respire>::RingP>::zero();
         for i in 0..RESPIRE_TEST_PARAMS.N_VEC {
             let mu = <RespireTest as Respire>::RingP::from(i as u64 + 1_u64);
             expected[(i, 0)] = mu.clone();
-            cs.push(RespireTest::encode_regev(&s_scal, &mu.scale_up_into()));
+            cs.push(RespireTest::encode_rlwe(&s_scal, &mu.scale_up_into()));
         }
 
         let c_vec = RespireTest::scal_to_vec(&s_scal_to_vec, cs.as_slice().try_into().unwrap());
-        let decoded = RespireTest::decode_vec_regev(&s_vec, &c_vec);
+        let decoded = RespireTest::decode_vec_rlwe(&s_vec, &c_vec);
         let actual = decoded.map_ring(|r| r.round_down_into());
         assert_eq!(expected, actual);
     }
@@ -433,7 +432,7 @@ mod test {
             m[(i, 0)] = IntModCyclo::from(177_u64 + i as u64)
         }
         let c =
-            RespireTest::encode_vec_regev(s_vec, &m.map_ring(|r| r.include_dim().scale_up_into()));
+            RespireTest::encode_vec_rlwe(s_vec, &m.map_ring(|r| r.include_dim().scale_up_into()));
         let compressed = RespireTest::answer_compress_vec(&pp, &c, RESPIRE_TEST_PARAMS.N_VEC);
         let extracted = RespireTest::extract_ring_one(&qk, &compressed);
         assert_eq!(m, extracted);

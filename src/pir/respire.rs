@@ -94,12 +94,12 @@ impl RespireParams {
     pub const fn expand(&self) -> RespireParamsExpanded {
         let q1 = self.Q1A * self.Q1B;
         let z_gsw = base_from_len(self.T_GSW, q1);
-        let z_auto_regev = base_from_len(self.T_PROJ_SHORT, q1);
-        let z_auto_gsw = base_from_len(self.T_PROJ_LONG, q1);
-        let z_regev_to_gsw = base_from_len(self.T_RLWE_TO_GSW, q1);
-        let z_scal_to_vec = base_from_len(self.T_VECTORIZE, q1);
-        let z_switch = 2;
-        let t_switch = floor_log(z_switch, self.Q2) + 1;
+        let z_proj_short = base_from_len(self.T_PROJ_SHORT, q1);
+        let z_proj_long = base_from_len(self.T_PROJ_LONG, q1);
+        let z_rlwe_to_gsw = base_from_len(self.T_RLWE_TO_GSW, q1);
+        let z_vectorize = base_from_len(self.T_VECTORIZE, q1);
+        let z_compress = 2;
+        let t_compress = floor_log(z_compress, self.Q2) + 1;
         RespireParamsExpanded {
             Q1: q1,
             Q1A: self.Q1A,
@@ -108,14 +108,14 @@ impl RespireParams {
             Z_GSW: z_gsw,
             T_GSW: self.T_GSW,
             M_GSW: 2 * self.T_GSW,
-            Z_PROJ_SHORT: z_auto_regev,
+            Z_PROJ_SHORT: z_proj_short,
             T_PROJ_SHORT: self.T_PROJ_SHORT,
-            Z_PROJ_LONG: z_auto_gsw,
+            Z_PROJ_LONG: z_proj_long,
             T_PROJ_LONG: self.T_PROJ_LONG,
-            Z_RLWE_TO_GSW: z_regev_to_gsw,
+            Z_RLWE_TO_GSW: z_rlwe_to_gsw,
             T_RLWE_TO_GSW: self.T_RLWE_TO_GSW,
             T_VECTORIZE: self.T_VECTORIZE,
-            Z_VECTORIZE: z_scal_to_vec,
+            Z_VECTORIZE: z_vectorize,
             BATCH_SIZE: self.BATCH_SIZE,
             N_VEC: self.N_VEC,
             M_RLWE_TO_GSW: 2 * self.T_RLWE_TO_GSW,
@@ -132,8 +132,8 @@ impl RespireParams {
             Q3: self.Q3,
             Q2: self.Q2,
             D2: self.D2,
-            T_COMPRESS: t_switch,
-            Z_COMPRESS: z_switch,
+            T_COMPRESS: t_compress,
+            Z_COMPRESS: z_compress,
             BYTES_PER_RECORD: (self.D3 * floor_log(2, self.P)) / 8,
         }
     }
@@ -375,24 +375,24 @@ macro_rules! respire_impl {
 pub trait Respire: PIR {
     // Type aliases
     type RingP;
-    type RingQ;
-    type RingQFast;
-    type RegevCiphertext;
-    type RegevSeeded;
-    type RegevCompressed;
-    type GSWCiphertext;
-    type EncodingKey;
-    type VecEncodingKey;
-    type VecEncodingKeyQ2;
-    type VecEncodingKeyQ2Small;
-    type AutoKey<const T: usize>;
-    type AutoKeyRegev;
-    type AutoKeyGSW;
-    type RegevToGSWKey;
-    type KeySwitchKey;
-    type ScalToVecKey;
-    type VecRegevCiphertext;
-    type VecRegevSmallTruncated;
+    type RingQ1;
+    type RingQ1Fast;
+    type RLWEEncoding;
+    type RLWEEncodingSeeded;
+    type RLWEEncodingCompressed;
+    type GSWEncoding;
+    type EncodingSecret;
+    type VecEncodingSecret;
+    type VecEncodingSecretQ2;
+    type VecEncodingSecretQ2Small;
+    type AutoParams<const T: usize>;
+    type AutoParamsShort;
+    type AutoParamsLong;
+    type RLWEToGSWParams;
+    type CompressParams;
+    type VectorizeParams;
+    type VecRLWEEncoding;
+    type VecRLWEEncodingSmallTruncated;
 
     // A single record
     type Record;
@@ -402,8 +402,8 @@ pub trait Respire: PIR {
     type RecordPacked;
     type QueryOne;
     type QueryOneExpanded;
-    type ResponseOne;
-    type ResponseOneCompressed;
+    type AnswerOne;
+    type AnswerOneCompressed;
 
     // Constants
     const PACKED_DIM1_SIZE: usize;
@@ -417,8 +417,8 @@ pub trait Respire: PIR {
     const NU1: usize;
     const NU3: usize;
     const NU2: usize;
-    const REGEV_COUNT: usize;
-    const REGEV_EXPAND_ITERS: usize;
+    const RLWE_COUNT: usize;
+    const RLWE_EXPAND_ITERS: usize;
     const GSW_FOLD_COUNT: usize;
     const GSW_ROT_COUNT: usize;
     const GSW_COUNT: usize;
@@ -435,21 +435,21 @@ pub trait Respire: PIR {
         q: &<Self as Respire>::QueryOne,
         qk: Option<&<Self as PIR>::QueryKey>,
         time_stats: Option<&mut Stats<Duration>>,
-    ) -> <Self as Respire>::ResponseOne;
+    ) -> <Self as Respire>::AnswerOne;
     fn answer_compress_chunk(
         pp: &<Self as PIR>::PublicParams,
-        chunk: &[<Self as Respire>::ResponseOne],
+        chunk: &[<Self as Respire>::AnswerOne],
         qk: Option<&<Self as PIR>::QueryKey>,
         time_stats: Option<&mut Stats<Duration>>,
-    ) -> <Self as Respire>::ResponseOneCompressed;
+    ) -> <Self as Respire>::AnswerOneCompressed;
     fn answer_compress_vec(
         pp: &<Self as PIR>::PublicParams,
-        vec: &<Self as Respire>::VecRegevCiphertext,
+        vec: &<Self as Respire>::VecRLWEEncoding,
         truncate_len: usize,
-    ) -> <Self as Respire>::ResponseOneCompressed;
+    ) -> <Self as Respire>::AnswerOneCompressed;
     fn extract_one(
         qk: &<Self as PIR>::QueryKey,
-        r: &<Self as Respire>::ResponseOneCompressed,
+        r: &<Self as Respire>::AnswerOneCompressed,
         time_stats: Option<&mut Stats<Duration>>,
     ) -> Vec<<Self as PIR>::RecordBytes>;
 
@@ -489,22 +489,22 @@ impl<const LEN: usize> PIRRecordBytes for RecordBytesImpl<LEN> {
 respire_impl!(PIR, {
     // Associated types
     type QueryKey = (
-        <Self as Respire>::EncodingKey,
-        <Self as Respire>::VecEncodingKey,
-        <Self as Respire>::VecEncodingKeyQ2Small,
+        <Self as Respire>::EncodingSecret,
+        <Self as Respire>::VecEncodingSecret,
+        <Self as Respire>::VecEncodingSecretQ2Small,
     );
     type PublicParams = (
         (
-            Vec<<Self as Respire>::AutoKeyRegev>,
-            Vec<<Self as Respire>::AutoKeyGSW>,
+            Vec<<Self as Respire>::AutoParamsShort>,
+            Vec<<Self as Respire>::AutoParamsLong>,
         ),
-        <Self as Respire>::RegevToGSWKey,
-        <Self as Respire>::KeySwitchKey,
-        <Self as Respire>::ScalToVecKey,
+        <Self as Respire>::RLWEToGSWParams,
+        <Self as Respire>::CompressParams,
+        <Self as Respire>::VectorizeParams,
     );
 
     type Query = Vec<<Self as Respire>::QueryOne>;
-    type Response = Vec<<Self as Respire>::ResponseOneCompressed>;
+    type Response = Vec<<Self as Respire>::AnswerOneCompressed>;
 
     /// We structure the database as `[2] x [D1 / S] x [DIM2_SIZE] x [DIM1_SIZE] x [S]` for optimal first dimension
     /// processing. The outermost pair is the first resp. second CRT projections, packed as two u32 into one u64;
@@ -582,7 +582,7 @@ respire_impl!(PIR, {
                     record_packed.coeff[Self::PACK_RATIO_DB * coeff_idx + record_in_chunk] = *coeff;
                 }
             }
-            let value = <Self as Respire>::RingQFast::from(&record_packed.include_into::<Q1>());
+            let value = <Self as Respire>::RingQ1Fast::from(&record_packed.include_into::<Q1>());
             let mut packed_value = [0u64; D1];
             for i in 0..D1 {
                 packed_value[i] = {
@@ -720,14 +720,14 @@ respire_impl!(PIR, {
         time_stats: Option<&mut Stats<Duration>>,
     ) -> (<Self as PIR>::QueryKey, <Self as PIR>::PublicParams) {
         let begin = Instant::now();
-        // Regev/GSW secret key
+        // RLWE/GSW secret
         let s_encode = Self::encode_setup();
 
-        // Vector regev secret key
-        let s_vec: <Self as Respire>::VecEncodingKey = Self::encode_vec_setup();
+        // Vector RLWE secret
+        let s_vec: <Self as Respire>::VecEncodingSecret = Self::encode_vec_setup();
 
-        // Small ring key
-        let s_small: <Self as Respire>::VecEncodingKeyQ2Small = {
+        // Compression target
+        let s_small: <Self as Respire>::VecEncodingSecretQ2Small = {
             let mut rng = ChaCha20Rng::from_entropy();
             let mut result = Matrix::zero();
             for i in 0..N_VEC {
@@ -739,7 +739,7 @@ respire_impl!(PIR, {
             result
         };
 
-        // Key switching key
+        // Vector secret mod Q2 (compression source secret)
         let s_vec_q2 = s_vec.map_ring(|r| {
             IntModCycloEval::from(IntModCyclo::from(
                 IntModCyclo::<D1, Q1>::from(r)
@@ -749,31 +749,27 @@ respire_impl!(PIR, {
         });
         let s_small_q2 =
             s_small.map_ring(|r| IntModCycloEval::from(IntModCyclo::from(r).include_dim()));
-        let s_switch = Self::key_switch_setup(&s_vec_q2, &s_small_q2);
+        let compress_params = Self::compress_setup(&s_vec_q2, &s_small_q2);
 
-        // Automorphism keys
-        let mut auto_keys_regev: Vec<<Self as Respire>::AutoKeyRegev> =
-            Vec::with_capacity(Self::REGEV_EXPAND_ITERS);
+        let mut auto_params_short: Vec<<Self as Respire>::AutoParamsShort> =
+            Vec::with_capacity(Self::RLWE_EXPAND_ITERS);
         for i in 0..floor_log(2, D1 as u64) {
             let tau_power = (D1 >> i) + 1;
-            auto_keys_regev.push(Self::auto_setup::<T_PROJ_SHORT, Z_PROJ_SHORT>(
+            auto_params_short.push(Self::auto_setup::<T_PROJ_SHORT, Z_PROJ_SHORT>(
                 tau_power, &s_encode,
             ));
         }
-        let mut auto_keys_gsw: Vec<<Self as Respire>::AutoKeyGSW> =
+        let mut auto_params_long: Vec<<Self as Respire>::AutoParamsLong> =
             Vec::with_capacity(Self::GSW_EXPAND_ITERS);
         for i in 0..floor_log(2, D1 as u64) {
             let tau_power = (D1 >> i) + 1;
-            auto_keys_gsw.push(Self::auto_setup::<T_PROJ_LONG, Z_PROJ_LONG>(
+            auto_params_long.push(Self::auto_setup::<T_PROJ_LONG, Z_PROJ_LONG>(
                 tau_power, &s_encode,
             ));
         }
 
-        // Regev to GSW key
-        let regev_to_gsw_key = Self::regev_to_gsw_setup(&s_encode);
-
-        // Scalar to vector key
-        let scal_to_vec_key = Self::scal_to_vec_setup(&s_encode, &s_vec);
+        let rlwe_to_gsw_params = Self::rlwe_to_gsw_setup(&s_encode);
+        let vectorize_params = Self::vectorize_setup(&s_encode, &s_vec);
 
         let end = Instant::now();
         if let Some(time_stats) = time_stats {
@@ -783,10 +779,10 @@ respire_impl!(PIR, {
         (
             (s_encode, s_vec, s_small),
             (
-                (auto_keys_regev, auto_keys_gsw),
-                regev_to_gsw_key,
-                s_switch,
-                scal_to_vec_key,
+                (auto_params_short, auto_params_long),
+                rlwe_to_gsw_params,
+                compress_params,
+                vectorize_params,
             ),
         )
     }
@@ -846,31 +842,31 @@ respire_impl!(PIR, {
 
 respire_impl!(Respire, {
     type RingP = IntModCyclo<D1, P>;
-    type RingQ = IntModCyclo<D1, Q1>;
-    type RingQFast = IntModCycloCRTEval<D1, Q1A, Q1B>;
-    type RegevCiphertext = Matrix<2, 1, Self::RingQFast>;
-    type RegevSeeded = ([u8; 32], Self::RingQFast);
-    type RegevCompressed = ([u8; 32], Vec<IntMod<Q1>>);
-    type GSWCiphertext = Matrix<2, M_GSW, Self::RingQFast>;
+    type RingQ1 = IntModCyclo<D1, Q1>;
+    type RingQ1Fast = IntModCycloCRTEval<D1, Q1A, Q1B>;
+    type RLWEEncoding = Matrix<2, 1, Self::RingQ1Fast>;
+    type RLWEEncodingSeeded = ([u8; 32], Self::RingQ1Fast);
+    type RLWEEncodingCompressed = ([u8; 32], Vec<IntMod<Q1>>);
+    type GSWEncoding = Matrix<2, M_GSW, Self::RingQ1Fast>;
 
-    type EncodingKey = Self::RingQFast;
-    type VecEncodingKey = Matrix<N_VEC, 1, Self::RingQFast>;
-    type VecEncodingKeyQ2 = Matrix<N_VEC, 1, IntModCycloEval<D1, Q2>>;
-    type VecEncodingKeyQ2Small = Matrix<N_VEC, 1, IntModCycloEval<D2, Q2>>;
-    type AutoKey<const T: usize> = (Matrix<2, T, Self::RingQFast>, usize);
-    type AutoKeyRegev = Self::AutoKey<T_PROJ_SHORT>;
-    type AutoKeyGSW = Self::AutoKey<T_PROJ_LONG>;
-    type RegevToGSWKey = Matrix<2, M_RLWE_TO_GSW, Self::RingQFast>;
-    type KeySwitchKey = (
+    type EncodingSecret = Self::RingQ1Fast;
+    type VecEncodingSecret = Matrix<N_VEC, 1, Self::RingQ1Fast>;
+    type VecEncodingSecretQ2 = Matrix<N_VEC, 1, IntModCycloEval<D1, Q2>>;
+    type VecEncodingSecretQ2Small = Matrix<N_VEC, 1, IntModCycloEval<D2, Q2>>;
+    type AutoParams<const T: usize> = (Matrix<2, T, Self::RingQ1Fast>, usize);
+    type AutoParamsShort = Self::AutoParams<T_PROJ_SHORT>;
+    type AutoParamsLong = Self::AutoParams<T_PROJ_LONG>;
+    type RLWEToGSWParams = Matrix<2, M_RLWE_TO_GSW, Self::RingQ1Fast>;
+    type CompressParams = (
         Matrix<1, T_COMPRESS, IntModCycloEval<D1, Q2>>,
         Matrix<N_VEC, T_COMPRESS, IntModCycloEval<D1, Q2>>,
     );
-    type ScalToVecKey = Vec<(
-        Matrix<1, T_VECTORIZE, Self::RingQFast>,
-        Matrix<N_VEC, T_VECTORIZE, Self::RingQFast>,
+    type VectorizeParams = Vec<(
+        Matrix<1, T_VECTORIZE, Self::RingQ1Fast>,
+        Matrix<N_VEC, T_VECTORIZE, Self::RingQ1Fast>,
     )>;
-    type VecRegevCiphertext = (Self::RingQFast, Matrix<N_VEC, 1, Self::RingQFast>);
-    type VecRegevSmallTruncated = (
+    type VecRLWEEncoding = (Self::RingQ1Fast, Matrix<N_VEC, 1, Self::RingQ1Fast>);
+    type VecRLWEEncodingSmallTruncated = (
         IntModCyclo<D2, Q2>,
         // Length may be truncated to less than N_VEC
         Vec<IntModCyclo<D2, Q3>>,
@@ -880,16 +876,16 @@ respire_impl!(Respire, {
     type RecordPackedSmall = Matrix<N_VEC, 1, IntModCyclo<D2, P>>;
     type RecordPacked = IntModCyclo<D1, P>;
     type QueryOne = (
-        <Self as Respire>::RegevCompressed,
-        <Self as Respire>::RegevCompressed,
+        <Self as Respire>::RLWEEncodingCompressed,
+        <Self as Respire>::RLWEEncodingCompressed,
     );
     type QueryOneExpanded = (
-        Vec<<Self as Respire>::RegevCiphertext>, // first dim
-        Vec<<Self as Respire>::GSWCiphertext>,   // fold
-        Vec<<Self as Respire>::GSWCiphertext>,   // rotate
+        Vec<<Self as Respire>::RLWEEncoding>, // first dim
+        Vec<<Self as Respire>::GSWEncoding>,  // fold
+        Vec<<Self as Respire>::GSWEncoding>,  // rotate
     );
-    type ResponseOne = <Self as Respire>::RegevCiphertext;
-    type ResponseOneCompressed = <Self as Respire>::VecRegevSmallTruncated;
+    type AnswerOne = <Self as Respire>::RLWEEncoding;
+    type AnswerOneCompressed = <Self as Respire>::VecRLWEEncodingSmallTruncated;
 
     const PACKED_DIM1_SIZE: usize = 2_usize.pow(NU1 as u32);
     const PACKED_DIM2_SIZE: usize = 2_usize.pow(NU2 as u32);
@@ -903,8 +899,8 @@ respire_impl!(Respire, {
     const NU2: usize = NU2;
     const NU3: usize = ceil_log(2, (D1 / D3) as u64);
 
-    const REGEV_COUNT: usize = 1 << NU1;
-    const REGEV_EXPAND_ITERS: usize = NU1;
+    const RLWE_COUNT: usize = 1 << NU1;
+    const RLWE_EXPAND_ITERS: usize = NU1;
     const GSW_FOLD_COUNT: usize = NU2;
     const GSW_ROT_COUNT: usize = Self::NU3;
 
@@ -921,14 +917,14 @@ respire_impl!(Respire, {
         let last_dims_size = 2usize.pow((Self::NU2 + Self::NU3) as u32);
         let (idx_i, idx_j) = (idx / last_dims_size, idx % last_dims_size);
 
-        let mut mu_regev = <Self as Respire>::RingQ::zero();
-        for i in 0..Self::REGEV_COUNT {
-            mu_regev.coeff[reverse_bits_fast::<D1>(i)] =
+        let mut mu_rlwe = <Self as Respire>::RingQ1::zero();
+        for i in 0..Self::RLWE_COUNT {
+            mu_rlwe.coeff[reverse_bits_fast::<D1>(i)] =
                 IntMod::<P>::from((i == idx_i) as u64).scale_up_into();
         }
 
         // [NU2 + NU3] x [T_GSW]
-        let mut mu_gsw = <Self as Respire>::RingQ::zero();
+        let mut mu_gsw = <Self as Respire>::RingQ1::zero();
 
         let mut bits = Vec::with_capacity(NU2);
         let mut idx_j_curr = idx_j;
@@ -946,14 +942,14 @@ respire_impl!(Respire, {
             }
         }
 
-        let (seed_regev, ct1_regev) = Self::encode_regev_seeded(s_encode, &mu_regev);
-        let ct1_regev_coeff = <Self as Respire>::RingQ::from(&ct1_regev).coeff;
-        let (seed_gsw, ct1_gsw) = Self::encode_regev_seeded(s_encode, &mu_gsw);
-        let ct1_gsw_coeff = <Self as Respire>::RingQ::from(&ct1_gsw).coeff;
-        let compressed_regev = (
-            seed_regev,
-            (0..Self::REGEV_COUNT)
-                .map(|i| ct1_regev_coeff[reverse_bits_fast::<D1>(i)])
+        let (seed_rlwe, ct1_rlwe) = Self::encode_rlwe_seeded(s_encode, &mu_rlwe);
+        let ct1_rlwe_coeff = <Self as Respire>::RingQ1::from(&ct1_rlwe).coeff;
+        let (seed_gsw, ct1_gsw) = Self::encode_rlwe_seeded(s_encode, &mu_gsw);
+        let ct1_gsw_coeff = <Self as Respire>::RingQ1::from(&ct1_gsw).coeff;
+        let compressed_rlwe = (
+            seed_rlwe,
+            (0..Self::RLWE_COUNT)
+                .map(|i| ct1_rlwe_coeff[reverse_bits_fast::<D1>(i)])
                 .collect_vec(),
         );
         let compressed_gsw = (
@@ -967,7 +963,7 @@ respire_impl!(Respire, {
         if let Some(time_stats) = time_stats {
             time_stats.add("query", end - begin);
         }
-        (compressed_regev, compressed_gsw)
+        (compressed_rlwe, compressed_gsw)
     }
 
     fn answer_one(
@@ -976,16 +972,16 @@ respire_impl!(Respire, {
         q: &<Self as Respire>::QueryOne,
         qk: Option<&<Self as PIR>::QueryKey>,
         mut time_stats: Option<&mut Stats<Duration>>,
-    ) -> <Self as Respire>::ResponseOne {
+    ) -> <Self as Respire>::AnswerOne {
         // Query expansion
-        let (regevs, gsws_fold, gsws_rot) =
-            Self::answer_query_expand(pp, q, qk, time_stats.as_deref_mut());
-        let regev_saved = regevs[0].clone();
+        let (rlwes, gsws_fold, gsws_rot) =
+            Self::answer_query_unpack(pp, q, qk, time_stats.as_deref_mut());
+        let rlwe_saved = rlwes[0].clone();
 
         let i1 = Instant::now();
 
         // First dimension
-        let c_firstdim = Self::answer_first_dim(db, &regevs);
+        let c_firstdim = Self::answer_first_dim(db, &rlwes);
         let firstdim_saved = c_firstdim[0].clone(); // save for noise logging
         let i2 = Instant::now();
 
@@ -994,7 +990,7 @@ respire_impl!(Respire, {
         let i3 = Instant::now();
 
         // Rotate select
-        let c_rot = Self::answer_rotate_select(&c_fold, gsws_rot.as_slice());
+        let c_rot = Self::answer_rotate(&c_fold, gsws_rot.as_slice());
         let i4 = Instant::now();
 
         // Project
@@ -1004,22 +1000,22 @@ respire_impl!(Respire, {
         if let Some(time_stats) = time_stats {
             time_stats.add("answer_first_dim", i2 - i1);
             time_stats.add("answer_fold", i3 - i2);
-            time_stats.add("answer_rotate_select", i4 - i3);
+            time_stats.add("answer_rotate", i4 - i3);
             time_stats.add("answer_project", i5 - i4);
         }
 
         if let Some((s_enc, _, _)) = qk {
             if log_enabled!(Info) {
-                let e_regev = Self::noise_subgaussian_bits(s_enc, &regev_saved);
+                let e_rlwe = Self::noise_subgaussian_bits(s_enc, &rlwe_saved);
                 let e_firstdim = Self::noise_subgaussian_bits(s_enc, &firstdim_saved);
                 let e_fold = Self::noise_subgaussian_bits(s_enc, &c_fold);
                 let e_rot = Self::noise_subgaussian_bits(s_enc, &c_rot);
                 let e_proj = Self::noise_subgaussian_bits(s_enc, &c_proj);
 
-                info!("measured noise query expanded regev: {}", e_regev);
+                info!("measured noise query expanded rlwe: {}", e_rlwe);
                 info!("measured noise first dim: {}", e_firstdim);
                 info!("measured noise fold: {}", e_fold);
-                info!("measured noise rotate select: {}", e_rot);
+                info!("measured noise rotate: {}", e_rot);
                 // TODO: note that project noise is lower on the coefficients that are projected away. So reporting this average is a bit inaccurate.
                 info!("measured noise project*: {}", e_proj);
             }
@@ -1030,24 +1026,24 @@ respire_impl!(Respire, {
 
     fn answer_compress_chunk(
         pp: &<Self as PIR>::PublicParams,
-        chunk: &[<Self as Respire>::ResponseOne],
+        chunk: &[<Self as Respire>::AnswerOne],
         qk: Option<&<Self as PIR>::QueryKey>,
         time_stats: Option<&mut Stats<Duration>>,
-    ) -> <Self as Respire>::ResponseOneCompressed {
+    ) -> <Self as Respire>::AnswerOneCompressed {
         let begin = Instant::now();
         let mut scalar_cts = Vec::with_capacity(Self::RESPONSE_CHUNK_SIZE);
-        let (_, _, _, scal_to_vec_key) = pp;
+        let (_, _, _, vectorize_params) = pp;
         for vec_idx in 0..N_VEC {
             let mut scalar_ct = Matrix::zero();
             for pack_idx in 0..Self::PACK_RATIO_RESPONSE {
                 let idx = vec_idx * Self::PACK_RATIO_RESPONSE + pack_idx;
                 if idx < chunk.len() {
-                    scalar_ct += &Self::regev_mul_x_pow(&chunk[idx], pack_idx * (D1 / D2));
+                    scalar_ct += &Self::rlwe_mul_x_pow(&chunk[idx], pack_idx * (D1 / D2));
                 }
             }
             scalar_cts.push(scalar_ct)
         }
-        let vec = Self::scal_to_vec(scal_to_vec_key, scalar_cts.as_slice().try_into().unwrap());
+        let vec = Self::scal_to_vec(vectorize_params, scalar_cts.as_slice().try_into().unwrap());
         let compressed =
             Self::answer_compress_vec(pp, &vec, chunk.len().div_ceil(Self::PACK_RATIO_RESPONSE));
 
@@ -1067,9 +1063,9 @@ respire_impl!(Respire, {
 
     fn answer_compress_vec(
         (_, _, (a_t, b_mat), _): &<Self as PIR>::PublicParams,
-        (c_r, c_m): &<Self as Respire>::VecRegevCiphertext,
+        (c_r, c_m): &<Self as Respire>::VecRLWEEncoding,
         truncate_len: usize,
-    ) -> <Self as Respire>::ResponseOneCompressed {
+    ) -> <Self as Respire>::AnswerOneCompressed {
         let c_r = IntModCyclo::<D1, Q1>::from(c_r);
         let c_m = c_m.map_ring(|r| IntModCyclo::<D1, Q1>::from(r));
         let mut cr_scaled = IntModCyclo::zero();
@@ -1106,7 +1102,7 @@ respire_impl!(Respire, {
 
     fn extract_one(
         qk: &<Self as PIR>::QueryKey,
-        r: &<Self as Respire>::ResponseOneCompressed,
+        r: &<Self as Respire>::AnswerOneCompressed,
         time_stats: Option<&mut Stats<Duration>>,
     ) -> Vec<<Self as PIR>::RecordBytes> {
         let begin = Instant::now();
@@ -1215,22 +1211,22 @@ respire_impl!(Respire, {
 
         // Query expansion
         let e_reg = proj_noise(error_width_sq, T_PROJ_SHORT, Z_PROJ_SHORT, log_d);
-        info!("Query expand regev: {}", e_to_bits(e_reg));
+        info!("Query expand rlwe: {}", e_to_bits(e_reg));
         let e_gsw_raw = proj_noise(error_width_sq, T_PROJ_LONG, Z_PROJ_LONG, log_d);
         info!("Query expand GSW (raw): {}", e_to_bits(e_gsw_raw));
         let e_gsw = {
-            // Regev to GSW
+            // RLWE to GSW
             let initial_component = (D1 as f64) * e_gsw_raw * secret_bound_sq;
             let gadget_component =
                 // m = 2t; t is absorbed into gadget_factor()
                 2_f64 * (D1 as f64) * gadget_factor(T_RLWE_TO_GSW, Z_RLWE_TO_GSW) * error_width_sq;
             let e_converted = initial_component + gadget_component;
             info!(
-                "    Regev to GSW initial component: {}",
+                "    RLWE to GSW initial component: {}",
                 e_to_bits(initial_component),
             );
             info!(
-                "    Regev to GSW gadget component: {}",
+                "    RLWE to GSW gadget component: {}",
                 e_to_bits(gadget_component),
             );
             e_converted
@@ -1350,7 +1346,7 @@ respire_impl!(Respire, {
             (automorph_elems * q_elem_size) as f64 / 1024_f64
         );
         info!(
-            "regev to GSW pp: {:.3} KiB",
+            "rlwe to GSW pp: {:.3} KiB",
             (reg_to_gsw_elems * q_elem_size) as f64 / 1024_f64
         );
         info!(
@@ -1366,7 +1362,7 @@ respire_impl!(Respire, {
     }
 
     fn params_query_one_size() -> usize {
-        (Self::REGEV_COUNT + Self::GSW_COUNT) * ceil_log(2, Q1) / 8
+        (Self::RLWE_COUNT + Self::GSW_COUNT) * ceil_log(2, Q1) / 8
     }
 
     fn params_record_one_size() -> usize {
@@ -1386,7 +1382,7 @@ respire_impl!(Respire, {
 respire_impl!({
     pub fn extract_ring_one(
         (_, _, s_small): &<Self as PIR>::QueryKey,
-        (c_r_hat, c_m_hat_trunc): &<Self as Respire>::ResponseOneCompressed,
+        (c_r_hat, c_m_hat_trunc): &<Self as Respire>::AnswerOneCompressed,
     ) -> <Self as Respire>::RecordPackedSmall {
         let neg_s_small_cr =
             (-&(s_small * &IntModCycloEval::from(c_r_hat))).map_ring(|r| IntModCyclo::from(r));
@@ -1430,21 +1426,21 @@ respire_impl!({
         result
     }
 
-    pub fn answer_query_expand(
-        ((auto_keys_regev, auto_keys_gsw), regev_to_gsw_key, _, _): &<Self as PIR>::PublicParams,
+    pub fn answer_query_unpack(
+        ((auto_params_short, auto_params_long), rlwe_to_gsw_params, _, _): &<Self as PIR>::PublicParams,
         ((seed_reg, vec_reg), (seed_gsw, vec_gsw)): &<Self as Respire>::QueryOne,
         _: Option<&<Self as PIR>::QueryKey>,
         time_stats: Option<&mut Stats<Duration>>,
     ) -> <Self as Respire>::QueryOneExpanded {
-        let inv = <Self as Respire>::RingQFast::from(mod_inverse(D1 as u64, Q1));
-        let mut c_regevs = {
+        let inv = <Self as Respire>::RingQ1Fast::from(mod_inverse(D1 as u64, Q1));
+        let mut c_rlwes = {
             let mut c1_reg = IntModCyclo::zero();
             for (i, coeff) in vec_reg.iter().copied().enumerate() {
                 c1_reg.coeff[reverse_bits_fast::<D1>(i)] = coeff;
             }
-            let mut c_reg = Self::regev_recover_from_seeded((
+            let mut c_reg = Self::rlwe_recover_from_seeded((
                 *seed_reg,
-                <Self as Respire>::RingQFast::from(&c1_reg),
+                <Self as Respire>::RingQ1Fast::from(&c1_reg),
             ));
             c_reg[(0, 0)] *= &inv;
             c_reg[(1, 0)] *= &inv;
@@ -1456,34 +1452,37 @@ respire_impl!({
             for (i, coeff) in vec_gsw.iter().copied().enumerate() {
                 c1_gsw.coeff[reverse_bits_fast::<D1>(i)] = coeff;
             }
-            let mut c_gsw = Self::regev_recover_from_seeded((
+            let mut c_gsw = Self::rlwe_recover_from_seeded((
                 *seed_gsw,
-                <Self as Respire>::RingQFast::from(&c1_gsw),
+                <Self as Respire>::RingQ1Fast::from(&c1_gsw),
             ));
             c_gsw[(0, 0)] *= &inv;
             c_gsw[(1, 0)] *= &inv;
             vec![c_gsw]
         };
 
-        assert_eq!(1 << auto_keys_regev.len(), D1);
-        assert_eq!(1 << auto_keys_gsw.len(), D1);
+        assert_eq!(1 << auto_params_short.len(), D1);
+        assert_eq!(1 << auto_params_long.len(), D1);
 
         let i0 = Instant::now();
-        for (i, auto_key_regev) in auto_keys_regev.iter().enumerate() {
-            c_regevs = Self::do_proj_iter::<T_PROJ_SHORT, Z_PROJ_SHORT>(
+        for (i, auto_params_short) in auto_params_short.iter().enumerate() {
+            c_rlwes = Self::do_proj_iter::<T_PROJ_SHORT, Z_PROJ_SHORT>(
                 i,
-                c_regevs.as_slice(),
-                auto_key_regev,
+                c_rlwes.as_slice(),
+                auto_params_short,
             );
             let denom = D1 >> (i + 1);
-            c_regevs.truncate((Self::REGEV_COUNT + denom - 1) / denom);
+            c_rlwes.truncate((Self::RLWE_COUNT + denom - 1) / denom);
         }
-        assert_eq!(c_regevs.len(), Self::REGEV_COUNT);
+        assert_eq!(c_rlwes.len(), Self::RLWE_COUNT);
 
         let i1 = Instant::now();
-        for (i, auto_key_gsw) in auto_keys_gsw.iter().enumerate() {
-            c_gsws =
-                Self::do_proj_iter::<T_PROJ_LONG, Z_PROJ_LONG>(i, c_gsws.as_slice(), auto_key_gsw);
+        for (i, auto_params_long) in auto_params_long.iter().enumerate() {
+            c_gsws = Self::do_proj_iter::<T_PROJ_LONG, Z_PROJ_LONG>(
+                i,
+                c_gsws.as_slice(),
+                auto_params_long,
+            );
             let denom = D1 >> (i + 1);
             c_gsws.truncate((Self::GSW_COUNT + denom - 1) / denom);
         }
@@ -1492,7 +1491,7 @@ respire_impl!({
         let i2 = Instant::now();
         let mut c_gsws_iter = c_gsws
             .chunks_exact(T_GSW)
-            .map(|cs| Self::regev_to_gsw(regev_to_gsw_key, cs));
+            .map(|cs| Self::rlwe_to_gsw(rlwe_to_gsw_params, cs));
 
         let c_gsws_fold = (0..Self::GSW_FOLD_COUNT)
             .map(|_| c_gsws_iter.next().unwrap())
@@ -1511,14 +1510,14 @@ respire_impl!({
         }
 
         // TODO measure and report noise through this phase? Difficult because need to know the exact encoding (since they are not rounded to q/p)
-        (c_regevs, c_gsws_fold, c_gsws_rot)
+        (c_rlwes, c_gsws_fold, c_gsws_rot)
     }
 
     pub fn answer_first_dim(
         db: &<Self as PIR>::Database,
-        regevs: &[<Self as Respire>::RegevCiphertext],
-    ) -> Vec<<Self as Respire>::RegevCiphertext> {
-        assert_eq!(regevs.len(), Self::PACKED_DIM1_SIZE);
+        rlwes: &[<Self as Respire>::RLWEEncoding],
+    ) -> Vec<<Self as Respire>::RLWEEncoding> {
+        assert_eq!(rlwes.len(), Self::PACKED_DIM1_SIZE);
 
         // Flatten + transpose the ciphertexts
         let mut c0s: Vec<SimdVec> = Vec::with_capacity((D1 / SIMD_LANES) * Self::PACKED_DIM1_SIZE);
@@ -1526,7 +1525,7 @@ respire_impl!({
 
         #[cfg(not(target_feature = "avx2"))]
         for eval_idx in 0..D1 {
-            for c in regevs.iter() {
+            for c in rlwes.iter() {
                 let c0_lo = u64::from(c[(0, 0)].proj1.evals[eval_idx]);
                 let c0_hi = u64::from(c[(0, 0)].proj2.evals[eval_idx]);
                 c0s.push((c0_hi << 32) | c0_lo);
@@ -1539,7 +1538,7 @@ respire_impl!({
 
         #[cfg(target_feature = "avx2")]
         for eval_vec_idx in 0..(D1 / SIMD_LANES) {
-            for c in regevs.iter() {
+            for c in rlwes.iter() {
                 let mut c0_vec: SimdVec = Aligned32([0_u64; 4]);
                 let mut c1_vec: SimdVec = Aligned32([0_u64; 4]);
                 for lane_idx in 0..SIMD_LANES {
@@ -1559,8 +1558,8 @@ respire_impl!({
         }
 
         // First dimension processing
-        let mut result: Vec<<Self as Respire>::RegevCiphertext> = (0..Self::PACKED_DIM2_SIZE)
-            .map(|_| <Self as Respire>::RegevCiphertext::zero())
+        let mut result: Vec<<Self as Respire>::RLWEEncoding> = (0..Self::PACKED_DIM2_SIZE)
+            .map(|_| <Self as Respire>::RLWEEncoding::zero())
             .collect();
 
         // Norm is at most max(Q1A, Q1B)^2 for each term
@@ -1722,9 +1721,9 @@ respire_impl!({
     }
 
     pub fn answer_fold(
-        first_dim_folded: Vec<<Self as Respire>::RegevCiphertext>,
-        gsws: &[<Self as Respire>::GSWCiphertext],
-    ) -> <Self as Respire>::RegevCiphertext {
+        first_dim_folded: Vec<<Self as Respire>::RLWEEncoding>,
+        gsws: &[<Self as Respire>::GSWEncoding],
+    ) -> <Self as Respire>::RLWEEncoding {
         assert_eq!(gsws.len(), Self::NU2);
         let fold_size: usize = 2usize.pow(Self::NU2 as u32);
 
@@ -1744,60 +1743,58 @@ respire_impl!({
         curr.remove(0)
     }
 
-    pub fn answer_rotate_select(
-        ct: &<Self as Respire>::RegevCiphertext,
-        gsws_rot: &[<Self as Respire>::GSWCiphertext],
-    ) -> <Self as Respire>::RegevCiphertext {
+    pub fn answer_rotate(
+        ct: &<Self as Respire>::RLWEEncoding,
+        gsws_rot: &[<Self as Respire>::GSWEncoding],
+    ) -> <Self as Respire>::RLWEEncoding {
         assert_eq!(gsws_rot.len(), Self::NU3);
         let mut ct_curr = ct.clone();
         for (iter_num, gsw) in gsws_rot.iter().enumerate() {
             let rot = 1 << (Self::NU3 - 1 - iter_num);
-            ct_curr = Self::select_hom(
-                &ct_curr,
-                &Self::regev_mul_x_pow(&ct_curr, 2 * D1 - rot),
-                gsw,
-            );
+            ct_curr =
+                Self::select_hom(&ct_curr, &Self::rlwe_mul_x_pow(&ct_curr, 2 * D1 - rot), gsw);
         }
         ct_curr
     }
 
     pub fn answer_project(
-        ((_, auto_key_gsws), _, _, _): &<Self as PIR>::PublicParams,
-        ct: &<Self as Respire>::RegevCiphertext,
-    ) -> <Self as Respire>::RegevCiphertext {
+        ((_, auto_params_long), _, _, _): &<Self as PIR>::PublicParams,
+        ct: &<Self as Respire>::RLWEEncoding,
+    ) -> <Self as Respire>::RLWEEncoding {
         let mut ct_curr = ct.clone();
-        // TODO no need to project if no batching
         let num_proj = Self::NU3;
-        let inv = <Self as Respire>::RingQFast::from(mod_inverse(
+        let inv = <Self as Respire>::RingQ1Fast::from(mod_inverse(
             2_usize.pow(num_proj as u32) as u64,
             Q1,
         ));
         ct_curr[(0, 0)] *= &inv;
         ct_curr[(1, 0)] *= &inv;
 
-        for (iter_num, auto_key) in auto_key_gsws.iter().enumerate().take(num_proj) {
-            // TODO use different T/Z/auto keys
-            ct_curr =
-                Self::do_proj_iter_one::<T_PROJ_LONG, Z_PROJ_LONG>(iter_num, &ct_curr, auto_key);
+        for (iter_num, auto_params_long) in auto_params_long.iter().enumerate().take(num_proj) {
+            ct_curr = Self::do_proj_iter_one::<T_PROJ_LONG, Z_PROJ_LONG>(
+                iter_num,
+                &ct_curr,
+                auto_params_long,
+            );
         }
         ct_curr
     }
 
-    pub fn encode_setup() -> <Self as Respire>::RingQFast {
+    pub fn encode_setup() -> <Self as Respire>::RingQ1Fast {
         let mut rng = ChaCha20Rng::from_entropy();
-        let mut result = <Self as Respire>::RingQ::zero();
+        let mut result = <Self as Respire>::RingQ1::zero();
         for coeff in result.coeff.iter_mut() {
             *coeff = IntMod::from(rng.gen_range(-(SECRET_BOUND as i64)..(SECRET_BOUND as i64)));
         }
-        <Self as Respire>::RingQFast::from(&result)
+        <Self as Respire>::RingQ1Fast::from(&result)
     }
 
-    pub fn encode_vec_setup() -> <Self as Respire>::VecEncodingKey {
+    pub fn encode_vec_setup() -> <Self as Respire>::VecEncodingSecret {
         let mut rng = ChaCha20Rng::from_entropy();
         let mut result = Matrix::zero();
         for i in 0..N_VEC {
-            result[(i, 0)] = <Self as Respire>::RingQFast::from(
-                &<Self as Respire>::RingQ::rand_discrete_gaussian::<_, SECRET_WIDTH_VEC_MILLIONTHS>(
+            result[(i, 0)] = <Self as Respire>::RingQ1Fast::from(
+                &<Self as Respire>::RingQ1::rand_discrete_gaussian::<_, SECRET_WIDTH_VEC_MILLIONTHS>(
                     &mut rng,
                 ),
             );
@@ -1805,52 +1802,52 @@ respire_impl!({
         result
     }
 
-    pub fn encode_regev(
-        s_encode: &<Self as Respire>::EncodingKey,
-        mu: &<Self as Respire>::RingQ,
-    ) -> <Self as Respire>::RegevCiphertext {
+    pub fn encode_rlwe(
+        s_encode: &<Self as Respire>::EncodingSecret,
+        mu: &<Self as Respire>::RingQ1,
+    ) -> <Self as Respire>::RLWEEncoding {
         let mut rng = ChaCha20Rng::from_entropy();
         let mut c = Matrix::zero();
-        c[(0, 0)] = <Self as Respire>::RingQFast::rand_uniform(&mut rng);
-        let e = <Self as Respire>::RingQFast::from(
-            &<Self as Respire>::RingQ::rand_discrete_gaussian::<_, ERROR_WIDTH_MILLIONTHS>(
+        c[(0, 0)] = <Self as Respire>::RingQ1Fast::rand_uniform(&mut rng);
+        let e = <Self as Respire>::RingQ1Fast::from(
+            &<Self as Respire>::RingQ1::rand_discrete_gaussian::<_, ERROR_WIDTH_MILLIONTHS>(
                 &mut rng,
             ),
         );
         let mut c1 = &c[(0, 0)] * s_encode;
         c1 += &e;
-        c1 += &<Self as Respire>::RingQFast::from(mu);
+        c1 += &<Self as Respire>::RingQ1Fast::from(mu);
         c[(1, 0)] = c1;
         c
     }
 
-    pub fn encode_regev_seeded(
-        s_encode: &<Self as Respire>::EncodingKey,
-        mu: &<Self as Respire>::RingQ,
-    ) -> <Self as Respire>::RegevSeeded {
+    pub fn encode_rlwe_seeded(
+        s_encode: &<Self as Respire>::EncodingSecret,
+        mu: &<Self as Respire>::RingQ1,
+    ) -> <Self as Respire>::RLWEEncodingSeeded {
         let mut rng = ChaCha20Rng::from_entropy();
         let seed = rng.gen();
         let c0 = {
             let mut seeded_rng = ChaCha20Rng::from_seed(seed);
-            <Self as Respire>::RingQFast::rand_uniform(&mut seeded_rng)
+            <Self as Respire>::RingQ1Fast::rand_uniform(&mut seeded_rng)
         };
-        let e = <Self as Respire>::RingQFast::from(
-            &<Self as Respire>::RingQ::rand_discrete_gaussian::<_, ERROR_WIDTH_MILLIONTHS>(
+        let e = <Self as Respire>::RingQ1Fast::from(
+            &<Self as Respire>::RingQ1::rand_discrete_gaussian::<_, ERROR_WIDTH_MILLIONTHS>(
                 &mut rng,
             ),
         );
         let mut c1 = &c0 * s_encode;
         c1 += &e;
-        c1 += &<Self as Respire>::RingQFast::from(mu);
+        c1 += &<Self as Respire>::RingQ1Fast::from(mu);
         (seed, c1)
     }
 
-    pub fn regev_recover_from_seeded(
-        (seed, c1): <Self as Respire>::RegevSeeded,
-    ) -> <Self as Respire>::RegevCiphertext {
+    pub fn rlwe_recover_from_seeded(
+        (seed, c1): <Self as Respire>::RLWEEncodingSeeded,
+    ) -> <Self as Respire>::RLWEEncoding {
         let c0 = {
             let mut seeded_rng = ChaCha20Rng::from_seed(seed);
-            <Self as Respire>::RingQFast::rand_uniform(&mut seeded_rng)
+            <Self as Respire>::RingQ1Fast::rand_uniform(&mut seeded_rng)
         };
         let mut result = Matrix::zero();
         result[(0, 0)] = c0;
@@ -1865,141 +1862,141 @@ respire_impl!({
         T: Rng,
     >(
         rng: &mut T,
-    ) -> Matrix<N, M, <Self as Respire>::RingQFast> {
+    ) -> Matrix<N, M, <Self as Respire>::RingQ1Fast> {
         let mut result = Matrix::zero();
         for r in 0..N {
             for c in 0..M {
-                result[(r, c)] = <Self as Respire>::RingQFast::from(
-                    &<Self as Respire>::RingQ::rand_discrete_gaussian::<_, WIDTH_MILLIONTHS>(rng),
+                result[(r, c)] = <Self as Respire>::RingQ1Fast::from(
+                    &<Self as Respire>::RingQ1::rand_discrete_gaussian::<_, WIDTH_MILLIONTHS>(rng),
                 );
             }
         }
         result
     }
 
-    pub fn encode_vec_regev(
-        s_vec: &<Self as Respire>::VecEncodingKey,
-        mu: &Matrix<N_VEC, 1, <Self as Respire>::RingQ>,
-    ) -> <Self as Respire>::VecRegevCiphertext {
+    pub fn encode_vec_rlwe(
+        s_vec: &<Self as Respire>::VecEncodingSecret,
+        mu: &Matrix<N_VEC, 1, <Self as Respire>::RingQ1>,
+    ) -> <Self as Respire>::VecRLWEEncoding {
         let mut rng = ChaCha20Rng::from_entropy();
-        let c_r = <Self as Respire>::RingQFast::rand_uniform(&mut rng);
+        let c_r = <Self as Respire>::RingQ1Fast::rand_uniform(&mut rng);
         let e = Self::rand_discrete_gaussian_matrix::<ERROR_WIDTH_VEC_MILLIONTHS, N_VEC, 1, _>(
             &mut rng,
         );
         let mut c_m = s_vec * &c_r;
         c_m += &e;
-        c_m += &mu.map_ring(|r| <Self as Respire>::RingQFast::from(r));
+        c_m += &mu.map_ring(|r| <Self as Respire>::RingQ1Fast::from(r));
         (c_r, c_m)
     }
 
-    pub fn decode_regev(
-        s_encode: &<Self as Respire>::EncodingKey,
-        c: &<Self as Respire>::RegevCiphertext,
-    ) -> <Self as Respire>::RingQ {
-        <Self as Respire>::RingQ::from(&(&c[(1, 0)] - &(&c[(0, 0)] * s_encode)))
+    pub fn decode_rlwe(
+        s_encode: &<Self as Respire>::EncodingSecret,
+        c: &<Self as Respire>::RLWEEncoding,
+    ) -> <Self as Respire>::RingQ1 {
+        <Self as Respire>::RingQ1::from(&(&c[(1, 0)] - &(&c[(0, 0)] * s_encode)))
     }
 
-    pub fn decode_vec_regev(
-        s_vec: &<Self as Respire>::VecEncodingKey,
-        (c_r, c_m): &<Self as Respire>::VecRegevCiphertext,
-    ) -> Matrix<N_VEC, 1, <Self as Respire>::RingQ> {
-        (c_m - &(s_vec * c_r)).map_ring(|r| <Self as Respire>::RingQ::from(r))
+    pub fn decode_vec_rlwe(
+        s_vec: &<Self as Respire>::VecEncodingSecret,
+        (c_r, c_m): &<Self as Respire>::VecRLWEEncoding,
+    ) -> Matrix<N_VEC, 1, <Self as Respire>::RingQ1> {
+        (c_m - &(s_vec * c_r)).map_ring(|r| <Self as Respire>::RingQ1::from(r))
     }
 
     pub fn encode_gsw(
-        s_encode: &<Self as Respire>::EncodingKey,
-        mu: &<Self as Respire>::RingQ,
-    ) -> <Self as Respire>::GSWCiphertext {
+        s_encode: &<Self as Respire>::EncodingSecret,
+        mu: &<Self as Respire>::RingQ1,
+    ) -> <Self as Respire>::GSWEncoding {
         let mut rng = ChaCha20Rng::from_entropy();
-        let a_t: Matrix<1, M_GSW, <Self as Respire>::RingQFast> = Matrix::rand_uniform(&mut rng);
+        let a_t: Matrix<1, M_GSW, <Self as Respire>::RingQ1Fast> = Matrix::rand_uniform(&mut rng);
         let e_mat =
             Self::rand_discrete_gaussian_matrix::<ERROR_WIDTH_MILLIONTHS, 1, M_GSW, _>(&mut rng);
-        let c_mat: Matrix<2, M_GSW, <Self as Respire>::RingQFast> =
+        let c_mat: Matrix<2, M_GSW, <Self as Respire>::RingQ1Fast> =
             &Matrix::stack(&a_t, &(&(&a_t * s_encode) + &e_mat))
-                + &(&build_gadget::<<Self as Respire>::RingQFast, 2, M_GSW, Z_GSW, T_GSW>()
-                    * &<Self as Respire>::RingQFast::from(mu));
+                + &(&build_gadget::<<Self as Respire>::RingQ1Fast, 2, M_GSW, Z_GSW, T_GSW>()
+                    * &<Self as Respire>::RingQ1Fast::from(mu));
         c_mat
     }
 
     pub fn decode_gsw_scaled(
-        s_encode: &<Self as Respire>::EncodingKey,
-        c: &<Self as Respire>::GSWCiphertext,
-        scale: &<Self as Respire>::RingQFast,
-    ) -> <Self as Respire>::RingQ {
-        let scaled_ident = &Matrix::<2, 2, <Self as Respire>::RingQFast>::identity() * scale;
-        let mut s_t = Matrix::<1, 2, <Self as Respire>::RingQFast>::zero();
+        s_encode: &<Self as Respire>::EncodingSecret,
+        c: &<Self as Respire>::GSWEncoding,
+        scale: &<Self as Respire>::RingQ1Fast,
+    ) -> <Self as Respire>::RingQ1 {
+        let scaled_ident = &Matrix::<2, 2, <Self as Respire>::RingQ1Fast>::identity() * scale;
+        let mut s_t = Matrix::<1, 2, <Self as Respire>::RingQ1Fast>::zero();
         s_t[(0, 0)] = (-s_encode).clone();
-        s_t[(0, 1)] = <Self as Respire>::RingQFast::one();
+        s_t[(0, 1)] = <Self as Respire>::RingQ1Fast::one();
         let result_q_fast_mat = &(&s_t * c)
-            * &gadget_inverse::<<Self as Respire>::RingQFast, 2, M_GSW, 2, Z_GSW, T_GSW>(
+            * &gadget_inverse::<<Self as Respire>::RingQ1Fast, 2, M_GSW, 2, Z_GSW, T_GSW>(
                 &scaled_ident,
             );
-        let result_q = <Self as Respire>::RingQ::from(&result_q_fast_mat[(0, 1)]);
-        <Self as Respire>::RingQ::from(result_q)
+        let result_q = <Self as Respire>::RingQ1::from(&result_q_fast_mat[(0, 1)]);
+        <Self as Respire>::RingQ1::from(result_q)
     }
 
-    pub fn regev_sub_hom(
-        lhs: &<Self as Respire>::RegevCiphertext,
-        rhs: &<Self as Respire>::RegevCiphertext,
-    ) -> <Self as Respire>::RegevCiphertext {
+    pub fn rlwe_sub_hom(
+        lhs: &<Self as Respire>::RLWEEncoding,
+        rhs: &<Self as Respire>::RLWEEncoding,
+    ) -> <Self as Respire>::RLWEEncoding {
         lhs - rhs
     }
 
     pub fn hybrid_mul_hom(
-        regev: &<Self as Respire>::RegevCiphertext,
-        gsw: &<Self as Respire>::GSWCiphertext,
-    ) -> <Self as Respire>::RegevCiphertext {
-        gsw * &gadget_inverse::<<Self as Respire>::RingQFast, 2, M_GSW, 1, Z_GSW, T_GSW>(regev)
+        rlwe: &<Self as Respire>::RLWEEncoding,
+        gsw: &<Self as Respire>::GSWEncoding,
+    ) -> <Self as Respire>::RLWEEncoding {
+        gsw * &gadget_inverse::<<Self as Respire>::RingQ1Fast, 2, M_GSW, 1, Z_GSW, T_GSW>(rlwe)
     }
 
     pub fn select_hom(
-        c0: &<Self as Respire>::RegevCiphertext,
-        c1: &<Self as Respire>::RegevCiphertext,
-        b: &<Self as Respire>::GSWCiphertext,
-    ) -> <Self as Respire>::RegevCiphertext {
-        let c1_sub_c0 = Self::regev_sub_hom(c1, c0);
+        c0: &<Self as Respire>::RLWEEncoding,
+        c1: &<Self as Respire>::RLWEEncoding,
+        b: &<Self as Respire>::GSWEncoding,
+    ) -> <Self as Respire>::RLWEEncoding {
+        let c1_sub_c0 = Self::rlwe_sub_hom(c1, c0);
         let c1_sub_c0_mul_b = Self::hybrid_mul_hom(&c1_sub_c0, b);
         c0 + &c1_sub_c0_mul_b
     }
 
-    pub fn regev_mul_x_pow(
-        c: &<Self as Respire>::RegevCiphertext,
+    pub fn rlwe_mul_x_pow(
+        c: &<Self as Respire>::RLWEEncoding,
         k: usize,
-    ) -> <Self as Respire>::RegevCiphertext {
+    ) -> <Self as Respire>::RLWEEncoding {
         c.map_ring(|x| x.mul_x_pow(k))
     }
 
     pub fn gsw_mul_x_pow(
-        c: &<Self as Respire>::GSWCiphertext,
+        c: &<Self as Respire>::GSWEncoding,
         k: usize,
-    ) -> <Self as Respire>::GSWCiphertext {
+    ) -> <Self as Respire>::GSWEncoding {
         c.map_ring(|x| x.mul_x_pow(k))
     }
 
     pub fn auto_setup<const LEN: usize, const BASE: u64>(
         tau_power: usize,
-        s_encode: &<Self as Respire>::RingQFast,
-    ) -> <Self as Respire>::AutoKey<LEN> {
+        s_encode: &<Self as Respire>::RingQ1Fast,
+    ) -> <Self as Respire>::AutoParams<LEN> {
         let mut rng = ChaCha20Rng::from_entropy();
-        let a_t: Matrix<1, LEN, <Self as Respire>::RingQFast> = Matrix::rand_uniform(&mut rng);
+        let a_t: Matrix<1, LEN, <Self as Respire>::RingQ1Fast> = Matrix::rand_uniform(&mut rng);
         let e_t =
             Self::rand_discrete_gaussian_matrix::<ERROR_WIDTH_MILLIONTHS, 1, LEN, _>(&mut rng);
         let mut bottom = &a_t * s_encode;
         bottom += &e_t;
-        bottom -= &(&build_gadget::<<Self as Respire>::RingQFast, 1, LEN, BASE, LEN>()
+        bottom -= &(&build_gadget::<<Self as Respire>::RingQ1Fast, 1, LEN, BASE, LEN>()
             * &s_encode.auto(tau_power));
         (Matrix::stack(&a_t, &bottom), tau_power)
     }
 
     pub fn auto_hom<const LEN: usize, const BASE: u64>(
-        (w_mat, tau_power): &<Self as Respire>::AutoKey<LEN>,
-        c: &<Self as Respire>::RegevCiphertext,
-    ) -> <Self as Respire>::RegevCiphertext {
+        (w_mat, tau_power): &<Self as Respire>::AutoParams<LEN>,
+        c: &<Self as Respire>::RLWEEncoding,
+    ) -> <Self as Respire>::RLWEEncoding {
         let c0 = &c[(0, 0)];
         let c1 = &c[(1, 0)];
-        let mut g_inv_tau_c0 = Matrix::<LEN, 1, <Self as Respire>::RingQFast>::zero();
+        let mut g_inv_tau_c0 = Matrix::<LEN, 1, <Self as Respire>::RingQ1Fast>::zero();
 
-        <<Self as Respire>::RingQFast as RingElementDecomposable<BASE, LEN>>::decompose_into_mat(
+        <<Self as Respire>::RingQ1Fast as RingElementDecomposable<BASE, LEN>>::decompose_into_mat(
             &c0.auto(*tau_power),
             &mut g_inv_tau_c0,
             0,
@@ -2019,24 +2016,24 @@ respire_impl!({
     /// * `which_iter`: the zero-indexed iteration number; the ciphertexts are assumed to be
     ///   encryptions of plaintexts that only have coefficients of degree divisible `2^which_iter`.
     /// * `cts`: the input ciphertexts
-    /// * `auto_key`: the automorphism key, which should have power equal to `D1 / 2^which_iter + 1`
+    /// * `auto_params`: the automorphism public params, which should have power equal to `D1 / 2^which_iter + 1`
     ///
     pub fn do_proj_iter<const LEN: usize, const BASE: u64>(
         which_iter: usize,
-        cts: &[<Self as Respire>::RegevCiphertext],
-        auto_key: &<Self as Respire>::AutoKey<LEN>,
-    ) -> Vec<<Self as Respire>::RegevCiphertext> {
-        assert_eq!(auto_key.1, (D1 >> which_iter) + 1);
+        cts: &[<Self as Respire>::RLWEEncoding],
+        auto_params: &<Self as Respire>::AutoParams<LEN>,
+    ) -> Vec<<Self as Respire>::RLWEEncoding> {
+        assert_eq!(auto_params.1, (D1 >> which_iter) + 1);
         let len = cts.len();
         let mut cts_new = Vec::with_capacity(2 * len);
         cts_new.resize(2 * len, Matrix::zero());
         for (j, ct) in cts.iter().enumerate() {
             let shift_exp = 1 << which_iter;
-            let shift_auto_exp = (shift_exp * auto_key.1) % (2 * D1);
+            let shift_auto_exp = (shift_exp * auto_params.1) % (2 * D1);
 
-            let ct_shifted = Self::regev_mul_x_pow(ct, 2 * D1 - shift_exp);
-            let ct_auto = Self::auto_hom::<LEN, BASE>(auto_key, ct);
-            let ct_auto_shifted = Self::regev_mul_x_pow(&ct_auto, 2 * D1 - shift_auto_exp);
+            let ct_shifted = Self::rlwe_mul_x_pow(ct, 2 * D1 - shift_exp);
+            let ct_auto = Self::auto_hom::<LEN, BASE>(auto_params, ct);
+            let ct_auto_shifted = Self::rlwe_mul_x_pow(&ct_auto, 2 * D1 - shift_auto_exp);
 
             cts_new[2 * j] = ct + &ct_auto;
             cts_new[2 * j + 1] = &ct_shifted + &ct_auto_shifted;
@@ -2045,23 +2042,23 @@ respire_impl!({
     }
 
     ///
-    /// Same as do_proj_iter, but only does one projection
+    /// Same as do_proj_iter, but only does one side of the projection
     ///
     pub fn do_proj_iter_one<const LEN: usize, const BASE: u64>(
         which_iter: usize,
-        ct: &<Self as Respire>::RegevCiphertext,
-        auto_key: &<Self as Respire>::AutoKey<LEN>,
-    ) -> <Self as Respire>::RegevCiphertext {
-        assert_eq!(auto_key.1, (D1 >> which_iter) + 1);
-        let ct_auto = Self::auto_hom::<LEN, BASE>(auto_key, ct);
+        ct: &<Self as Respire>::RLWEEncoding,
+        auto_params: &<Self as Respire>::AutoParams<LEN>,
+    ) -> <Self as Respire>::RLWEEncoding {
+        assert_eq!(auto_params.1, (D1 >> which_iter) + 1);
+        let ct_auto = Self::auto_hom::<LEN, BASE>(auto_params, ct);
         ct + &ct_auto
     }
 
-    pub fn regev_to_gsw_setup(
-        s_encode: &<Self as Respire>::EncodingKey,
-    ) -> <Self as Respire>::RegevToGSWKey {
+    pub fn rlwe_to_gsw_setup(
+        s_encode: &<Self as Respire>::EncodingSecret,
+    ) -> <Self as Respire>::RLWEToGSWParams {
         let mut rng = ChaCha20Rng::from_entropy();
-        let a_t = Matrix::<1, M_RLWE_TO_GSW, <Self as Respire>::RingQFast>::rand_uniform(&mut rng);
+        let a_t = Matrix::<1, M_RLWE_TO_GSW, <Self as Respire>::RingQ1Fast>::rand_uniform(&mut rng);
         let e_mat =
             Self::rand_discrete_gaussian_matrix::<ERROR_WIDTH_MILLIONTHS, 1, M_RLWE_TO_GSW, _>(
                 &mut rng,
@@ -2069,14 +2066,14 @@ respire_impl!({
         let mut bottom = &a_t * s_encode;
         bottom += &e_mat;
         let g_vec = build_gadget::<
-            <Self as Respire>::RingQFast,
+            <Self as Respire>::RingQ1Fast,
             1,
             T_RLWE_TO_GSW,
             Z_RLWE_TO_GSW,
             T_RLWE_TO_GSW,
         >();
         let mut s_encode_tensor_g =
-            Matrix::<1, M_RLWE_TO_GSW, <Self as Respire>::RingQFast>::zero();
+            Matrix::<1, M_RLWE_TO_GSW, <Self as Respire>::RingQ1Fast>::zero();
         s_encode_tensor_g.copy_into(&g_vec, 0, T_RLWE_TO_GSW);
         s_encode_tensor_g.copy_into(&(&g_vec * &(-s_encode)), 0, 0);
         bottom -= &(&s_encode_tensor_g * s_encode);
@@ -2084,17 +2081,17 @@ respire_impl!({
         Matrix::stack(&a_t, &bottom)
     }
 
-    pub fn regev_to_gsw(
-        v_mat: &<Self as Respire>::RegevToGSWKey,
-        cs: &[<Self as Respire>::RegevCiphertext],
-    ) -> <Self as Respire>::GSWCiphertext {
-        let mut result = Matrix::<2, M_GSW, <Self as Respire>::RingQFast>::zero();
-        let mut c_hat = Matrix::<2, T_GSW, <Self as Respire>::RingQFast>::zero();
+    pub fn rlwe_to_gsw(
+        v_mat: &<Self as Respire>::RLWEToGSWParams,
+        cs: &[<Self as Respire>::RLWEEncoding],
+    ) -> <Self as Respire>::GSWEncoding {
+        let mut result = Matrix::<2, M_GSW, <Self as Respire>::RingQ1Fast>::zero();
+        let mut c_hat = Matrix::<2, T_GSW, <Self as Respire>::RingQ1Fast>::zero();
         for (i, ci) in cs.iter().enumerate() {
             c_hat.copy_into(ci, 0, i);
         }
         let g_inv_c_hat = gadget_inverse::<
-            <Self as Respire>::RingQFast,
+            <Self as Respire>::RingQ1Fast,
             2,
             M_RLWE_TO_GSW,
             T_GSW,
@@ -2107,14 +2104,14 @@ respire_impl!({
             result.copy_into(ci, 0, T_GSW + i);
         }
 
-        // No permutation needed for scalar regev
+        // No permutation needed for scalar RLWE encoding
         result
     }
 
-    pub fn key_switch_setup(
-        s_from: &<Self as Respire>::VecEncodingKeyQ2,
-        s_to: &<Self as Respire>::VecEncodingKeyQ2,
-    ) -> <Self as Respire>::KeySwitchKey {
+    pub fn compress_setup(
+        s_from: &<Self as Respire>::VecEncodingSecretQ2,
+        s_to: &<Self as Respire>::VecEncodingSecretQ2,
+    ) -> <Self as Respire>::CompressParams {
         let mut rng = ChaCha20Rng::from_entropy();
         let a_t = Matrix::<1, T_COMPRESS, IntModCycloEval<D1, Q2>>::rand_uniform(&mut rng);
         let e_mat = Matrix::<N_VEC, T_COMPRESS, IntModCycloEval<D1, Q2>>::rand_discrete_gaussian::<
@@ -2128,19 +2125,19 @@ respire_impl!({
         (a_t, b_mat)
     }
 
-    pub fn scal_to_vec_setup(
-        s_scal: &<Self as Respire>::EncodingKey,
-        s_vec: &<Self as Respire>::VecEncodingKey,
-    ) -> <Self as Respire>::ScalToVecKey {
+    pub fn vectorize_setup(
+        s_scal: &<Self as Respire>::EncodingSecret,
+        s_vec: &<Self as Respire>::VecEncodingSecret,
+    ) -> <Self as Respire>::VectorizeParams {
         let mut rng = ChaCha20Rng::from_entropy();
         let mut result = Vec::with_capacity(N_VEC);
         for i in 0..N_VEC {
-            let mut unit = Matrix::<N_VEC, 1, <Self as Respire>::RingQFast>::zero();
-            unit[(i, 0)] = <Self as Respire>::RingQFast::one();
+            let mut unit = Matrix::<N_VEC, 1, <Self as Respire>::RingQ1Fast>::zero();
+            unit[(i, 0)] = <Self as Respire>::RingQ1Fast::one();
             let unit = unit;
 
             let a_t =
-                Matrix::<1, T_VECTORIZE, <Self as Respire>::RingQFast>::rand_uniform(&mut rng);
+                Matrix::<1, T_VECTORIZE, <Self as Respire>::RingQ1Fast>::rand_uniform(&mut rng);
             let e_mat = Self::rand_discrete_gaussian_matrix::<
                 ERROR_WIDTH_VEC_MILLIONTHS,
                 N_VEC,
@@ -2158,11 +2155,11 @@ respire_impl!({
     }
 
     pub fn scal_to_vec(
-        s_scal_to_vec: &<Self as Respire>::ScalToVecKey,
-        cs: &[<Self as Respire>::RegevCiphertext; N_VEC],
-    ) -> <Self as Respire>::VecRegevCiphertext {
-        let mut result_rand = <Self as Respire>::RingQFast::zero();
-        let mut result_embed = Matrix::<N_VEC, 1, <Self as Respire>::RingQFast>::zero();
+        s_scal_to_vec: &<Self as Respire>::VectorizeParams,
+        cs: &[<Self as Respire>::RLWEEncoding; N_VEC],
+    ) -> <Self as Respire>::VecRLWEEncoding {
+        let mut result_rand = <Self as Respire>::RingQ1Fast::zero();
+        let mut result_embed = Matrix::<N_VEC, 1, <Self as Respire>::RingQ1Fast>::zero();
         for (i, c) in cs.iter().enumerate() {
             let c0 = &c[(0, 0)];
             let c1 = &c[(1, 0)];
@@ -2203,12 +2200,12 @@ respire_impl!({
     }
 
     pub fn noise_variance(
-        s_scal: &<Self as Respire>::EncodingKey,
-        c: &<Self as Respire>::RegevCiphertext,
+        s_scal: &<Self as Respire>::EncodingSecret,
+        c: &<Self as Respire>::RLWEEncoding,
     ) -> f64 {
-        let decoded: <Self as Respire>::RingQ = Self::decode_regev(&s_scal, c);
+        let decoded: <Self as Respire>::RingQ1 = Self::decode_rlwe(&s_scal, c);
         let message: <Self as Respire>::RingP = decoded.round_down_into();
-        let noise: <Self as Respire>::RingQ = &decoded - &message.scale_up_into();
+        let noise: <Self as Respire>::RingQ1 = &decoded - &message.scale_up_into();
 
         let mut sum = 0_f64;
         let mut samples = 0_usize;
@@ -2228,15 +2225,15 @@ respire_impl!({
     }
 
     pub fn noise_subgaussian_bits(
-        s_scal: &<Self as Respire>::EncodingKey,
-        c: &<Self as Respire>::RegevCiphertext,
+        s_scal: &<Self as Respire>::EncodingSecret,
+        c: &<Self as Respire>::RLWEEncoding,
     ) -> f64 {
         Self::variance_to_subgaussian_bits(Self::noise_variance(s_scal, c))
     }
 
     pub fn noise_subgaussian_bits_vec(
-        s_vec: &<Self as Respire>::VecEncodingKey,
-        (cr, cm): &<Self as Respire>::VecRegevCiphertext,
+        s_vec: &<Self as Respire>::VecEncodingSecret,
+        (cr, cm): &<Self as Respire>::VecRLWEEncoding,
     ) -> f64 {
         let mut total = 0_f64;
         for i in 0..N_VEC {
