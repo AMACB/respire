@@ -36,17 +36,17 @@ impl FactoryParams {
         // q2 = 2056193, width = 70.0
         // q2 = 16760833, width = 253.0
         //
-        // p = 256, d_record = 256 seems hopeless (gadget term too big)
+        // p = 256, d3 = 256 seems hopeless (gadget term too big)
         //
-        // Other d_record = d_switch = 512:
+        // Other d3 = d2 = 512:
         // 128 byte records:
         //     p = 4
-        //     q1 = 6 * 4,
+        //     q3 = 6 * 4,
         //     q2: 61441,
         //     width = 9.2
         // 64 byte records:
         //     p = 2
-        //     q1 = 6 * 2
+        //     q3 = 6 * 2
         //     q2 = 12289
         //     width = 4.0
         //
