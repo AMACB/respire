@@ -37,3 +37,14 @@ for name in `ls -v *.rs`; do
 done
 ```
 This will save the outputs into correponding `.out` files
+
+## Citing
+If you use Respire in your work, please cite our paper as follows:
+```
+@inproceedings{BMW24,
+  author    = {Alexander Burton and Samir Jordan Menon and David J. Wu},
+  title     = {\textsc{Respire}: High-Rate {PIR} for Databases with Small Records},
+  booktitle = {{ACM} {CCS}},
+  year      = {2024}
+}
+```
