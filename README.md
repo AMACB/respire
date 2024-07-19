@@ -47,4 +47,5 @@ If you use Respire in your work, please cite our paper as follows:
   booktitle = {{ACM} {CCS}},
   year      = {2024}
 }
+A preprint of the paper is available at [https://eprint.iacr.org/2024/1165](https://eprint.iacr.org/2024/1165).
 ```
