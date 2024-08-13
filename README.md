@@ -3,6 +3,11 @@
 This repository contains the implementation of the Respire private information retrieval protocol,
 accompanying the paper *Respire: High-Rate PIR for Databases with Small Records*.
 
+## System Requirements
+Any platform [supported by Rust](https://doc.rust-lang.org/rustc/platform-support.html) will be able to run the code. However, an Intel CPU with AVX2 instruction support is needed for optimal performance.
+
+Due to preprocessing, the code requires a signficant memory overhead relative to the database size: around 17x for single-record queries, and between 49x and 57x for batched queries with cuckoo hashing (with larger batch sizes on the lower end of the range).
+
 ## Quickstart
 Install a recent version of [Rust](https://www.rust-lang.org/tools/install) (`>= 1.76.0` is known to work).
 Then, you can directly build and run the code with `cargo`:
@@ -36,7 +41,7 @@ for name in `ls -v *.rs`; do
   RUSTFLAGS="-C target-cpu=native" cargo run --release --bin "${name%.*}" 5 2>&1 | tee "${name%.*}.out";
 done
 ```
-This will save the outputs into correponding `.out` files
+This will save the outputs into correponding `.out` files.
 
 ## Citing
 If you use Respire in your work, please cite our paper as follows:
